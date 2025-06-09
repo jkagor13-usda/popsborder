@@ -1,0 +1,19 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+pytest = "*"
+pylint = "*"
+flake8 = "*"
+black = "25.*"
+pytest-datadir = "*"
+matplotlib = "*"
+seaborn = "*"
+
+[packages]
+popsborder = {editable = true, path = "."}
+
+[requires]
+python_version = "*"
