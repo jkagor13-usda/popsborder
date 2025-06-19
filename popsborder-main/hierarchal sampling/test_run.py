@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 datadir = Path("popsborder-main/hierarchal sampling/data")
+# datadir = Path("data")  # run in dedicated terminal
 basic_config = load_configuration(datadir / "config.yml")
 
 # Modify a directory for the plots here

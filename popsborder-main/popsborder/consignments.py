@@ -46,7 +46,7 @@ class Box:
         :param items: Array-like object of items
         """
         self.items = items
-        self.sampleunit = sampleunit       # extended with plant unit
+        self.sampleunit = sampleunit  # extended with plant unit
 
     @property
     def num_items(self):
@@ -57,7 +57,7 @@ class Box:
         if self.sampleunit is None:
             return bool(np.any(self.items > 0))
         else:
-            return bool(self.sampleunit)
+            return any(bool(su) for su in self.sampleunit)
 
 
 class SampleUnit:
@@ -113,8 +113,6 @@ class Consignment(collections.UserDict):
         num_plants=None,
         plants=None,
         plants_per_item=None,
-        
-
     ):
         """Store reference to associated attributes
 
@@ -122,11 +120,14 @@ class Consignment(collections.UserDict):
         :param num_items: integer
         :param items_per_box: integer
         :param num_boxes: integer
-        :param date: Array-like object of items
+        :param date: Array-like object of dates
         :param boxes: Array-like object of boxes
         :param origin: string
         :param port: string
         :param pathway: string
+        :param num_plants : string (optional)
+        :param plants : Array-like object of plants (optional)
+        :param plants_per_item : string (optional)
         """
         super().__init__(
             flower=flower,
@@ -292,17 +293,18 @@ class HierarchalConsignmentGenerator:
         num_plants = plants_per_item * num_items
         plants = np.zeros(num_plants, dtype=np.int64)
         boxes = []
-        plant_index = 0
-        for i in range(num_boxes):
-            boxitems = []
-            lower = i * items_per_box
-            upper = (i + 1) * items_per_box
-            for j in range(items_per_box):
-                lower_plants = plant_index * num_plants
-                upper_plants = (plant_index + 1) * num_plants
-                boxitems.append(SampleUnit(plants[lower_plants:upper_plants]))
-                plant_index += 1
-            boxes.append(Box(items[lower:upper], boxitems))
+        for box_index in range(num_boxes):
+            sampleunits = []
+            item_start = box_index * items_per_box
+            item_end = item_start + items_per_box
+
+            for item_index in range(items_per_box):
+                plant_start = (item_start + item_index) * plants_per_item
+                plant_end = plant_start + plants_per_item
+
+                sampleunits.append(SampleUnit(plants[plant_start:plant_end]))
+
+            boxes.append(Box(items[item_start:item_end], sampleunits))
         self.num_generated += 1
         # two consignments every nth day
         if self.num_generated % 3:
@@ -320,8 +322,8 @@ class HierarchalConsignmentGenerator:
             port=port,
             pathway=pathway,
             num_plants=num_plants,
-            plants = plants,
-            plants_per_item = plants_per_item
+            plants=plants,
+            plants_per_item=plants_per_item,
         )
 
 
