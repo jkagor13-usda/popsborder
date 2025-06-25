@@ -31,4 +31,15 @@ contaminate_examples = run_scenarios(
     detailed=True,
 )
 
-print(contaminate_examples)
+# print(contaminate_examples)
+
+# Run sampling examples
+num_consignments = 3
+sample_examples = run_scenarios(
+    config=basic_config,
+    scenario_table=sample_scenarios,
+    seed=42,
+    num_simulations=1,
+    num_consignments=num_consignments,
+    detailed=True,
+)

@@ -122,6 +122,8 @@ def add_contaminant_uniform_random(config, consignment):
     Contamination rate is determined using the ``contamination_rate`` config key.
     """
     contamination_unit = config["contamination_unit"]
+    generation_method = config["generation_method"]
+
     if contamination_unit in ["box", "boxes"]:
         contaminated_boxes = num_boxes_to_contaminate(
             config["contamination_rate"], consignment.num_boxes
@@ -153,11 +155,9 @@ def add_contaminant_uniform_random(config, consignment):
         )
 
         # Contaminate all plants in the sample unit (item)
-        try:
+        if generation_method == "hierarchal":
             for samp_index in range(0, partial_box_contaminated_stems):
                 consignment.boxes[box_indexes[-1]].sampleunit[samp_index].plants.fill(1)
-        except:
-            pass
 
         # Check if correct number of boxes contaminated, should be rounded up
         # contaminated_boxes, or may be rounded down contaminated_boxes
@@ -183,12 +183,10 @@ def add_contaminant_uniform_random(config, consignment):
         np.put(consignment.items, item_indexes, 1)
         
         # Contaminate all plants in the sample unit (item)
-        try:
+        if generation_method == "hierarchal":
             for item_index in item_indexes:
                 box_idx, sampleunit_idx = consignment.get_box_and_sampleunit_index(item_index)
                 consignment.boxes[box_idx].sampleunit[sampleunit_idx].plants.fill(1)
-        except:
-            pass
 
         assert np.count_nonzero(consignment.items) == contaminated_items
     else:
@@ -291,6 +289,8 @@ def add_contaminant_clusters_to_boxes(config, consignment):
     contaminated_units_per_cluster = config["clustered"][
         "contaminated_units_per_cluster"
     ]
+    generation_method = config["generation_method"]
+
     num_boxes = consignment.num_boxes
     contaminated_boxes = num_boxes_to_contaminate(
         config["contamination_rate"], num_boxes
@@ -333,16 +333,11 @@ def add_contaminant_clusters_to_boxes(config, consignment):
         1
     )
 
-    # Contaminate all plants in all items of the contaminated boxes
-    try:
+    # Contaminate all plants in all items of the contaminated boxes (plant-level)
+    if generation_method == "hierarchal":
         for cluster_index in cluster_indexes:
             for samp_index in range(consignment.boxes[cluster_index].num_items):
-                try:
-                    consignment.boxes[cluster_index].sampleunit[samp_index].plants.fill(1)
-                except AttributeError:
-                    pass
-    except:
-        pass
+                consignment.boxes[cluster_index].sampleunit[samp_index].plants.fill(1)
 
     # Check if correct number of boxes contaminated, should be rounded up
     # contaminated_boxes, or may be rounded down contaminated_boxes
