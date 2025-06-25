@@ -135,9 +135,11 @@ def add_contaminant_uniform_random(config, consignment):
         # Contaminate full boxes except for last one
         for box_index in box_indexes[:-1]:
             consignment.boxes[box_index].items.fill(1)
+            
             # Contaminate all plants in all sample units in the box
-            for samp_index in range(consignment.boxes[box_index].num_items):
-                consignment.boxes[box_index].sampleunit[samp_index].plants.fill(1)
+            if consignment.num_plants is not None:
+                for samp_index in range(consignment.boxes[box_index].num_items):
+                    consignment.boxes[box_index].sampleunit[samp_index].plants.fill(1)
         # Use remainder of contaminated_boxes to partially contaminate last box if needed
         partial_box_proportion = math.modf(contaminated_boxes)[0]
         # If contaminated_boxes is whole number, contaminate full box
