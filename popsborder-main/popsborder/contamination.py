@@ -136,13 +136,10 @@ def add_contaminant_uniform_random(config, consignment):
         # Contaminate full boxes except for last one
         for box_index in box_indexes[:-1]:
             consignment.boxes[box_index].items.fill(1)
-
-            # Contaminate all plants in the sample unit (item)
-            for samp_index in range(0, consignment.boxes[box_index].num_items):
+            # Contaminate all plants in all sample units in the box
+            for samp_index in range(consignment.boxes[box_index].num_items):
                 consignment.boxes[box_index].sampleunit[samp_index].plants.fill(1)
-
-        # Use remainder of contaminated_boxes to partially contaminate
-        # last box if needed
+        # Use remainder of contaminated_boxes to partially contaminate last box if needed
         partial_box_proportion = math.modf(contaminated_boxes)[0]
         # If contaminated_boxes is whole number, contaminate full box
         if partial_box_proportion == 0.0:
@@ -189,9 +186,33 @@ def add_contaminant_uniform_random(config, consignment):
                 consignment.boxes[box_idx].sampleunit[sampleunit_idx].plants.fill(1)
 
         assert np.count_nonzero(consignment.items) == contaminated_items
+    elif contamination_unit in ["plant", "plants"]:
+        # Contaminate plants directly
+        # Assume consignment has boxes, each box has sampleunit, each sampleunit has plants
+        # Flatten all plants into a 1D array for indexing
+        all_plants = []
+        plant_indices = []  # (box_idx, sampleunit_idx, plant_idx)
+        for box_idx, box in enumerate(consignment.boxes):
+            for sampleunit_idx, sampleunit in enumerate(box.sampleunit):
+                for plant_idx in range(len(sampleunit.plants)):
+                    all_plants.append(sampleunit.plants)
+                    plant_indices.append((box_idx, sampleunit_idx, plant_idx))
+        num_plants = len(plant_indices)
+        contaminated_plants = num_items_to_contaminate(config["contamination_rate"], num_plants)
+        if contaminated_plants == 0:
+            return
+        plant_indexes = np.random.choice(num_plants, contaminated_plants, replace=False)
+        for idx in plant_indexes:
+            box_idx, sampleunit_idx, plant_idx = plant_indices[idx]
+            consignment.boxes[box_idx].sampleunit[sampleunit_idx].plants[plant_idx] = 1
+        # Optionally, assert correct number contaminated
+        total_contaminated = sum(
+            (sampleunit.plants == 1).sum() for box in consignment.boxes for sampleunit in box.sampleunit
+        )
+        assert total_contaminated == contaminated_plants
     else:
         raise RuntimeError(f"Unknown contamination unit: {contamination_unit}")
-    
+
 
 def _contaminated_items_to_cluster_sizes(
     contaminated_items, contaminated_units_per_cluster
@@ -333,7 +354,7 @@ def add_contaminant_clusters_to_boxes(config, consignment):
         1
     )
 
-    # Contaminate all plants in all items of the contaminated boxes (plant-level)
+    # Contaminate all plants in all items of the contaminated boxes
     if generation_method == "hierarchal":
         for cluster_index in cluster_indexes:
             for samp_index in range(consignment.boxes[cluster_index].num_items):
@@ -459,8 +480,8 @@ def add_contaminant_clusters_to_items(config, consignment):
     else:
         raise RuntimeError(f"Unknown cluster distribution: {distribution}")
     cluster_indexes = np.array(cluster_indexes, dtype=np.int64)
-    assert min(cluster_indexes) >= 0, "Cluster values need to be valid indices"
-    assert max(cluster_indexes) < num_items
+    assert np.min(cluster_indexes) >= 0, "Cluster values need to be valid indices"
+    assert np.max(cluster_indexes) < num_items
     np.put(consignment.items, cluster_indexes, 1)
     assert np.count_nonzero(consignment.items) == contaminated_items
 
@@ -487,37 +508,51 @@ def add_contaminant_clusters(config, consignment):
             )
         else:
             add_contaminant_clusters_to_items(config, consignment)
-    else:
-        raise RuntimeError(f"Unknown contamination unit: {contamination_unit}")
-
-
-def add_contaminant_clusters_plants(config, consignment):
-    """Add contaminant clusters to consignment
-
-    Item (separately or in boxes) with contaminant in *consignment* evaluate
-    to True after running this function.
-    This function does not touch the not items not selected for contamination.
-    However, they are expected to be zero.
-    """
-
-    # TODO: Fix Contamination for Item
-    # TODO: Fix Contamination for Box
-    # TODO: Add Contamination for Plant
-
-    contamination_unit = config["contamination_unit"]
-    if contamination_unit in ["box", "boxes"]:
-        if config["clustered"]["distribution"] == "single":
-            raise RuntimeError(
-                "clustering distribution 'single' is not supported for boxes"
-            )
-        add_contaminant_clusters_to_boxes(config, consignment)
-    elif contamination_unit in ["item", "items"]:
-        if config["clustered"]["distribution"] == "single":
-            add_contaminant_clusters_to_items_with_subset_clustering(
-                config, consignment
-            )
-        else:
-            add_contaminant_clusters_to_items(config, consignment)
+    elif contamination_unit in ["plant", "plants"]:
+        # Clustered contamination for plants
+        # Flatten all plants into a 1D array for indexing
+        all_plants = []
+        plant_indices = []  # (box_idx, sampleunit_idx, plant_idx)
+        for box_idx, box in enumerate(consignment.boxes):
+            for sampleunit_idx, sampleunit in enumerate(box.sampleunit):
+                for plant_idx in range(len(sampleunit.plants)):
+                    all_plants.append(sampleunit.plants)
+                    plant_indices.append((box_idx, sampleunit_idx, plant_idx))
+        num_plants = len(plant_indices)
+        contaminated_plants = num_items_to_contaminate(config["contamination_rate"], num_plants)
+        if contaminated_plants == 0:
+            return
+        # For clustering, group contaminated plants into clusters
+        contaminated_units_per_cluster = config["clustered"]["contaminated_units_per_cluster"]
+        def _contaminated_plants_to_cluster_sizes(contaminated_plants, contaminated_units_per_cluster):
+            if contaminated_plants > contaminated_units_per_cluster:
+                sum_plants = 0
+                cluster_sizes = []
+                while sum_plants < contaminated_plants - contaminated_units_per_cluster:
+                    sum_plants += contaminated_units_per_cluster
+                    cluster_sizes.append(contaminated_units_per_cluster)
+                cluster_sizes.append(contaminated_plants - sum_plants)
+                sum_plants += contaminated_plants - sum_plants
+                assert sum_plants == contaminated_plants
+            else:
+                cluster_sizes = [contaminated_plants]
+            return cluster_sizes
+        cluster_sizes = _contaminated_plants_to_cluster_sizes(contaminated_plants, contaminated_units_per_cluster)
+        # Place clusters randomly among plants
+        available_indices = np.arange(num_plants)
+        np.random.shuffle(available_indices)
+        start = 0
+        for cluster_size in cluster_sizes:
+            cluster_indices = available_indices[start:start+cluster_size]
+            for idx in cluster_indices:
+                box_idx, sampleunit_idx, plant_idx = plant_indices[idx]
+                consignment.boxes[box_idx].sampleunit[sampleunit_idx].plants[plant_idx] = 1
+            start += cluster_size
+        # Optionally, assert correct number contaminated
+        total_contaminated = sum(
+            (sampleunit.plants == 1).sum() for box in consignment.boxes for sampleunit in box.sampleunit
+        )
+        assert total_contaminated == contaminated_plants
     else:
         raise RuntimeError(f"Unknown contamination unit: {contamination_unit}")
 
