@@ -122,7 +122,6 @@ def add_contaminant_uniform_random(config, consignment):
     Contamination rate is determined using the ``contamination_rate`` config key.
     """
     contamination_unit = config["contamination_unit"]
-    generation_method = config["generation_method"]
 
     if contamination_unit in ["box", "boxes"]:
         contaminated_boxes = num_boxes_to_contaminate(
@@ -152,7 +151,7 @@ def add_contaminant_uniform_random(config, consignment):
         )
 
         # Contaminate all plants in the sample unit (item)
-        if generation_method == "hierarchal":
+        if consignment.num_plants is not None:
             for samp_index in range(0, partial_box_contaminated_stems):
                 consignment.boxes[box_indexes[-1]].sampleunit[samp_index].plants.fill(1)
 
@@ -180,7 +179,7 @@ def add_contaminant_uniform_random(config, consignment):
         np.put(consignment.items, item_indexes, 1)
         
         # Contaminate all plants in the sample unit (item)
-        if generation_method == "hierarchal":
+        if consignment.num_plants is not None:
             for item_index in item_indexes:
                 box_idx, sampleunit_idx = consignment.get_box_and_sampleunit_index(item_index)
                 consignment.boxes[box_idx].sampleunit[sampleunit_idx].plants.fill(1)
@@ -307,11 +306,7 @@ def choose_strata_for_clusters(num_units, cluster_width, num_clusters):
 
 def add_contaminant_clusters_to_boxes(config, consignment):
     """Add contaminant clusters to boxes in a consignment"""
-    contaminated_units_per_cluster = config["clustered"][
-        "contaminated_units_per_cluster"
-    ]
-    generation_method = config["generation_method"]
-
+    contaminated_units_per_cluster = config["clustered"]["contaminated_units_per_cluster"]
     num_boxes = consignment.num_boxes
     contaminated_boxes = num_boxes_to_contaminate(
         config["contamination_rate"], num_boxes
@@ -326,13 +321,18 @@ def add_contaminant_clusters_to_boxes(config, consignment):
     )
     # Contaminate full boxes in all clusters except the last one
     for index, cluster_size in enumerate(cluster_sizes[:-1]):
-        # Find starting index of strata (cluster width * strata index)
         cluster_start = contaminated_units_per_cluster * cluster_strata[index]
         cluster_indexes = np.arange(
             start=cluster_start, stop=cluster_start + cluster_size
         )
         for cluster_index in cluster_indexes:
             consignment.boxes[cluster_index].items.fill(1)
+            
+            # Contaminate all plants in all sample units in the box
+            if consignment.num_plants is not None:
+                for samp_index in range(consignment.boxes[cluster_index].num_items):
+                    consignment.boxes[cluster_index].sampleunit[samp_index].plants.fill(1)
+    
     # In last box of last cluster, contaminate partial box if needed
     cluster_start = (
         contaminated_units_per_cluster * cluster_strata[len(cluster_sizes) - 1]
@@ -342,6 +342,11 @@ def add_contaminant_clusters_to_boxes(config, consignment):
     )
     for cluster_index in cluster_indexes[:-1]:
         consignment.boxes[cluster_index].items.fill(1)
+
+        # Contaminate all plants in all sample units in the box
+        if consignment.num_plants is not None:
+            for samp_index in range(consignment.boxes[cluster_index].num_items):
+                consignment.boxes[cluster_index].sampleunit[samp_index].plants.fill(1)
     # Use remainder of contaminated_boxes to partially contaminate last box
     partial_box_proportion = math.modf(contaminated_boxes)[0]
     # If contaminated_boxes is whole number, contaminate full box
@@ -350,15 +355,12 @@ def add_contaminant_clusters_to_boxes(config, consignment):
     partial_box_contaminated_stems = round(
         consignment.boxes[cluster_indexes[-1]].num_items * partial_box_proportion
     )
-    consignment.boxes[cluster_indexes[-1]].items[0:partial_box_contaminated_stems].fill(
-        1
-    )
-
-    # Contaminate all plants in all items of the contaminated boxes
-    if generation_method == "hierarchal":
-        for cluster_index in cluster_indexes:
-            for samp_index in range(consignment.boxes[cluster_index].num_items):
-                consignment.boxes[cluster_index].sampleunit[samp_index].plants.fill(1)
+    consignment.boxes[cluster_indexes[-1]].items[0:partial_box_contaminated_stems].fill(1)
+    
+    # Contaminate all plants in all sample units for contaminated items in the last box
+    if consignment.num_plants is not None:
+        for samp_index in range(partial_box_contaminated_stems):
+            consignment.boxes[cluster_indexes[-1]].sampleunit[samp_index].plants.fill(1)
 
     # Check if correct number of boxes contaminated, should be rounded up
     # contaminated_boxes, or may be rounded down contaminated_boxes
@@ -398,8 +400,6 @@ def add_contaminant_clusters_to_items_with_subset_clustering(config, consignment
         start_index = 0
         end_index = consignment.num_items
     else:
-        # Place the beginning of the cluster anywhere,
-        # but put the overhang at the beginning.
         start_index = np.random.randint(0, consignment.num_items)
         if start_index + subset_size > consignment.num_items:
             start_index2 = 0
@@ -424,14 +424,17 @@ def add_contaminant_clusters_to_items_with_subset_clustering(config, consignment
         replace=False,
     )
     consignment.items[indexes] = 1
+    # Contaminate all plants in the sample unit (item) for every contaminated item
+    if consignment.num_plants is not None:
+        for item_index in indexes:
+            box_idx, sampleunit_idx = consignment.get_box_and_sampleunit_index(item_index)
+            consignment.boxes[box_idx].sampleunit[sampleunit_idx].plants.fill(1)
     assert np.count_nonzero(consignment.items) == num_of_contaminated_items
 
 
 def add_contaminant_clusters_to_items(config, consignment):
     """Add contaminant clusters to items in a consignment"""
-    contaminated_units_per_cluster = config["clustered"][
-        "contaminated_units_per_cluster"
-    ]
+    contaminated_units_per_cluster = config["clustered"]["contaminated_units_per_cluster"]
     num_items = consignment.num_items
     contaminated_items = num_items_to_contaminate(
         config["contamination_rate"], num_items
@@ -483,6 +486,11 @@ def add_contaminant_clusters_to_items(config, consignment):
     assert np.min(cluster_indexes) >= 0, "Cluster values need to be valid indices"
     assert np.max(cluster_indexes) < num_items
     np.put(consignment.items, cluster_indexes, 1)
+    # Contaminate all plants in the sample unit (item) for every contaminated item
+    if consignment.num_plants is not None:
+        for item_index in cluster_indexes:
+            box_idx, sampleunit_idx = consignment.get_box_and_sampleunit_index(item_index)
+            consignment.boxes[box_idx].sampleunit[sampleunit_idx].plants.fill(1)
     assert np.count_nonzero(consignment.items) == contaminated_items
 
 
