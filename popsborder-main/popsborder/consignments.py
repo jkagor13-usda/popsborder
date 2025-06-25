@@ -197,6 +197,12 @@ class Consignment(collections.UserDict):
         for box in self.boxes[:box_index]:
             items += box.num_items
         return items + item_in_box_index
+    
+    def get_box_and_sampleunit_index(self, item_index):
+        box_index = item_index // self.items_per_box
+        sampleunit_index = item_index % self.items_per_box
+        return box_index, sampleunit_index
+
 
 
 class ParameterConsignmentGenerator:

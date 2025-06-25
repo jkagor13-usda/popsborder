@@ -134,58 +134,6 @@ def add_contaminant_uniform_random(config, consignment):
         # Contaminate full boxes except for last one
         for box_index in box_indexes[:-1]:
             consignment.boxes[box_index].items.fill(1)
-        # Use remainder of contaminated_boxes to partially contaminate
-        # last box if needed
-        partial_box_proportion = math.modf(contaminated_boxes)[0]
-        # If contaminated_boxes is whole number, contaminate full box
-        if partial_box_proportion == 0.0:
-            partial_box_proportion = 1
-        partial_box_contaminated_stems = round(
-            consignment.boxes[box_indexes[-1]].num_items * partial_box_proportion
-        )
-        consignment.boxes[box_indexes[-1]].items[0:partial_box_contaminated_stems].fill(
-            1
-        )
-        # Check if correct number of boxes contaminated, should be rounded up
-        # contaminated_boxes, or may be rounded down contaminated_boxes
-        # if no stems were contaminated in last partial box
-        assert np.count_nonzero(consignment.boxes) in (
-            math.ceil(contaminated_boxes),
-            math.floor(contaminated_boxes),
-        )
-    elif contamination_unit in ["item", "items"]:
-        contaminated_items = num_items_to_contaminate(
-            config["contamination_rate"], consignment.num_items
-        )
-        if contaminated_items == 0:
-            return
-        item_indexes = np.random.choice(
-            consignment.num_items, contaminated_items, replace=False
-        )
-        np.put(consignment.items, item_indexes, 1)
-        assert np.count_nonzero(consignment.items) == contaminated_items
-    else:
-        raise RuntimeError(f"Unknown contamination unit: {contamination_unit}")
-
-
-def add_contaminant_uniform_random_plants(config, consignment):
-    """Add contaminants to consignment using uniform random distribution
-
-    Contamination rate is determined using the ``contamination_rate`` config key.
-    """
-    contamination_unit = config["contamination_unit"]
-    if contamination_unit in ["box", "boxes"]:
-        contaminated_boxes = num_boxes_to_contaminate(
-            config["contamination_rate"], consignment.num_boxes
-        )
-        if contaminated_boxes == 0.0:
-            return
-        box_indexes = np.random.choice(
-            consignment.num_boxes, math.ceil(contaminated_boxes), replace=False
-        )
-        # Contaminate full boxes except for last one
-        for box_index in box_indexes[:-1]:
-            consignment.boxes[box_index].items.fill(1)
 
             # Contaminate all plants in the sample unit (item)
             for samp_index in range(0, consignment.boxes[box_index].num_items):
@@ -205,8 +153,11 @@ def add_contaminant_uniform_random_plants(config, consignment):
         )
 
         # Contaminate all plants in the sample unit (item)
-        for samp_index in range(0, partial_box_contaminated_stems):
-            consignment.boxes[box_indexes[-1]].sampleunit[samp_index].plants.fill(1)
+        try:
+            for samp_index in range(0, partial_box_contaminated_stems):
+                consignment.boxes[box_indexes[-1]].sampleunit[samp_index].plants.fill(1)
+        except:
+            pass
 
         # Check if correct number of boxes contaminated, should be rounded up
         # contaminated_boxes, or may be rounded down contaminated_boxes
@@ -230,10 +181,19 @@ def add_contaminant_uniform_random_plants(config, consignment):
             consignment.num_items, contaminated_items, replace=False
         )
         np.put(consignment.items, item_indexes, 1)
+        
+        # Contaminate all plants in the sample unit (item)
+        try:
+            for item_index in item_indexes:
+                box_idx, sampleunit_idx = consignment.get_box_and_sampleunit_index(item_index)
+                consignment.boxes[box_idx].sampleunit[sampleunit_idx].plants.fill(1)
+        except:
+            pass
+
         assert np.count_nonzero(consignment.items) == contaminated_items
     else:
         raise RuntimeError(f"Unknown contamination unit: {contamination_unit}")
-
+    
 
 def _contaminated_items_to_cluster_sizes(
     contaminated_items, contaminated_units_per_cluster
@@ -261,9 +221,7 @@ def _contaminated_items_to_cluster_sizes(
     return cluster_sizes
 
 
-def _contaminated_boxes_to_cluster_sizes(
-    contaminated_boxes, contaminated_units_per_cluster
-):
+def _contaminated_boxes_to_cluster_sizes(contaminated_boxes, contaminated_units_per_cluster):
     """Get list of cluster sizes for a given number of contaminated items
 
     The size of each cluster is limited by contaminated_units_per_cluster.
@@ -374,9 +332,26 @@ def add_contaminant_clusters_to_boxes(config, consignment):
     consignment.boxes[cluster_indexes[-1]].items[0:partial_box_contaminated_stems].fill(
         1
     )
+
+    # Contaminate all plants in all items of the contaminated boxes
+    try:
+        for cluster_index in cluster_indexes:
+            for samp_index in range(consignment.boxes[cluster_index].num_items):
+                try:
+                    consignment.boxes[cluster_index].sampleunit[samp_index].plants.fill(1)
+                except AttributeError:
+                    pass
+    except:
+        pass
+
     # Check if correct number of boxes contaminated, should be rounded up
     # contaminated_boxes, or may be rounded down contaminated_boxes
     # if no stems were contaminated in last partial box
+    
+    # DEBUG
+    # print([bool(box) for box in consignment.boxes])
+    # print(np.count_nonzero(consignment.boxes))
+    
     assert np.count_nonzero(consignment.boxes) in (
         math.ceil(contaminated_boxes),
         math.ceil(contaminated_boxes) - 1,
@@ -675,24 +650,10 @@ def create_contaminant_function(config):
                 config=config, consignment=consignment
             )
 
-    elif arrangement == "random_plants":
-
-        def add_contaminant_function(consignment):
-            return add_contaminant_uniform_random_plants(
-                config=config, consignment=consignment
-            )
-
     elif arrangement == "clustered":
 
         def add_contaminant_function(consignment):
             return add_contaminant_clusters(config=config, consignment=consignment)
-
-    elif arrangement == "clustered_plants":
-
-        def add_contaminant_function(consignment):
-            return add_contaminant_clusters_plants(
-                config=config, consignment=consignment
-            )
 
     elif arrangement is None:
         raise RuntimeError("Contaminant arrangement must be set")
