@@ -7,11 +7,11 @@ consignment:
     maritime:
       default: 200
   plants_per_item:
-    default: 10
+    default: 5
     air:
-      default: 10
+      default: 5
     maritime:
-      default: 10
+      default: 5
   parameter_based:
     boxes:
       min: 1

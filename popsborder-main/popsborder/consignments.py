@@ -204,7 +204,6 @@ class Consignment(collections.UserDict):
         return box_index, sampleunit_index
 
 
-
 class ParameterConsignmentGenerator:
     """Generate a consignments based on configuration parameters"""
 
