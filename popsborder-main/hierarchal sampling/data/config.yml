@@ -68,6 +68,7 @@ contamination:
       - 2.7609372
   arrangement: random_plants
   clustered:
+    percentage_plants_contaminated: .9
     contaminated_units_per_cluster: 200
     distribution: random
     random:
