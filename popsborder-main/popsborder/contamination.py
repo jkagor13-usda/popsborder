@@ -177,37 +177,15 @@ def add_contaminant_uniform_random(config, consignment):
 
         # Pooled plant-level contamination for all contaminated items in all contaminated boxes
         if consignment.num_plants is not None:
+            # Gather all (box_idx, samp_index) tuples for contaminated items
+            contaminated_items = []
+            for box_index in box_indexes[:-1]:
+                for samp_index in range(consignment.boxes[box_index].num_items):
+                    contaminated_items.append((box_index, samp_index))
+            for samp_index in range(partial_box_contaminated_stems):
+                contaminated_items.append((box_indexes[-1], samp_index))
             perc_plants_contaminated = config["clustered"]["percentage_plants_contaminated"]
-            plant_tuples = []  # (box_idx, samp_index, plant_idx)
-            # Full contaminated boxes
-            for box_index in box_indexes[:-1]:
-                for samp_index in range(consignment.boxes[box_index].num_items):
-                    sampleunit = consignment.boxes[box_index].sampleunit[samp_index]
-                    num_plants = len(sampleunit.plants)
-                    for plant_idx in range(num_plants):
-                        plant_tuples.append((box_index, samp_index, plant_idx))
-            # Partial box: only the contaminated items
-            for samp_index in range(partial_box_contaminated_stems):
-                sampleunit = consignment.boxes[box_indexes[-1]].sampleunit[samp_index]
-                num_plants = len(sampleunit.plants)
-                for plant_idx in range(num_plants):
-                    plant_tuples.append((box_indexes[-1], samp_index, plant_idx))
-            total_plants = len(plant_tuples)
-            num_contaminated_plants = max(1, round(total_plants * perc_plants_contaminated))
-            # Set all plants in all contaminated items to 0 first
-            for box_idx, samp_index, plant_idx in plant_tuples:
-                consignment.boxes[box_idx].sampleunit[samp_index].plants[plant_idx] = 0
-            # Randomly contaminate the required number of plants across all pooled plants
-            contaminated_plant_indices = np.random.choice(total_plants, num_contaminated_plants, replace=False)
-            for idx in contaminated_plant_indices:
-                box_idx, samp_index, plant_idx = plant_tuples[idx]
-                consignment.boxes[box_idx].sampleunit[samp_index].plants[plant_idx] = 1
-            # Update items array to sum of contaminated plants per item
-            for box_index in box_indexes[:-1]:
-                for samp_index in range(consignment.boxes[box_index].num_items):
-                    consignment.boxes[box_index].items[samp_index] = consignment.boxes[box_index].sampleunit[samp_index].plants.sum()
-            for samp_index in range(partial_box_contaminated_stems):
-                consignment.boxes[box_indexes[-1]].items[samp_index] = consignment.boxes[box_indexes[-1]].sampleunit[samp_index].plants.sum()
+            _apply_pooled_plant_level_contamination(consignment, contaminated_items, perc_plants_contaminated)
         else:
             # No plant unit exists, so set item array directly for all contaminated items
             for box_index in box_indexes[:-1]:
@@ -229,29 +207,8 @@ def add_contaminant_uniform_random(config, consignment):
             consignment.num_items, contaminated_items, replace=False
         )
         if consignment.num_plants is not None:
-            # Pooled plant-level contamination for all contaminated items
             perc_plants_contaminated = config["clustered"]["percentage_plants_contaminated"]
-            plant_tuples = []  # (item_index, box_idx, sampleunit_idx, plant_idx)
-            for item_index in item_indexes:
-                box_idx, sampleunit_idx = consignment.get_box_and_sampleunit_index(item_index)
-                sampleunit = consignment.boxes[box_idx].sampleunit[sampleunit_idx]
-                num_plants = len(sampleunit.plants)
-                for plant_idx in range(num_plants):
-                    plant_tuples.append((item_index, box_idx, sampleunit_idx, plant_idx))
-            total_plants = len(plant_tuples)
-            num_contaminated_plants = max(1, round(total_plants * perc_plants_contaminated))
-            # Set all plants in all contaminated items to 0 first
-            for _, box_idx, sampleunit_idx, plant_idx in plant_tuples:
-                consignment.boxes[box_idx].sampleunit[sampleunit_idx].plants[plant_idx] = 0
-            # Randomly contaminate the required number of plants across all pooled plants
-            contaminated_plant_indices = np.random.choice(total_plants, num_contaminated_plants, replace=False)
-            for idx in contaminated_plant_indices:
-                _, box_idx, sampleunit_idx, plant_idx = plant_tuples[idx]
-                consignment.boxes[box_idx].sampleunit[sampleunit_idx].plants[plant_idx] = 1
-            # Update items array to sum of contaminated plants per item
-            for item_index in item_indexes:
-                box_idx, sampleunit_idx = consignment.get_box_and_sampleunit_index(item_index)
-                consignment.boxes[box_idx].items[sampleunit_idx] = consignment.boxes[box_idx].sampleunit[sampleunit_idx].plants.sum()
+            _apply_pooled_plant_level_contamination(consignment, list(item_indexes), perc_plants_contaminated)
         else:
             # No plant unit exists, so set item array directly
             np.put(consignment.items, item_indexes, 1)
@@ -842,4 +799,56 @@ def get_contaminant_function(config):
     # If there is config for individual consignments, we just create the function with
     # the default settings.
     return create_contaminant_function(config["contamination"])
+
+def _apply_pooled_plant_level_contamination(consignment, item_indexes, percentage):
+    """
+    Helper to apply pooled plant-level contamination across a set of items.
+    item_indexes: list of item indices (for item-level) or (box_idx, samp_index) tuples (for box-level)
+    percentage: float, fraction of plants to contaminate
+    """
+    if not item_indexes:
+        return
+    # Ensure item_indexes is a list
+    item_indexes = list(item_indexes)
+    # Robustly check if item_indexes are tuples (box-level) or ints (item-level)
+    first_elem = item_indexes[0]
+    is_tuple = isinstance(first_elem, tuple)
+    plant_tuples = []
+    if is_tuple:
+        # box-level: item_indexes are (box_idx, samp_index) tuples
+        for box_idx, samp_index in item_indexes:
+            sampleunit = consignment.boxes[box_idx].sampleunit[samp_index]
+            num_plants = len(sampleunit.plants)
+            for plant_idx in range(num_plants):
+                plant_tuples.append((None, box_idx, samp_index, plant_idx))
+    else:
+        # item-level: item_indexes are item indices (int or numpy int)
+        for item_index in item_indexes:
+            box_idx, sampleunit_idx = consignment.get_box_and_sampleunit_index(int(item_index))
+            sampleunit = consignment.boxes[box_idx].sampleunit[sampleunit_idx]
+            num_plants = len(sampleunit.plants)
+            for plant_idx in range(num_plants):
+                plant_tuples.append((item_index, box_idx, sampleunit_idx, plant_idx))
+    total_plants = len(plant_tuples)
+    if total_plants == 0:
+        return
+    num_contaminated_plants = max(1, round(total_plants * percentage))
+    # Set all plants in all contaminated items to 0 first
+    for _, box_idx, sampleunit_idx, plant_idx in plant_tuples:
+        consignment.boxes[box_idx].sampleunit[sampleunit_idx].plants[plant_idx] = 0
+    # Randomly contaminate the required number of plants across all pooled plants
+    contaminated_plant_indices = np.random.choice(total_plants, num_contaminated_plants, replace=False)
+    for idx in contaminated_plant_indices:
+        _, box_idx, sampleunit_idx, plant_idx = plant_tuples[idx]
+        consignment.boxes[box_idx].sampleunit[sampleunit_idx].plants[plant_idx] = 1
+    # Update items array to sum of contaminated plants per item
+    if not is_tuple:
+        # item-level
+        for item_index in item_indexes:
+            box_idx, sampleunit_idx = consignment.get_box_and_sampleunit_index(int(item_index))
+            consignment.boxes[box_idx].items[sampleunit_idx] = consignment.boxes[box_idx].sampleunit[sampleunit_idx].plants.sum()
+    else:
+        # box-level
+        for box_idx, samp_index in item_indexes:
+            consignment.boxes[box_idx].items[samp_index] = consignment.boxes[box_idx].sampleunit[samp_index].plants.sum()
 
