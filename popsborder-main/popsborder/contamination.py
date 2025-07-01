@@ -126,18 +126,6 @@ def num_items_to_contaminate(config, num_items):
     return contaminated_items
 
 
-def num_plants_to_contaminate(config, num_plants):
-    """Return number of items to be contaminated
-    Rounds up or down to nearest integer.
-    NOTE: contamination rate is based on the number of total plants
-
-    Config is the ``contamination_rate`` dictionary.
-    """
-    contamination_rate = get_contamination_rate(config) 
-    contaminated_plants = round(num_plants * contamination_rate)
-    return contaminated_plants
-
-
 def num_boxes_to_contaminate(config, num_boxes):
     """Return number of boxes to be contaminated as float.
 
