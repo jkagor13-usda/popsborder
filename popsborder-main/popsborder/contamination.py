@@ -573,7 +573,6 @@ def add_contaminant_clusters_to_items(config, consignment):
     assert np.min(cluster_indexes) >= 0, "Cluster values need to be valid indices"
     assert np.max(cluster_indexes) < num_items
     np.put(consignment.items, cluster_indexes, 1)
-    # Contaminate all plants in the sample unit (item) for every contaminated item
     if consignment.num_plants is not None:
         # Gather all plant indices (as tuples: (item_index, box_idx, sampleunit_idx, plant_idx)) for selected items
         plant_tuples = []
@@ -630,7 +629,7 @@ def add_contaminant_clusters(config, consignment):
             )
         else:
             raise RuntimeError(
-                "clustering is not supported for plants"
+                f"clustering distribution '{contamination_unit}' is not supported for plants"
             )
     else:
         raise RuntimeError(f"Unknown contamination unit: {contamination_unit}")
@@ -799,6 +798,7 @@ def get_contaminant_function(config):
     # If there is config for individual consignments, we just create the function with
     # the default settings.
     return create_contaminant_function(config["contamination"])
+
 
 def _apply_pooled_plant_level_contamination(consignment, item_indexes, percentage):
     """
