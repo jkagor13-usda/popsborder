@@ -12,7 +12,7 @@ consignment:
       default: 5
     maritime:
       default: 5
-  parameter_based:
+  rbs_parameter_based:
     boxes:
       min: 1
       max: 100
@@ -24,27 +24,32 @@ consignment:
       - New Zealand
       - India
       - Tanzania
-    flowers:
-      - Hyacinthus
-      - Rosa
-      - Gerbera
-      - Agapanthus
-      - Aegilops
-      - Protea
-      - Liatris
-      - Mokara
-      - Anemone
-      - Actinidia
+    propagative_materials:
+      - Budwood/Graftwood (scion)
+      - Bulb, Corm, Rhizome, Tuberous Stem
+      - Meristem or Callus Tissue Culture (micropropagated/in vitro culture)
+      - Root cutting, crown, or clump, Tuberous Root
+      - Rooted Cutting (including air layer)
+      - Rooted Plant (including grafted)
+      - Unrooted Cutting
+      - Unrooted Plant
     ports:
-      - NY JFK CBP
-      - FL Miami Air CBP
-      - HI Honolulu CBP
-      - AZ Phoenix CBP
-      - VA Dulles CBP
-      - CA San Francisco CBP
-      - WA Seattle Air CBP
-      - TX Brownsville CBP
-      - WA Blaine CBP
+      - Atlanta PIS
+      - Beltsville PIS
+      - Carolina PIS
+      - Guam PIS
+      - Honolulu PIS
+      - Houston PIS
+      - JFK PIS
+      - Linden PIS
+      - Los Angeles PIS
+      - Los Indios PIS
+      - Miami PIS
+      - Nogales PIS
+      - Orlando PIS
+      - San Diego PIS
+      - San Francisco PIS
+      - Seattle PIS
   input_file:
     file_type: AQIM
     file_name: blank_aqim_for_testing.csv

@@ -545,6 +545,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     ret.consignment_checked_ok = ret.contaminated_items_completion == 0
     return ret
 
+# TODO: Create inspect function for RBS
 
 def get_sample_function(config):
     """Based on config, return function to sample a consignment."""
@@ -605,3 +606,7 @@ def count_contaminated_items(consignment):
     """Return number of contaminated items"""
     count = np.count_nonzero(consignment.items)
     return count
+
+# # TODO: lookup compliance information.
+# def lookup_compliance(config):
+    

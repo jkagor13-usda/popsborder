@@ -100,7 +100,6 @@ class Consignment(collections.UserDict):
 
     def __init__(
         self,
-        flower,
         num_items,
         items,
         items_per_box,
@@ -110,6 +109,8 @@ class Consignment(collections.UserDict):
         origin,
         port,
         pathway,
+        propagative_material=None,
+        flower=None,
         num_plants=None,
         plants=None,
         plants_per_item=None,
@@ -118,6 +119,7 @@ class Consignment(collections.UserDict):
 
         :param flower: string
         :param num_items: integer
+        :param propagative_material: string
         :param items_per_box: integer
         :param num_boxes: integer
         :param date: Array-like object of dates
@@ -130,7 +132,6 @@ class Consignment(collections.UserDict):
         :param plants_per_item : string (optional)
         """
         super().__init__(
-            flower=flower,
             num_items=num_items,
             items=items,
             items_per_box=items_per_box,
@@ -140,11 +141,12 @@ class Consignment(collections.UserDict):
             origin=origin,
             port=port,
             pathway=pathway,
+            propagative_material = propagative_material,
+            flower=flower,
             num_plants=num_plants,
             plants=plants,
             plants_per_item=plants_per_item,
         )
-        self.flower = flower
         self.num_items = num_items
         self.items = items
         self.items_per_box = items_per_box
@@ -154,6 +156,8 @@ class Consignment(collections.UserDict):
         self.origin = origin
         self.port = port
         self.pathway = pathway
+        self.propagative_material = propagative_material
+        self.flower = flower
         self.num_plants = num_plants
         self.plants = plants
         self.plants_per_item = plants_per_item
@@ -282,8 +286,8 @@ class HierarchalConsignmentGenerator:
     def generate_consignment(self):
         """Generate a new consignment"""
         port = random.choice(self.params["ports"])
-        # flowers or commodities
-        flower = random.choice(self.params["flowers"])
+        # propagative materials or commodities
+        propagative_material = random.choice(self.params["propagative_materials"])
         origin = random.choice(self.params["origins"])
         num_boxes_min = self.params["boxes"].get("min", 0)
         num_boxes_max = self.params["boxes"]["max"]
@@ -316,7 +320,6 @@ class HierarchalConsignmentGenerator:
             self.date += timedelta(days=1)
 
         return Consignment(
-            flower=flower,
             num_items=num_items,
             items=items,
             items_per_box=items_per_box,
@@ -326,6 +329,7 @@ class HierarchalConsignmentGenerator:
             origin=origin,
             port=port,
             pathway=pathway,
+            propagative_material=propagative_material,
             num_plants=num_plants,
             plants=plants,
             plants_per_item=plants_per_item,
@@ -490,7 +494,7 @@ def get_consignment_generator(config):
     elif generation_method == "hierarchal":
         start_date = config.get("start_date", "2020-01-01")
         consignment_generator = HierarchalConsignmentGenerator(
-            parameters=config["parameter_based"],
+            parameters=config["rbs_parameter_based"],
             items_per_box=config["items_per_box"],
             plants_per_item=config["plants_per_item"],
             start_date=start_date,
