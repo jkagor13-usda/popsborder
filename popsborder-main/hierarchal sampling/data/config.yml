@@ -93,7 +93,7 @@ inspection:
   unit: boxes
   within_box_proportion: 1
   tolerance_level: 0.005
-  sample_strategy: hypergeometric
+  sample_strategy: rbs
   min_boxes: 0
   proportion:
     value: 0.02
@@ -105,3 +105,5 @@ inspection:
   cluster:
     cluster_selection: random
     interval: 3
+  compliance_table:
+    file_name: data/compliance_table.csv
