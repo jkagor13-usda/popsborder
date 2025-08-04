@@ -93,6 +93,9 @@ def compute_hypergeometric(detection_level, confidence_level, population_size):
     size (total number of items or boxes in consignment), detection level,
     and confidence level.
     """
+    detection_level = float(detection_level)
+    confidence_level = float(confidence_level)
+
     # Equation comes from RBS spreadsheet for calculating hypergeometric
     # sample sizes created by IICA, USDA APHIS PPQ, and NAPPO.
     sample_size = math.ceil(
@@ -575,7 +578,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     return ret
 
 
-def get_sample_function(config):
+def get_sample_function(config, compliance_table=None):
     """Based on config, return function to sample a consignment."""
     sample_strategy = config["inspection"]["sample_strategy"]
     if sample_strategy == "proportion":
@@ -599,11 +602,10 @@ def get_sample_function(config):
             return sample_all(config=config, consignment=consignment)
         
     elif sample_strategy == "rbs":
-        ct_file_path = config['inspection']['file_name']
-        compliance_table_dict = load_compliance_lookup_csv(ct_file_path)
 
         def sample(consignment):
-            return sample_rbs(config=config, consignment=consignment, compliance_table_dict= compliance_table_dict)
+            return sample_rbs(config=config, consignment=consignment, 
+                              compliance_table_dict=compliance_table)
 
     else:
         raise RuntimeError(f"Unknown sample strategy: {sample_strategy}")

@@ -25,7 +25,8 @@ from .simulation import run_simulation
 
 
 def run_scenarios(
-    config, scenario_table, seed, num_simulations, num_consignments, detailed=False
+    config, scenario_table, seed, num_simulations, num_consignments, compliance_table=None, 
+    detailed=False
 ):
     """Run scenarios based on the configuration and list of scenarios
 
@@ -59,6 +60,7 @@ def run_scenarios(
             config=scenario_config,
             num_simulations=num_simulations,
             num_consignments=num_consignments,
+            compliance_table = compliance_table,
             seed=seed,
             detailed=detailed,
         )
