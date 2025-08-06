@@ -682,6 +682,7 @@ def load_input_consignment_data(file_path):
     """
     Load custom csv data to generate consignment. 
     """
+    import csv
     consignments = []
 
     with open(file_path, encoding="utf-8") as csvfile:
