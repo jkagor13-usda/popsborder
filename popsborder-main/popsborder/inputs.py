@@ -677,3 +677,16 @@ def load_compliance_lookup_csv(file_path):
             comp_table[key] = (detection_level, confidence_levels)
 
     return comp_table
+
+def load_input_consignment_data(file_path):
+    """
+    Load custom csv data to generate consignment. 
+    """
+    consignments = []
+
+    with open(file_path, encoding="utf-8") as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            consignment = {k: text_to_value(v) for k, v in row.items()}
+            consignments.append(consignment)
+    return consignments
