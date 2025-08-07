@@ -14,6 +14,8 @@ seaborn = "*"
 
 [packages]
 popsborder = {editable = true, path = "."}
+ipykernel = "*"
+matplotlib = "*"
 
 [requires]
 python_version = "*"

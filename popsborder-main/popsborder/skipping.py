@@ -204,3 +204,4 @@ class FixedComplianceLevelSkipLot:
         if random.random() <= sampling_fraction:
             return True, self._program_name
         return False, self._program_name
+

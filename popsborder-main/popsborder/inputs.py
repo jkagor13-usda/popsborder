@@ -654,3 +654,26 @@ def get_validated_effectiveness(config):
     if 0 <= effectiveness <= 1:
         return effectiveness
     raise ValueError("Effectiveness must be between 0 and 1")
+
+
+def load_compliance_lookup_csv(file_path):
+    """
+    Load compliance table for fast lookup.
+    Returns a dict mapping (Origin, Propagative Material type)
+    to (Detection Level, Confidence Levels).
+    """
+    comp_table = {}
+    import csv
+
+    with open(file_path, encoding="utf-8") as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            key = (
+                row["Origin Location Country Name"].strip(),
+                row["Propagative Material type"].strip()
+            )
+            detection_level = row["Detection Level"].strip()
+            confidence_levels = row["Confidence Levels"].strip()
+            comp_table[key] = (detection_level, confidence_levels)
+
+    return comp_table

@@ -54,6 +54,7 @@ def simulation(
     config,
     num_consignments,
     seed,
+    compliance_table=None,
     output_f280_file=None,
     verbose=False,
     pretty=None,
@@ -83,6 +84,7 @@ def simulation(
     num_inspections = 0
     total_num_boxes = 0
     total_num_items = 0
+    total_num_plants = 0
     total_boxes_opened_completion = 0
     total_boxes_opened_detection = 0
     total_items_inspected_completion = 0
@@ -101,7 +103,7 @@ def simulation(
     consignment_generator = get_consignment_generator(config)
     add_contaminant = get_contaminant_function(config)
     is_inspection_needed = get_inspection_needed_function(config)
-    sample = get_sample_function(config)
+    sample = get_sample_function(config, compliance_table)
     tolerance_level = config["inspection"]["tolerance_level"]
 
     for unused_i in range(num_consignments):
@@ -124,6 +126,7 @@ def simulation(
             num_inspections += 1
             total_num_boxes += consignment.num_boxes
             total_num_items += consignment.num_items
+            total_num_plants += consignment.num_plants
             total_boxes_opened_completion += ret.boxes_opened_completion
             total_boxes_opened_detection += ret.boxes_opened_detection
             total_items_inspected_completion += ret.items_inspected_completion
@@ -136,6 +139,7 @@ def simulation(
             consignment_checked_ok = True  # assuming or hoping it's ok
             total_num_boxes += consignment.num_boxes
             total_num_items += consignment.num_items
+            total_num_plants += consignment.num_plants
 
         form280.fill(
             consignment.date,
@@ -210,6 +214,7 @@ def simulation(
         num_inspections=num_inspections,
         total_num_boxes=total_num_boxes,
         total_num_items=total_num_items,
+        total_num_plants=total_num_plants,
         avg_boxes_opened_completion=total_boxes_opened_completion / num_consignments,
         avg_boxes_opened_detection=total_boxes_opened_detection / num_consignments,
         pct_boxes_opened_completion=(
@@ -249,6 +254,7 @@ def run_simulation(
     config,
     num_simulations,
     num_consignments,
+    compliance_table=None,
     seed=None,
     output_f280_file=None,
     verbose=False,
@@ -272,6 +278,7 @@ def run_simulation(
         num_inspections=0,
         num_boxes=0,
         num_items=0,
+        num_plants=0,
         avg_boxes_opened_completion=0,
         avg_boxes_opened_detection=0,
         pct_boxes_opened_completion=0,
@@ -297,6 +304,7 @@ def run_simulation(
             config=config,
             num_consignments=num_consignments,
             seed=seed + i if seed is not None else None,
+            compliance_table=compliance_table,
             output_f280_file=output_f280_file,
             verbose=verbose,
             pretty=pretty,
@@ -313,6 +321,7 @@ def run_simulation(
         totals.num_inspections += result.num_inspections
         totals.num_boxes += result.total_num_boxes
         totals.num_items += result.total_num_items
+        totals.num_plants += result.total_num_plants
         totals.avg_boxes_opened_completion += result.avg_boxes_opened_completion
         totals.avg_boxes_opened_detection += result.avg_boxes_opened_detection
         totals.pct_boxes_opened_completion += result.pct_boxes_opened_completion
@@ -355,6 +364,11 @@ def run_simulation(
     totals.pct_items_inspected_detection /= float(num_simulations)
     totals.pct_contaminant_unreported_if_detection /= float(num_simulations)
     totals.true_contamination_rate /= float(num_simulations)
+    if totals.num_plants:
+        totals.num_plants /= float(num_simulations)
+    else:
+        totals.num_plants = None
+
     if totals.false_negative_present:
         totals.max_missed_contamination_rate /= float(totals.false_negative_present)
         totals.avg_missed_contamination_rate /= float(totals.false_negative_present)

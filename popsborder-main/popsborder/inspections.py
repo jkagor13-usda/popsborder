@@ -27,7 +27,7 @@ import types
 
 import numpy as np
 
-from .inputs import get_validated_effectiveness
+from .inputs import get_validated_effectiveness, load_compliance_lookup_csv
 
 
 def inspect_first(consignment):
@@ -93,6 +93,9 @@ def compute_hypergeometric(detection_level, confidence_level, population_size):
     size (total number of items or boxes in consignment), detection level,
     and confidence level.
     """
+    detection_level = float(detection_level)
+    confidence_level = float(confidence_level)
+
     # Equation comes from RBS spreadsheet for calculating hypergeometric
     # sample sizes created by IICA, USDA APHIS PPQ, and NAPPO.
     sample_size = math.ceil(
@@ -173,6 +176,35 @@ def sample_n(config, consignment):
         n_units_to_inspect = fixed_n
         n_units_to_inspect = max(min_boxes, n_units_to_inspect)
         n_units_to_inspect = min(num_boxes, n_units_to_inspect)
+    return n_units_to_inspect
+
+
+def sample_rbs(config, consignment, compliance_table_dict):
+    """Set sample size to sample units from consignment using hypergeometric/detection 
+    level strategy based on compliance levels. Return number of units to inspect.
+
+    :param config: Configuration to be used
+    :param consignment: Consignment to be inspected
+    """
+
+    unit = config["inspection"]["unit"]
+    num_items = consignment.num_items
+    num_boxes = consignment.num_boxes
+    origin_country = consignment.origin
+    pm_type = consignment.propagative_material
+    detection_level, confidence_level = get_detection_and_confidence(
+        origin_country, pm_type, compliance_table_dict
+    )
+    if unit in ["item", "items"]:
+        n_units_to_inspect = compute_hypergeometric(
+            detection_level, confidence_level, num_items
+        )
+    elif unit in ["box", "boxes"]:
+        n_units_to_inspect = compute_hypergeometric(
+            detection_level, confidence_level, num_boxes
+        )
+    else:
+        raise RuntimeError(f"Unknown sampling unit: {unit}")
     return n_units_to_inspect
 
 
@@ -546,7 +578,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     return ret
 
 
-def get_sample_function(config):
+def get_sample_function(config, compliance_table=None):
     """Based on config, return function to sample a consignment."""
     sample_strategy = config["inspection"]["sample_strategy"]
     if sample_strategy == "proportion":
@@ -568,6 +600,12 @@ def get_sample_function(config):
 
         def sample(consignment):
             return sample_all(config=config, consignment=consignment)
+        
+    elif sample_strategy == "rbs":
+
+        def sample(consignment):
+            return sample_rbs(config=config, consignment=consignment, 
+                              compliance_table_dict=compliance_table)
 
     else:
         raise RuntimeError(f"Unknown sample strategy: {sample_strategy}")
@@ -605,3 +643,21 @@ def count_contaminated_items(consignment):
     """Return number of contaminated items"""
     count = np.count_nonzero(consignment.items)
     return count
+
+
+def get_detection_and_confidence(
+        origin_country, pm_type, compliance_table_dict,
+        default_detection=0.01, default_confidence=0.8
+    ):
+    """
+    Fetch detection and confidence levels for (origin_country, pm_type).
+    If not found, defaults to low compliance values.
+    Returns a tuple: (detection_level, confidence_level)
+    """
+    key = (origin_country, pm_type)
+    result = compliance_table_dict.get(key)
+    if result is not None:
+        return result
+    else:
+        print(f"WARNING: No compliance found for {key}. Using low compliance defaults.")
+        return (default_detection, default_confidence)

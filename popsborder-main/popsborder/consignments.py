@@ -40,12 +40,13 @@ class Box:
     only be accessed but also modifed through the box.
     """
 
-    def __init__(self, items):
+    def __init__(self, items, sampleunit=None):
         """Store reference to associated items
 
         :param items: Array-like object of items
         """
         self.items = items
+        self.sampleunit = sampleunit  # extended with plant unit
 
     @property
     def num_items(self):
@@ -53,7 +54,36 @@ class Box:
         return self.items.shape[0]
 
     def __bool__(self):
-        return bool(np.any(self.items > 0))
+        if self.sampleunit is None:
+            return bool(np.any(self.items > 0))
+        else:
+            return any(bool(su) for su in self.sampleunit)
+
+
+class SampleUnit:
+    """Sample unit
+
+    Evaluates to bool when it contains contaminant.
+
+    Item Container is a view into array of plants, i.e. a slice of that array. The
+    assumption is that the original, and possibly modifed, plants can not
+    only be accessed but also modifed through the box.
+    """
+
+    def __init__(self, plants):
+        """Store reference to associated plants
+
+        :param plants: Array-like object of plants
+        """
+        self.plants = plants
+
+    @property
+    def num_plants(self):
+        """Number of plants in the box"""
+        return self.plants.shape[0]
+
+    def __bool__(self):
+        return bool(np.any(self.plants > 0))
 
 
 class Consignment(collections.UserDict):
@@ -70,7 +100,6 @@ class Consignment(collections.UserDict):
 
     def __init__(
         self,
-        flower,
         num_items,
         items,
         items_per_box,
@@ -80,21 +109,29 @@ class Consignment(collections.UserDict):
         origin,
         port,
         pathway,
+        propagative_material=None,
+        flower=None,
+        num_plants=None,
+        plants=None,
+        plants_per_item=None,
     ):
         """Store reference to associated attributes
 
         :param flower: string
         :param num_items: integer
+        :param propagative_material: string
         :param items_per_box: integer
         :param num_boxes: integer
-        :param date: Array-like object of items
+        :param date: Array-like object of dates
         :param boxes: Array-like object of boxes
         :param origin: string
         :param port: string
         :param pathway: string
+        :param num_plants : string (optional)
+        :param plants : Array-like object of plants (optional)
+        :param plants_per_item : string (optional)
         """
         super().__init__(
-            flower=flower,
             num_items=num_items,
             items=items,
             items_per_box=items_per_box,
@@ -104,8 +141,12 @@ class Consignment(collections.UserDict):
             origin=origin,
             port=port,
             pathway=pathway,
+            propagative_material = propagative_material,
+            flower=flower,
+            num_plants=num_plants,
+            plants=plants,
+            plants_per_item=plants_per_item,
         )
-        self.flower = flower
         self.num_items = num_items
         self.items = items
         self.items_per_box = items_per_box
@@ -115,6 +156,11 @@ class Consignment(collections.UserDict):
         self.origin = origin
         self.port = port
         self.pathway = pathway
+        self.propagative_material = propagative_material
+        self.flower = flower
+        self.num_plants = num_plants
+        self.plants = plants
+        self.plants_per_item = plants_per_item
 
     def __hasattr__(self, name):
         return name in self
@@ -140,8 +186,12 @@ class Consignment(collections.UserDict):
         return self.flower
 
     def count_contaminated(self):
-        """Count contaminated items in box."""
-        return np.count_nonzero(self.items)
+        if self.plants is None:
+            """Count contaminated items in box."""
+            return np.count_nonzero(self.items)
+        else:
+            """Count contaminated plants in box."""
+            return np.count_nonzero(self.plants)
 
     def item_in_box_to_item_index(self, box_index, item_in_box_index):
         """Convert item index in a box to item index in the consignment"""
@@ -151,6 +201,11 @@ class Consignment(collections.UserDict):
         for box in self.boxes[:box_index]:
             items += box.num_items
         return items + item_in_box_index
+    
+    def get_box_and_sampleunit_index(self, item_index):
+        box_index = item_index // self.items_per_box
+        sampleunit_index = item_index % self.items_per_box
+        return box_index, sampleunit_index
 
 
 class ParameterConsignmentGenerator:
@@ -206,6 +261,78 @@ class ParameterConsignmentGenerator:
             origin=origin,
             port=port,
             pathway=pathway,
+        )
+
+
+class HierarchalConsignmentGenerator:
+    """Generate a consignments with hierarchal packaging"""
+
+    def __init__(self, parameters, items_per_box, plants_per_item, start_date):
+        """Set parameters for consignment generation
+
+        :param parameters: Consignment parameters
+        :param ports: List of ports to choose from
+        :param items_per_box: Configuration driving number of items per box
+        :param start_date: Date to start consignment dates from
+        """
+        self.params = parameters
+        self.items_per_box = items_per_box
+        self.plants_per_item = plants_per_item
+        self.num_generated = 0
+        if isinstance(start_date, str):
+            start_date = datetime.strptime(start_date, "%Y-%m-%d")
+        self.date = start_date
+
+    def generate_consignment(self):
+        """Generate a new consignment"""
+        port = random.choice(self.params["ports"])
+        # propagative materials or commodities
+        propagative_material = random.choice(self.params["propagative_materials"])
+        origin = random.choice(self.params["origins"])
+        num_boxes_min = self.params["boxes"].get("min", 0)
+        num_boxes_max = self.params["boxes"]["max"]
+        pathway = "None"
+        items_per_box = self.items_per_box
+        items_per_box = get_items_per_box(items_per_box, pathway)
+        plants_per_item = self.plants_per_item
+        plants_per_item = get_plants_per_item(plants_per_item, pathway)
+        num_boxes = random.randint(num_boxes_min, num_boxes_max)
+        num_items = items_per_box * num_boxes
+        items = np.zeros(num_items, dtype=np.int64)
+        num_plants = plants_per_item * num_items
+        plants = np.zeros(num_plants, dtype=np.int64)
+        boxes = []
+        for box_index in range(num_boxes):
+            sampleunits = []
+            item_start = box_index * items_per_box
+            item_end = item_start + items_per_box
+
+            for item_index in range(items_per_box):
+                plant_start = (item_start + item_index) * plants_per_item
+                plant_end = plant_start + plants_per_item
+
+                sampleunits.append(SampleUnit(plants[plant_start:plant_end]))
+
+            boxes.append(Box(items[item_start:item_end], sampleunits))
+        self.num_generated += 1
+        # two consignments every nth day
+        if self.num_generated % 3:
+            self.date += timedelta(days=1)
+
+        return Consignment(
+            num_items=num_items,
+            items=items,
+            items_per_box=items_per_box,
+            num_boxes=num_boxes,
+            date=self.date,
+            boxes=boxes,
+            origin=origin,
+            port=port,
+            pathway=pathway,
+            propagative_material=propagative_material,
+            num_plants=num_plants,
+            plants=plants,
+            plants_per_item=plants_per_item,
         )
 
 
@@ -328,6 +455,17 @@ def get_items_per_box(items_per_box, pathway):
     return items_per_box
 
 
+def get_plants_per_item(plants_per_item, pathway):
+    """Based on config and pathway, return number of items per box."""
+    if pathway.lower() == "airport" and "air" in plants_per_item:
+        plants_per_item = plants_per_item["air"]["default"]
+    elif pathway.lower() == "maritime" and "maritime" in plants_per_item:
+        plants_per_item = plants_per_item["maritime"]["default"]
+    else:
+        plants_per_item = plants_per_item["default"]
+    return plants_per_item
+
+
 def get_consignment_generator(config):
     """Based on config, return consignment generator object."""
     config = config["consignment"]
@@ -351,6 +489,14 @@ def get_consignment_generator(config):
         consignment_generator = ParameterConsignmentGenerator(
             parameters=config["parameter_based"],
             items_per_box=config["items_per_box"],
+            start_date=start_date,
+        )
+    elif generation_method == "hierarchal":
+        start_date = config.get("start_date", "2020-01-01")
+        consignment_generator = HierarchalConsignmentGenerator(
+            parameters=config["rbs_parameter_based"],
+            items_per_box=config["items_per_box"],
+            plants_per_item=config["plants_per_item"],
             start_date=start_date,
         )
     else:

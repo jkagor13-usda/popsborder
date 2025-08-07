@@ -1,0 +1,109 @@
+consignment:
+  generation_method: hierarchal
+  items_per_box:
+    default: 200
+    air:
+      default: 200
+    maritime:
+      default: 200
+  plants_per_item:
+    default: 5
+    air:
+      default: 5
+    maritime:
+      default: 5
+  rbs_parameter_based:
+    boxes:
+      min: 1
+      max: 100
+    origins:
+      - Netherlands
+      - Mexico
+      - Israel
+      - Japan
+      - New Zealand
+      - India
+      - Tanzania
+    propagative_materials:
+      - Budwood/Graftwood (scion)
+      - Bulb, Corm, Rhizome, Tuberous Stem
+      - Meristem or Callus Tissue Culture (micropropagated/in vitro culture)
+      - Root cutting, crown, or clump, Tuberous Root
+      - Rooted Cutting (including air layer)
+      - Rooted Plant (including grafted)
+      - Unrooted Cutting
+      - Unrooted Plant
+    ports:
+      - Atlanta PIS
+      - Beltsville PIS
+      - Carolina PIS
+      - Guam PIS
+      - Honolulu PIS
+      - Houston PIS
+      - JFK PIS
+      - Linden PIS
+      - Los Angeles PIS
+      - Los Indios PIS
+      - Miami PIS
+      - Nogales PIS
+      - Orlando PIS
+      - San Diego PIS
+      - San Francisco PIS
+      - Seattle PIS
+  input_file:
+    file_type: AQIM
+    file_name: blank_aqim_for_testing.csv
+contamination:
+  contamination_unit: box
+  contamination_rate:
+    distribution: beta
+    value: 0.0027
+    parameters:
+      # stems
+      #- 0.9998207923
+      #- 5578.1175514
+      # boxes
+      #- 0.942631386983
+      #- 273.264725126
+      # both
+      #- 0.243875716307
+      #- 223.427186223
+      # centered at 0.7%
+      - 0.0194628
+      - 2.7609372
+  arrangement: random_plants
+  clustered:
+    percentage_plants_contaminated: .9
+    contaminated_units_per_cluster: 200
+    distribution: random
+    random:
+      cluster_item_width: 200
+  random_box:
+    probability: 0.2
+    ratio: 0.5
+# release_programs:
+#   naive_cfrp:
+#     flowers:
+#       - Hyacinthus
+#       - Gerbera
+#       - Rosa
+#       - Actinidia
+#     max_boxes: 10 # do not apply to consignments larger than
+inspection:
+  unit: boxes
+  within_box_proportion: 1
+  tolerance_level: 0.005
+  sample_strategy: rbs
+  min_boxes: 0
+  proportion:
+    value: 0.02
+  hypergeometric:
+    detection_level: 0.1
+    confidence_level: 0.95
+  fixed_n: 10
+  selection_strategy: random
+  cluster:
+    cluster_selection: random
+    interval: 3
+  compliance_table:
+    file_name: data/compliance_table.csv
