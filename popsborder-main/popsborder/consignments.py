@@ -264,7 +264,7 @@ class ParameterConsignmentGenerator:
         )
 
 
-class HierarchalConsignmentGenerator:
+class RBSConsignmentGenerator:
     """Generate a consignments with hierarchal packaging"""
 
     def __init__(self, parameters, items_per_box, plants_per_item, start_date):
@@ -491,9 +491,9 @@ def get_consignment_generator(config):
             items_per_box=config["items_per_box"],
             start_date=start_date,
         )
-    elif generation_method == "hierarchal":
+    elif generation_method == "RBS":
         start_date = config.get("start_date", "2020-01-01")
-        consignment_generator = HierarchalConsignmentGenerator(
+        consignment_generator = RBSConsignmentGenerator(
             parameters=config["rbs_parameter_based"],
             items_per_box=config["items_per_box"],
             plants_per_item=config["plants_per_item"],
