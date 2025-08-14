@@ -81,7 +81,7 @@ contamination:
 #       - Actinidia
 #     max_boxes: 10 # do not apply to consignments larger than
 inspection:
-  unit: item
+  unit: box
   within_box_proportion: 1
   tolerance_level: 0.005
   sample_strategy: hypergeometric
