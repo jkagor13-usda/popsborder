@@ -32,6 +32,262 @@ from scipy import stats
 from .inputs import update_nested_dict_by_dict
 
 
+###################################################################
+## Updated New Functions for Fitting Distributions with RBS data ##
+###################################################################
+
+def rbs_data_fitter():
+    print('WORKS')
+
+## Translated R functionality from Clark et al. (2023) paper and their corresponding GitHub
+import numpy as np
+from scipy.optimize import minimize
+from scipy.special import betaln, log1p  # log1p(x)=log(1+x)
+
+# ------------------------------------------------------------------
+# 1.  Helpers -------------------------------------------------------
+# ------------------------------------------------------------------
+def beta_ratio(alpha, beta, bplus):
+    """beta(alpha, beta+bplus) / beta(alpha, beta)  (stable log–space)"""
+    return np.exp(betaln(alpha, beta + bplus) - betaln(alpha, beta))
+
+def log1mexp(logx):
+    """
+    Stable log(1-exp(logx)) for logx<=0   (R's Rmpfr::log1mexp)
+    """
+    # Two regions for stability
+    if logx > -0.6931471805599453:               # ln(0.5)
+        return np.log(-np.expm1(logx))           # log(1-exp) when exp(logx) close to 1
+    else:
+        return np.log1p(-np.exp(logx))           # generic case
+
+    import numpy as np
+    from math import comb, lgamma, exp, log
+
+
+
+
+
+
+# ------------------------------------------------------------------
+# 2.  Negative log-likelihood (CHATGPT conversion of CLARKE ET AL. (2023) WORK) --------------------------------------
+# ------------------------------------------------------------------
+
+## 2a) Define Utilities
+def _beta_ratio(alpha, beta, bplus):
+    """
+    beta(alpha, beta + bplus) / beta(alpha, beta)       (all in log-space)
+    """
+    return exp(lgamma(alpha) + lgamma(beta + bplus)
+               - lgamma(alpha + beta + bplus)
+               - (lgamma(alpha) + lgamma(beta) - lgamma(alpha + beta)))
+
+## 2b)  Closed-form predictive pmf  P(T_y = k)
+def _dty_scalar(k, b, Nbar, alpha, beta):
+    """
+    P(Ty = k), where                        ┌ p ~ Beta(α,β)
+      Ty | p  ~  Binom(b, 1 − (1−p)^Nbar)   └ Ty = # positive groups
+
+    Closed-form integral:
+        P =  C(b,k)  Σ_{j=0}^k (−1)^j C(k,j) · B(α, β + Nbar·(b−k+j)) / B(α,β)
+    See derivation in the comments.
+    """
+    if k < 0 or k > b:
+        return 0.0
+
+    term_sum = 0.0
+    for j in range(k + 1):
+        coeff = ((-1) ** j) * comb(k, j)
+        term_sum += coeff * _beta_ratio(alpha, beta, Nbar * (b - k + j))
+
+    return comb(b, k) * term_sum
+
+def dty(ty, b, Nbar, *, alpha, beta, theta=np.inf):
+    """
+    Vectorised wrapper.  Currently supports θ = ∞   (no extra intra-group
+    clustering, i.e. the model described in the paper).  If you need
+    θ < ∞ let me know and we can slot the alternative formula in here.
+    """
+    if theta != np.inf:
+        raise NotImplementedError("θ ≠ ∞ case not implemented yet.")
+
+    ty = np.asarray(ty, dtype=int)
+    b = np.asarray(b) if np.ndim(b) else np.full_like(ty, b)
+    Nbar = np.asarray(Nbar) if np.ndim(Nbar) else np.full_like(ty, Nbar)
+
+    return np.array([_dty_scalar(k, bi, Ni, alpha, beta)
+                     for k, bi, Ni in zip(ty, b, Nbar)])
+
+
+## 2c)  Paper’s negll() conversion
+def negll(par, ty, b, Nbar, *, freq=None,
+          theta=np.inf, R=1000,  # R carried through for API parity
+          fix_logitmu=None, fix_logshape=None, fix_alpha=None):
+    """
+    Negative log-likelihood ported from the R code.
+
+    Parameters
+    ----------
+    par : array-like
+        *Default*  (log α, log β)
+
+        If any of the `fix_*` options below are supplied, `par` switches role
+        exactly as in the R version (see comments in the original source).
+    ty, b, Nbar, freq : as in the paper/R code (vectors allowed).
+    theta :   clustering parameter (θ = ∞ ⇒ no clustering, θ = 0 ⇒ perfect).
+              Only θ = ∞ implemented here.
+    """
+    if freq is None:
+        freq = np.ones_like(ty, dtype=float)
+    freq = np.asarray(freq, dtype=float)
+
+    # 2c.1:  Decode α, β depending on which 'fix_*' knob (if any) is set
+    par = np.asarray(par, dtype=float)
+
+    if fix_logitmu is not None:  # μ fixed; par = log(α+β)
+        shape = np.exp(par)[0] if par.size > 1 else np.exp(par)
+        mu = 1.0 / (1.0 + np.exp(-fix_logitmu))  # logistic
+        alpha, beta = shape * mu, shape * (1.0 - mu)
+
+    elif fix_logshape is not None:  # α+β fixed; par = logit(μ)
+        shape = np.exp(fix_logshape)
+        mu = 1.0 / (1.0 + np.exp(-par))  # logistic
+        alpha, beta = shape * mu, shape * (1.0 - mu)
+
+    elif fix_alpha is not None:  # α fixed; par = log(β)
+        alpha = fix_alpha
+        beta = np.exp(par)[0] if par.size > 1 else np.exp(par)
+
+    else:  # default two-parameter case
+        alpha, beta = np.exp(par[0]), np.exp(par[1])
+
+    # 2c.2:  Calculate Log-likelihood
+    probs = dty(ty, b, Nbar, alpha=alpha, beta=beta, theta=theta)
+
+    # guard against numeric underflow or impossible parameter regions
+    if np.any(probs <= 0.0) or np.any(~np.isfinite(probs)):
+        return np.inf
+
+    return -np.sum(freq * np.log(probs))
+
+
+
+
+
+
+
+
+
+# ------------------------------------------------------------------
+# 2.  Negative log-likelihood (ANOTHER EXAMPLE - NOT CLARKE ET AL. (2023) WORK) --------------------------------------
+# ------------------------------------------------------------------
+'''
+def negll(par, ty, freq, b, Nbar, R, theta):     # <<<<<< DEFINE!
+    """
+    You know exactly what was in the R function; replicate it here.
+    par    : log(alpha), log(beta)
+    ty     : array of counts (length m)
+    freq   : frequencies for those counts
+    b      : number of *tested* units per group
+    Nbar   : mean group size
+    R,theta: whatever roles they play in your model
+    Return : *negative* log-likelihood (scalar)
+    """
+    # Example: vanilla Beta-Binomial component
+    # ---------------------------------------------------------------
+    alpha, beta = np.exp(par)        # positivity constraints
+    n = Nbar * b
+    ll = 0.0
+    for k, f in zip(ty, freq):
+        # Beta-Binomial pmf in log-space
+        comb = (np.math.lgamma(n + 1)
+                - np.math.lgamma(k + 1)
+                - np.math.lgamma(n - k + 1))
+        ll += f * (comb + betaln(k + alpha, n - k + beta) - betaln(alpha, beta))
+    # ---------------------------------------------------------------
+    # add any extra terms involving R, theta etc. here
+    # ---------------------------------------------------------------
+    return -ll                      # SciPy minimises
+    # ----------------------------------------------------------------
+'''
+
+
+
+
+
+
+# ------------------------------------------------------------------
+# 3.  Main wrapper --------------------------------------------------
+# ------------------------------------------------------------------
+def bb_group_model(ty, b, B, Nbar, freq, theta=np.inf, R=1000,
+                   startval=(0.0, 0.0), se=False):
+    ty = np.asarray(ty, dtype=int)
+    freq = np.asarray(freq, dtype=int)
+
+    # Corner case: all zero observations
+    if np.all(ty == 0):
+        out = dict(alpha=0, beta=0, mu=0, rho=0, D=1,
+                   E_leak=0, prob_leak=0, log_prob_leak=-np.inf,
+                   pty0=1, optim_results=None)
+        if se:
+            out.update(se_alpha=0, se_beta=0, se_mu=0,
+                       se_rho=0, se_D=0, se_par=np.zeros(2))
+        return out
+
+    opt = minimize(negll, x0=np.asarray(startval, float),
+                   args=(ty, freq, b, Nbar, R, theta),
+                   method="BFGS", options=dict(disp=False))
+
+    # ----------------------------------------------------------------
+    # 4.  Derived estimates ------------------------------------------
+    # ----------------------------------------------------------------
+    alpha, beta = np.exp(opt.x)
+    mu = alpha / (alpha + beta)
+    rho = 1.0 / (alpha + beta + 1.0)
+    D = 1.0 + (Nbar - 1.0) * rho
+
+    N = Nbar * B
+    n = Nbar * b
+
+    # p(T_y = 0)
+    pty0 = np.exp(betaln(alpha, beta + n) - betaln(alpha, beta))
+
+    # E[leak]  &  p(leak)   (ported exactly from your R)
+    E_leak = (N - n) * alpha / (alpha + beta + n) * beta_ratio(alpha, beta, n)
+
+    s1 = np.sum(np.log1p(-alpha / (alpha + beta + np.arange(0, n))))
+    s2 = np.sum(np.log1p(-alpha / (alpha + beta + np.arange(n, N))))
+    log_prob_leak = s1 + log1mexp(-s2)
+    prob_leak = np.exp(log_prob_leak)
+
+    # ----------------------------------------------------------------
+    # 5.  Standard errors via Hessian -------------------------------
+    # ----------------------------------------------------------------
+    out = dict(optim_results=opt, alpha=alpha, beta=beta, mu=mu, rho=rho,
+               D=D, E_leak=E_leak, prob_leak=prob_leak,
+               log_prob_leak=log_prob_leak, pty0=pty0)
+
+    if se:
+        # opt.hess_inv is an *inverse* Hessian approximation (BFGS)
+        par_vcov = opt.hess_inv
+        se_par = np.sqrt(np.diag(par_vcov))
+        se_alpha = alpha * se_par[0]
+        se_beta = beta * se_par[1]
+
+        dmu_dpar = np.array([1, -1]) * alpha * beta / (alpha + beta) ** 2
+        se_mu = np.sqrt(dmu_dpar @ par_vcov @ dmu_dpar)
+
+        drho_dpar = -np.array([alpha, beta]) / (alpha + beta + 1) ** 2
+        se_rho = np.sqrt(drho_dpar @ par_vcov @ drho_dpar)
+        se_D = (Nbar - 1) * se_rho
+
+        out.update(se_alpha=se_alpha, se_beta=se_beta, se_mu=se_mu,
+                   se_rho=se_rho, se_D=se_D, se_par=se_par)
+
+    return out
+
+
+
 # This function is not used or working, consider updating or removing.
 def add_contaminant_to_random_box(config, consignment, contamination_rate=None):
     """Add contaminant to consignment
