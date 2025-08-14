@@ -29,7 +29,7 @@ import weakref
 from collections.abc import MutableMapping
 from functools import reduce
 
-from .inspections import count_contaminated_boxes
+from inspections import count_contaminated_boxes
 
 
 def pretty_content(array, config=None):

@@ -23,7 +23,7 @@
 import functools
 import random
 
-from .inputs import load_cfrp_schedule, load_skip_lot_consignment_records
+from inputs import load_cfrp_schedule, load_skip_lot_consignment_records
 
 
 def get_inspection_needed_function(config):
