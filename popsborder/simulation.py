@@ -127,7 +127,10 @@ def simulation(
             num_inspections += 1
             total_num_boxes += consignment.num_boxes
             total_num_items += consignment.num_items
-            total_num_plants += consignment.num_plants
+            if consignment.num_plants is None:
+                total_num_plants += 0
+            else:
+                total_num_plants += consignment.num_plants
             total_boxes_opened_completion += ret.boxes_opened_completion
             total_boxes_opened_detection += ret.boxes_opened_detection
             total_items_inspected_completion += ret.items_inspected_completion
