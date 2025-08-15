@@ -28,6 +28,8 @@ import types
 import weakref
 from collections.abc import MutableMapping
 from functools import reduce
+import pandas as pd
+import os
 
 from inspections import count_contaminated_boxes
 
@@ -602,3 +604,143 @@ def save_scenario_result_to_pandas(results, config_columns=None, result_columns=
             row.update(vars(result))
         rows.append(row)
     return pd.DataFrame.from_records(rows)
+
+
+class SimData(object):
+
+    def __init__(self):
+        """Initialize output files"""
+        self.pis_synthetic_data = pd.DataFrame(
+            columns=[
+                "comm_ID",
+                "INSPECTION_ID",
+                "REF_COMMODITY_ID",
+                "CERTIFIED_FACILITY_NAME",
+                "CERTIFIED_FACILITY_NUMBER",
+                "COMMODITY_CLASSIFICATION",
+                "COMMODITY_COMMON_NAME",
+                "COMMODITY_DISPLAY_NAME",
+                "COMMODITY_TAXONOMIC_DISPLAY_NAME",
+                "COMMODITY_HOST_TYPE",
+                "COMMODITY_TYPE",
+                "COUNTRY_OF_ORIGIN_NAME",
+                "CONSIGNEE_NAME",
+                "DESTINATION_STATE_NAME",
+                "DISPOSITION_CODE",
+                "GENUS_NAME",
+                "ENTRY_NUMBER",
+                "ENTRY_LINE_NUMBER",
+                "PGA_LINE_NUMBER",
+                "PRODUCER_ID",
+                "PRODUCER_NAME",
+                "PROPAGATIVE_MATERIAL_TYPE",
+                "QUANTITY",
+                "QUANTITY_UNITS_NAME",
+                "WADS_CODE",
+                "SAMPLING_UNITS",
+                "IS_RBS",
+                "RBS_STATUS",
+                "GROWING_MEDIA_PRESENCE",
+                "CREATED_DATETIME",
+                "INSPECTION_DATETIME",
+                "BROKER_NAME",
+                "CATEGORY",
+                "SUBCATEGORY",
+                "IMPORTER_NAME",
+                "INSPECTION_LOCATION_NAME",
+                "INSPECTION_LOCATION_ID",
+                "INSPECTION_NUMBER",
+                "PATHWAY_ID",
+                "PATHWAY",
+                "SHIPPER_NAME",
+                "INSPECTION_LOCATION_STATE_CODE",
+                "DOCUMENT_REVIEW_OVERTIME_ID",
+                "DOCUMENT_REVIEW_OVERTIME_NAME",
+                "INSPECTION_RESULTS_OVERTIME_ID",
+                "INSPECTION_RESULTS_OVERTIME_NAME",
+                "TAXONOMY_ORDER",
+                "TAXONOMY_FAMILY",
+                "TAXONOMY_GENUS",
+                "TAXONOMY_SPECIES",
+                "TAXONOMY_SUBSPECIES",
+                "MODE_OF_TRANSPORT",
+                "inspection",
+                "shipment",
+                "action",
+                "HOST_PROXIMITY_ID",
+                "HOST_PROXIMITY",
+                "year",
+                "month",
+                'Inspected via RBS?',
+            ]
+        )
+
+        self.consignments = pd.DataFrame(
+            columns = [
+                'ID',
+                'Origin',
+                'Pathway',
+                'Port',
+                'Commodity',
+                'Number of Boxes',
+                'Items Per Box',
+                'Total Items',
+                'Total Items Contaminated',
+                'Total Number Contaminated in Each Box',
+            ]
+        )
+        self.current_id = 0
+
+
+    def write_synthetic_data_to_csv(self, dir):
+        filepath = os.path.join(dir, 'synthetic_consignment_data.csv')
+        self.consignments.to_csv(filepath, index = False)
+        filepath = os.path.join(dir, 'synthetic_pis_data.csv')
+        self.pis_synthetic_data.to_csv(filepath, index = False)
+
+    def gen_consignment_id(self):
+        self.current_id += 1
+        return str(self.current_id)
+
+    def add_consignment(self,consignment):
+
+        # If contaminated, determine which boxes are truly contaminated
+        num_contaminats_per_box = []
+        if sum(consignment.items)>0:
+            for box in consignment.boxes:
+                num_contaminats_per_box.append(sum(box.items))
+
+        self.consignments.loc[len(self.consignments)] = {
+            'ID': self.gen_consignment_id(),
+            'Origin': consignment.origin,
+            'Pathway': consignment.pathway,
+            'Port': consignment.port,
+            'Commodity': consignment.commodity,
+            'Number of Boxes': consignment.num_boxes,
+            'Items Per Box': consignment.items_per_box,
+            'Total Items': consignment.num_items,
+            'Total Items Contaminated': sum(consignment.items),
+            'Total Number Contaminated in Each Box': num_contaminats_per_box,
+        }
+
+    def add_to_pis_data(self,ret,consignment):
+        # Loop through each box that was inspected and add a row to PIS synthetic data the
+        for box in range(len(ret.inspected_box_indexes)):
+            # Fill with placeholder values based on column type/meaning
+            default_row = {col: pd.NA for col in self.pis_synthetic_data.columns}
+
+            # You can set a few to known defaults for testing
+            default_row.update({
+                'QUANTITY': consignment.num_items,
+                'COMMODITY_COMMON_NAME': consignment.commodity,
+                "INSPECTION_ID": self.current_id,
+                "COUNTRY_OF_ORIGIN_NAME": consignment.origin,
+                "year": consignment.date.year,
+                "month": consignment.date.month,
+                "PATHWAY": consignment.pathway,
+                "action": ret.inspected_box_result[box],
+                'Inspected via RBS?': 1,
+            })
+
+            # Add row
+            self.pis_synthetic_data.loc[len(self.pis_synthetic_data)] = default_row

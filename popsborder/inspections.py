@@ -455,6 +455,8 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     # items to detection and completion
     ret = types.SimpleNamespace(
         inspected_item_indexes=[],
+        insepcted_box_indexes=[],
+        inspected_box_result=[],
         boxes_opened_completion=0,
         boxes_opened_detection=0,
         items_inspected_completion=0,
@@ -543,6 +545,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
             ret.boxes_opened_completion = len(set(boxes_opened_completion))
             ret.boxes_opened_detection = len(set(boxes_opened_detection))
     elif unit in ["box", "boxes"]:
+        ret.inspected_box_indexes = indexes_to_inspect
         # Partial box inspections allowed to reduce number of items inspected if desired
         within_box_proportion = config["inspection"]["within_box_proportion"]
         inspect_per_box = int(math.ceil(within_box_proportion * items_per_box))
@@ -573,6 +576,9 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
             # If box contained contaminated items, changed detected variable
             if ret.contaminated_items_detection > 0:
                 detected = True
+                ret.inspected_box_result.append(1)
+            else:
+                ret.inspected_box_result.append(0)
 
     ret.consignment_checked_ok = ret.contaminated_items_completion == 0
     return ret

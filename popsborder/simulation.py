@@ -40,6 +40,7 @@ from outputs import (
     PrintReporter,
     SuccessRates,
     pretty_consignment,
+    SimData,
 )
 from skipping import get_inspection_needed_function
 
@@ -72,6 +73,8 @@ def simulation(
 
     if seed is not None:
         random_seed(seed)
+
+    simData = SimData()
 
     # allow for an empty disposition code specification
     disposition_codes = config.get("disposition_codes", {})
@@ -108,8 +111,10 @@ def simulation(
     tolerance_level = config["inspection"]["tolerance_level"]
 
     for unused_i in range(num_consignments):
+        print(f'Working on consignment {unused_i} out of {num_consignments}')
         consignment = consignment_generator.generate_consignment()
         add_contaminant(consignment)
+        simData.add_consignment(consignment)
         if detailed:
             for box in consignment.boxes:
                 item_details.append(box.items)
@@ -123,6 +128,7 @@ def simulation(
         if must_inspect:
             n_units_to_inspect = sample(consignment)
             ret = inspect(config, consignment, n_units_to_inspect, detailed)
+            simData.add_to_pis_data(ret,consignment)
             consignment_checked_ok = ret.consignment_checked_ok
             num_inspections += 1
             total_num_boxes += consignment.num_boxes
@@ -144,6 +150,7 @@ def simulation(
             total_num_boxes += consignment.num_boxes
             total_num_items += consignment.num_items
             total_num_plants += consignment.num_plants
+
 
         form280.fill(
             consignment.date,
@@ -171,6 +178,8 @@ def simulation(
                 )
                 total_intercepted_contaminants += consignment.count_contaminated()
 
+    filename = r'C:\Users\agorjk1\Box\NHH15 - USDA APHIS EDISON\05 PPQ Engagement\PPQ RBS Data (Folder shared with APHIS)\APL Created Data Related Items\Synthetic_Data'
+    simData.write_synthetic_data_to_csv(filename)
     num_contaminated = num_consignments - success_rates.ok
     if num_contaminated:
         # avoiding float division by zero
