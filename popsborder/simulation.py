@@ -128,7 +128,7 @@ def simulation(
         if must_inspect:
             n_units_to_inspect = sample(consignment)
             ret = inspect(config, consignment, n_units_to_inspect, detailed)
-            simData.add_to_pis_data(ret,consignment)
+            simData.add_to_synthetic_data(ret,consignment, n_units_to_inspect)
             consignment_checked_ok = ret.consignment_checked_ok
             num_inspections += 1
             total_num_boxes += consignment.num_boxes

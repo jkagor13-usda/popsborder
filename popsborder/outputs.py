@@ -671,7 +671,52 @@ class SimData(object):
                 "HOST_PROXIMITY",
                 "year",
                 "month",
-                'Inspected via RBS?',
+                "TOTAL_SAMPLING_UNITS (rbs calc data)",
+                "REQUIRED_NUMBER_OF_BOXES (rbs calc data)",
+            ]
+        )
+
+        self.rbs_calc_synthetic_data = pd.DataFrame(
+            columns=[
+                "INSPECTION_ID",
+                "INSPECTION_NUMBER",
+                "INSPECTION_LOCATION_ID",
+                "INSPECTION_LOCATION_NAME",
+                "INSPECTION_LOCATION_STATE_CODE",
+                "CATEGORY",
+                "SUBCATEGORY",
+                "PATHWAY_ID",
+                "PATHWAY",
+                "ID",
+                "COUNTRY_OF_ORIGIN_ID",
+                "COUNTRY_OF_ORIGIN_NAME",
+                "PROPAGATIVE_MATERIAL_TYPE_ID",
+                "PROPAGATIVE_MATERIAL_TYPE",
+                "PRODUCER_ID",
+                "PRODUCER_NAME",
+                "TOTAL_SAMPLING_UNITS",
+                "TOTAL_PLANT_QUANTITY",
+                "SUBMITTED_DATETIME",
+                "REMARKS",
+                "CONFIDENCE_LEVEL",
+                "RISK_RATING",
+                "DETECTION_LEVEL",
+                "REQUIRED_NUMBER_OF_BOXES",
+                "PULL_NUMBERS",
+                "IS_CERTIFIED_OFFSHORE_GREENHOUSE",
+                "IS_ACTIVE",
+                "CREATED_BY_USER_ID",
+                "CREATED_BY_USER_FIRST_NAME",
+                "CREATED_BY_USER_MIDDLE_NAME",
+                "CREATED_BY_USER_LAST_NAME",
+                "CREATED_DATETIME",
+                "MODIFIED_BY_USER_ID",
+                "MODIFIED_BY_USER_FIRST_NAME",
+                "MODIFIED_BY_USER_MIDDLE_NAME",
+                "MODIFIED_BY_USER_LAST_NAME",
+                "MODIFIED_DATETIME",
+                "remarks2",
+                "pack_plant"
             ]
         )
 
@@ -697,6 +742,8 @@ class SimData(object):
         self.consignments.to_csv(filepath, index = False)
         filepath = os.path.join(dir, 'synthetic_pis_data.csv')
         self.pis_synthetic_data.to_csv(filepath, index = False)
+        filepath = os.path.join(dir, 'synthetic_rbs_calc_data.csv')
+        self.rbs_calc_synthetic_data.to_csv(filepath, index = False)
 
     def gen_consignment_id(self):
         self.current_id += 1
@@ -723,14 +770,25 @@ class SimData(object):
             'Total Number Contaminated in Each Box': num_contaminats_per_box,
         }
 
-    def add_to_pis_data(self,ret,consignment):
+    def add_to_synthetic_data(self,ret,consignment, n_units_to_inspect):
         # Loop through each box that was inspected and add a row to PIS synthetic data the
         for box in range(len(ret.inspected_box_indexes)):
             # Fill with placeholder values based on column type/meaning
-            default_row = {col: pd.NA for col in self.pis_synthetic_data.columns}
+            default_row_pis = {col: pd.NA for col in self.pis_synthetic_data.columns}
+            default_row_rbs_calc = {col: pd.NA for col in self.rbs_calc_synthetic_data}
 
-            # You can set a few to known defaults for testing
-            default_row.update({
+            # Set column values for rbs_calc data
+            default_row_rbs_calc.update({
+                'TOTAL_PLANT_QUANTITY': consignment.num_items,
+                "TOTAL_SAMPLING_UNITS": consignment.num_boxes,
+                "REQUIRED_NUMBER_OF_BOXES": n_units_to_inspect,
+                "INSPECTION_ID": self.current_id,
+                "COUNTRY_OF_ORIGIN_NAME": consignment.origin,
+                "PATHWAY": consignment.pathway,
+            })
+
+            # Set column values for pis data
+            default_row_pis.update({
                 'QUANTITY': consignment.num_items,
                 'COMMODITY_COMMON_NAME': consignment.commodity,
                 "INSPECTION_ID": self.current_id,
@@ -739,8 +797,10 @@ class SimData(object):
                 "month": consignment.date.month,
                 "PATHWAY": consignment.pathway,
                 "action": ret.inspected_box_result[box],
-                'Inspected via RBS?': 1,
+                "TOTAL_SAMPLING_UNITS (rbs calc data)": consignment.num_boxes,
+                "REQUIRED_NUMBER_OF_BOXES (rbs calc data)": n_units_to_inspect,
             })
 
-            # Add row
-            self.pis_synthetic_data.loc[len(self.pis_synthetic_data)] = default_row
+            # Add rows to synthetic data sets
+            self.pis_synthetic_data.loc[len(self.pis_synthetic_data)] = default_row_pis
+            self.rbs_calc_synthetic_data.loc[len(self.rbs_calc_synthetic_data)] = default_row_rbs_calc
