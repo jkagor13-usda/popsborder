@@ -110,8 +110,16 @@ def simulation(
     sample = get_sample_function(config, compliance_table)
     tolerance_level = config["inspection"]["tolerance_level"]
 
+
+    count = 0
     for unused_i in range(num_consignments):
-        print(f'Working on consignment {unused_i} out of {num_consignments}')
+        if count==round(0.25*num_consignments,0):
+            print(f'   25% of consignments done ({unused_i} out of {num_consignments})')
+        elif count==round(0.5*num_consignments,0):
+            print(f'   50% of consignments done ({unused_i} out of {num_consignments})')
+        elif count==round(0.75*num_consignments,0):
+            print(f'   75% of consignments done ({unused_i} out of {num_consignments})')
+        count+=1
         consignment = consignment_generator.generate_consignment()
         add_contaminant(consignment)
         simData.add_consignment(consignment)
@@ -314,6 +322,7 @@ def run_simulation(
     )
 
     for i in range(num_simulations):
+        print(f'Replication {i+1} out of {num_simulations}')
         result = simulation(
             config=config,
             num_consignments=num_consignments,

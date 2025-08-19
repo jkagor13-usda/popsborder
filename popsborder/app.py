@@ -153,7 +153,7 @@ def main():
             pretty=args.pretty,
             detailed=args.detailed,
         )
-    print_totals_as_text(args.num_consignments, config, totals)
+    #print_totals_as_text(args.num_consignments, config, totals)
     if detailed:
         print(f"Items by box: {details[0]}")
         print(f"Indexes inspected: {details[1]}")
