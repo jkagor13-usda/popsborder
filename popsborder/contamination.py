@@ -29,7 +29,7 @@ from datetime import datetime
 import numpy as np
 from scipy import stats
 
-from inputs import update_nested_dict_by_dict
+from popsborder.inputs import update_nested_dict_by_dict
 
 
 ###################################################################
