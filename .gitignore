@@ -132,3 +132,4 @@ dmypy.json
 .~lock.*#
 
 .idea/
+.vscode/

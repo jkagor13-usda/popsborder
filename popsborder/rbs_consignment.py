@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import os
+import random
 
 
 def mask_categoricals(df, cat_cols):
@@ -41,7 +42,8 @@ def generate_synthetic_consignment_data(num_rows=None, output_file='synthetic_da
         'COUNTRY_OF_ORIGIN_NAME',
         'PROPAGATIVE_MATERIAL_TYPE',
         'TOTAL_SAMPLING_UNITS',
-        'TOTAL_PLANT_QUANTITY'
+        'TOTAL_PLANT_QUANTITY',
+        'PRODUCER',
     ]
 
     # Read CSV file
@@ -57,7 +59,8 @@ def generate_synthetic_consignment_data(num_rows=None, output_file='synthetic_da
         'INSPECTION_LOCATION_NAME',
         'PATHWAY',
         'COUNTRY_OF_ORIGIN_NAME',
-        'PROPAGATIVE_MATERIAL_TYPE'
+        'PROPAGATIVE_MATERIAL_TYPE',
+        'PRODUCER'
     ]
     encoders = {}
     df_encoded = df.copy()
