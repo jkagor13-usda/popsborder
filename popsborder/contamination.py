@@ -51,6 +51,20 @@ def beta_ratio(alpha, beta, bplus):
     """beta(alpha, beta+bplus) / beta(alpha, beta)  (stable log–space)"""
     return np.exp(betaln(alpha, beta + bplus) - betaln(alpha, beta))
 
+def beta_diff_ratio(alpha, beta, add1, add2):
+    """
+    [Beta(α, β+add1) - Beta(α, β+add2)] / Beta(α, β),  with 0 <= add1 < add2.
+    """
+    if add1 >= add2:
+        raise ValueError("add1 must be strictly less than add2")
+    # log-diff-exp: log(exp(x) - exp(y)) = x + log(1 - exp(y-x)), with x>y
+    x = betaln(alpha, beta + add1) - betaln(alpha, beta)
+    y = betaln(alpha, beta + add2) - betaln(alpha, beta)
+    # ensure x >= y; if not, swap
+    if y > x:
+        x, y = y, x
+    return np.exp(x + log1mexp(y - x))
+
 def log1mexp(logx):
     """
     Stable log(1-exp(logx)) for logx<=0   (R's Rmpfr::log1mexp)
@@ -61,9 +75,6 @@ def log1mexp(logx):
     else:
         return np.log1p(-np.exp(logx))           # generic case
 
-    import numpy as np
-    from math import comb, lgamma, exp, log
-
 
 
 
@@ -73,16 +84,7 @@ def log1mexp(logx):
 # 2.  Negative log-likelihood (CHATGPT conversion of CLARKE ET AL. (2023) WORK) --------------------------------------
 # ------------------------------------------------------------------
 
-## 2a) Define Utilities
-def _beta_ratio(alpha, beta, bplus):
-    """
-    beta(alpha, beta + bplus) / beta(alpha, beta)       (all in log-space)
-    """
-    return exp(lgamma(alpha) + lgamma(beta + bplus)
-               - lgamma(alpha + beta + bplus)
-               - (lgamma(alpha) + lgamma(beta) - lgamma(alpha + beta)))
-
-## 2b)  Closed-form predictive pmf  P(T_y = k)
+## 2a)  Closed-form predictive pmf  P(T_y = k)
 def _dty_scalar(k, b, Nbar, alpha, beta):
     """
     P(Ty = k), where                        ┌ p ~ Beta(α,β)
@@ -95,79 +97,50 @@ def _dty_scalar(k, b, Nbar, alpha, beta):
     if k < 0 or k > b:
         return 0.0
 
+    n = Nbar * b
+    if k == 0:
+        # Beta(α, β+n)/Beta(α,β)
+        return beta_ratio(alpha, beta, n)
+    if k == 1:
+        # b * [Beta(α, β+n-Nbar) - Beta(α, β+n)] / Beta(α,β)
+        return b * beta_diff_ratio(alpha, beta, n - Nbar, n)
+
+    """
     term_sum = 0.0
     for j in range(k + 1):
-        coeff = ((-1) ** j) * comb(k, j)
-        term_sum += coeff * _beta_ratio(alpha, beta, Nbar * (b - k + j))
+        coeff = ((-1) ** j) * math.comb(k, j)
+        term_sum += coeff * beta_ratio(alpha, beta, Nbar * (b - k + j))
 
-    return comb(b, k) * term_sum
+    return math.comb(b, k) * term_sum
+    """
 
 def dty(ty, b, Nbar, *, alpha, beta, theta=np.inf):
-    """
-    Vectorised wrapper.  Currently supports θ = ∞   (no extra intra-group
-    clustering, i.e. the model described in the paper).  If you need
-    θ < ∞ let me know and we can slot the alternative formula in here.
-    """
     if theta != np.inf:
-        raise NotImplementedError("θ ≠ ∞ case not implemented yet.")
+        raise NotImplementedError("θ ≠ ∞ not implemented yet.")
+    ty = np.atleast_1d(np.asarray(ty, dtype=int))
+    b = np.full(ty.shape, int(b)) if np.ndim(b) == 0 else np.asarray(b, dtype=int)
+    Nbar = np.full(ty.shape, int(Nbar)) if np.ndim(Nbar) == 0 else np.asarray(Nbar, dtype=int)
+    out = np.empty_like(ty, dtype=float)
+    for i, (k, bi, Ni) in enumerate(zip(ty, b, Nbar)):
+        out[i] = _dty_scalar(int(k), int(bi), int(Ni), float(alpha), float(beta))
+    return out
 
-    ty = np.asarray(ty, dtype=int)
-    b = np.asarray(b) if np.ndim(b) else np.full_like(ty, b)
-    Nbar = np.asarray(Nbar) if np.ndim(Nbar) else np.full_like(ty, Nbar)
 
-    return np.array([_dty_scalar(k, bi, Ni, alpha, beta)
-                     for k, bi, Ni in zip(ty, b, Nbar)])
+## 2b)  Paper’s negll() conversion
 
-
-## 2c)  Paper’s negll() conversion
-def negll(par, ty, b, Nbar, *, freq=None,
-          theta=np.inf, R=1000,  # R carried through for API parity
-          fix_logitmu=None, fix_logshape=None, fix_alpha=None):
-    """
-    Negative log-likelihood ported from the R code.
-
-    Parameters
-    ----------
-    par : array-like
-        *Default*  (log α, log β)
-
-        If any of the `fix_*` options below are supplied, `par` switches role
-        exactly as in the R version (see comments in the original source).
-    ty, b, Nbar, freq : as in the paper/R code (vectors allowed).
-    theta :   clustering parameter (θ = ∞ ⇒ no clustering, θ = 0 ⇒ perfect).
-              Only θ = ∞ implemented here.
-    """
-    if freq is None:
-        freq = np.ones_like(ty, dtype=float)
-    freq = np.asarray(freq, dtype=float)
-
-    # 2c.1:  Decode α, β depending on which 'fix_*' knob (if any) is set
+def negll(par, ty, freq, b, Nbar, R=1000, theta=np.inf):
     par = np.asarray(par, dtype=float)
-
-    if fix_logitmu is not None:  # μ fixed; par = log(α+β)
-        shape = np.exp(par)[0] if par.size > 1 else np.exp(par)
-        mu = 1.0 / (1.0 + np.exp(-fix_logitmu))  # logistic
-        alpha, beta = shape * mu, shape * (1.0 - mu)
-
-    elif fix_logshape is not None:  # α+β fixed; par = logit(μ)
-        shape = np.exp(fix_logshape)
-        mu = 1.0 / (1.0 + np.exp(-par))  # logistic
-        alpha, beta = shape * mu, shape * (1.0 - mu)
-
-    elif fix_alpha is not None:  # α fixed; par = log(β)
-        alpha = fix_alpha
-        beta = np.exp(par)[0] if par.size > 1 else np.exp(par)
-
-    else:  # default two-parameter case
-        alpha, beta = np.exp(par[0]), np.exp(par[1])
-
-    # 2c.2:  Calculate Log-likelihood
-    probs = dty(ty, b, Nbar, alpha=alpha, beta=beta, theta=theta)
-
-    # guard against numeric underflow or impossible parameter regions
-    if np.any(probs <= 0.0) or np.any(~np.isfinite(probs)):
+    if par.size < 2:
+        return np.inf
+    alpha, beta = np.exp(par[0]), np.exp(par[1])
+    if not np.isfinite(alpha) or not np.isfinite(beta) or alpha <= 0 or beta <= 0:
         return np.inf
 
+    probs = dty(ty, b, Nbar, alpha=alpha, beta=beta, theta=theta)
+    if np.any(~np.isfinite(probs)) or np.any(probs <= 0):
+        return np.inf
+
+    freq = np.ones_like(ty, dtype=float) if freq is None else np.asarray(freq, dtype=float)
     return -np.sum(freq * np.log(probs))
 
 
@@ -181,8 +154,8 @@ def negll(par, ty, b, Nbar, *, freq=None,
 # ------------------------------------------------------------------
 # 2.  Negative log-likelihood (ANOTHER EXAMPLE - NOT CLARKE ET AL. (2023) WORK) --------------------------------------
 # ------------------------------------------------------------------
-'''
-def negll(par, ty, freq, b, Nbar, R, theta):     # <<<<<< DEFINE!
+
+def negll2(par, ty, freq, b, Nbar, R, theta):     # <<<<<< DEFINE!
     """
     You know exactly what was in the R function; replicate it here.
     par    : log(alpha), log(beta)
@@ -209,7 +182,7 @@ def negll(par, ty, freq, b, Nbar, R, theta):     # <<<<<< DEFINE!
     # ---------------------------------------------------------------
     return -ll                      # SciPy minimises
     # ----------------------------------------------------------------
-'''
+
 
 
 
@@ -238,6 +211,12 @@ def bb_group_model(ty, b, B, Nbar, freq, theta=np.inf, R=1000,
                    args=(ty, freq, b, Nbar, R, theta),
                    method="BFGS", options=dict(disp=False))
 
+    if not opt.success:
+        print('Optimization failed.')
+        # You can choose to raise, or keep going with best-so-far params.
+        # Here we proceed but surface the message.
+        pass
+
     # ----------------------------------------------------------------
     # 4.  Derived estimates ------------------------------------------
     # ----------------------------------------------------------------
@@ -257,7 +236,7 @@ def bb_group_model(ty, b, B, Nbar, freq, theta=np.inf, R=1000,
 
     s1 = np.sum(np.log1p(-alpha / (alpha + beta + np.arange(0, n))))
     s2 = np.sum(np.log1p(-alpha / (alpha + beta + np.arange(n, N))))
-    log_prob_leak = s1 + log1mexp(-s2)
+    log_prob_leak = s1 + log1mexp(s2)
     prob_leak = np.exp(log_prob_leak)
 
     # ----------------------------------------------------------------

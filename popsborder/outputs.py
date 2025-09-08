@@ -730,6 +730,9 @@ class SimData(object):
                 'Number of Boxes',
                 'Items Per Box',
                 'Total Items',
+                'Plants Per Item',
+                'Total Plants',
+                'Total Number of Boxes Contaminated',
                 'Total Items Contaminated',
                 'Total Number Contaminated in Each Box',
             ]
@@ -753,11 +756,17 @@ class SimData(object):
 
         # If contaminated, determine which boxes are truly contaminated
         num_contaminats_per_box = []
+        num_contaminated_boxes = 0
         if sum(consignment.items)>0:
+            num_contaminated_boxes+=1
             for box in consignment.boxes:
                 num_contaminats_per_box.append(sum(box.items))
 
-        self.consignments.loc[len(self.consignments)] = {
+        # Fill with placeholder values based on column type/meaning
+        default_row_consignment = {col: pd.NA for col in self.consignments.columns}
+
+        # Set column values for consignment data
+        default_row_consignment.update({
             'ID': self.gen_consignment_id(),
             'Origin': consignment.origin,
             'Pathway': consignment.pathway,
@@ -767,8 +776,15 @@ class SimData(object):
             'Items Per Box': consignment.items_per_box,
             'Total Items': consignment.num_items,
             'Total Items Contaminated': sum(consignment.items),
+            'Total Number of Boxes Contaminated': num_contaminated_boxes,
             'Total Number Contaminated in Each Box': num_contaminats_per_box,
-        }
+        })
+
+        # Add rows to synthetic consignment data set
+        self.consignments.loc[len(self.consignments)] = default_row_consignment
+
+
+
 
     def add_to_synthetic_data(self,ret,consignment, n_units_to_inspect):
         # Loop through each box that was inspected and add a row to PIS synthetic data the

@@ -113,12 +113,24 @@ def simulation(
 
     count = 0
     for unused_i in range(num_consignments):
-        if count==round(0.25*num_consignments,0):
-            print(f'   25% of consignments done ({unused_i} out of {num_consignments})')
+        if count==round(0.1*num_consignments,0):
+            print(f'   10% of consignments done ({unused_i} out of {num_consignments})')
+        elif count==round(0.2*num_consignments,0):
+            print(f'   20% of consignments done ({unused_i} out of {num_consignments})')
+        elif count==round(0.3*num_consignments,0):
+            print(f'   30% of consignments done ({unused_i} out of {num_consignments})')
+        elif count==round(0.4*num_consignments,0):
+            print(f'   40% of consignments done ({unused_i} out of {num_consignments})')
         elif count==round(0.5*num_consignments,0):
             print(f'   50% of consignments done ({unused_i} out of {num_consignments})')
-        elif count==round(0.75*num_consignments,0):
-            print(f'   75% of consignments done ({unused_i} out of {num_consignments})')
+        elif count == round(0.6 * num_consignments, 0):
+            print(f'   60% of consignments done ({unused_i} out of {num_consignments})')
+        elif count == round(0.7 * num_consignments, 0):
+            print(f'   70% of consignments done ({unused_i} out of {num_consignments})')
+        elif count == round(0.8 * num_consignments, 0):
+            print(f'   80% of consignments done ({unused_i} out of {num_consignments})')
+        elif count == round(0.9 * num_consignments, 0):
+            print(f'   90% of consignments done ({unused_i} out of {num_consignments})')
         count+=1
         consignment = consignment_generator.generate_consignment()
         add_contaminant(consignment)

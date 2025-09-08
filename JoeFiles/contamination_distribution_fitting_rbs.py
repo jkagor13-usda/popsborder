@@ -12,3 +12,4 @@ pars  = bb_group_model(ty=ty, b=94, B=1000, Nbar=100,
 print(f"alpha={pars['alpha']:.4f}, beta={pars['beta']:.4f}, mu={pars['mu']:.4f}")
 print(f"rho={pars['rho']:.6f},  D={pars['D']:.3f}")
 print(f"prob(leak)={pars['prob_leak']:.6e}")
+print('')

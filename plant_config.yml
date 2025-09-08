@@ -71,7 +71,7 @@ contamination:
       # centered at 0.7%
       - 0.0194628
       - 2.7609372
-  arrangement: random_plants
+  arrangement: random
   clustered:
     percentage_plants_contaminated: .9
     contaminated_units_per_cluster: 200
