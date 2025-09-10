@@ -226,7 +226,7 @@ class ParameterConsignmentGenerator:
             start_date = datetime.strptime(start_date, "%Y-%m-%d")
         self.date = start_date
 
-    def generate_consignment(self):
+    def generate_consignment(self, consignment_data=None):
         """Generate a new consignment"""
         port = random.choice(self.params["ports"])
         # flowers or commodities
@@ -283,7 +283,7 @@ class RBSConsignmentGenerator:
             start_date = datetime.strptime(start_date, "%Y-%m-%d")
         self.date = start_date
 
-    def generate_consignment(self):
+    def generate_consignment(self, consignment_data=None):
         """Generate a new consignment"""
         port = random.choice(self.params["ports"])
         # propagative materials or commodities
@@ -344,7 +344,7 @@ class F280ConsignmentGenerator:
         self.reader = csv.DictReader(self.infile, delimiter=separator)
         self.items_per_box = items_per_box
 
-    def generate_consignment(self):
+    def generate_consignment(self, consignment_data=None):
         """Generate a new consignment"""
         try:
             record = next(self.reader)
@@ -394,7 +394,7 @@ class AQIMConsignmentGenerator:
         self.reader = csv.DictReader(self.infile, delimiter=separator)
         self.items_per_box = items_per_box
 
-    def generate_consignment(self):
+    def generate_consignment(self, consignment_data=None):
         """Generate a new consignment"""
         try:
             record = next(self.reader)

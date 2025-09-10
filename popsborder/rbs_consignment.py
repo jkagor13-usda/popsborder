@@ -3,6 +3,7 @@ import seaborn as sns
 import pandas as pd
 import os
 import random
+import numpy as np
 
 
 def mask_categoricals(df, cat_cols):

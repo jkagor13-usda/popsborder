@@ -87,3 +87,9 @@ else:
     wass2 = ot.emd2(a, b, M)
     wass = np.sqrt(wass2)
     print(f"Multivariate Wasserstein distance: {wass}")
+
+
+# Feed in synthetic data
+# try:
+
+# except:

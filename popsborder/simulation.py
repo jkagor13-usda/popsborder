@@ -42,7 +42,7 @@ from .outputs import (
     pretty_consignment,
 )
 from .skipping import get_inspection_needed_function
-
+from .inputs import load_input_consignment_data
 
 def random_seed(seed):
     """Set seed for all generators used"""
@@ -54,7 +54,7 @@ def simulation(
     config,
     num_consignments,
     seed,
-    input_consignment_data=None,
+    input_consignment_data=None, # consignment data 
     compliance_table=None,
     output_f280_file=None,
     verbose=False,
@@ -106,9 +106,14 @@ def simulation(
     is_inspection_needed = get_inspection_needed_function(config)
     sample = get_sample_function(config, compliance_table)
     tolerance_level = config["inspection"]["tolerance_level"]
+    if input_consignment_data is not None:
+        consignment_data = load_input_consignment_data(input_consignment_data)
 
     for unused_i in range(num_consignments):
-        consignment = consignment_generator.generate_consignment()
+        if input_consignment_data is None:
+            consignment = consignment_generator.generate_consignment()
+        else:
+            consignment = consignment_generator.generate_consignment(consignment_data=consignment_data[i])
         add_contaminant(consignment)
         if detailed:
             for box in consignment.boxes:

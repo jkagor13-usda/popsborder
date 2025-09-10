@@ -683,11 +683,13 @@ def load_input_consignment_data(file_path):
     Load custom csv data to generate consignment. 
     """
     import csv
-    consignments = []
+    from collections import defaultdict
 
-    with open(file_path, encoding="utf-8") as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            consignment = {k: text_to_value(v) for k, v in row.items()}
-            consignments.append(consignment)
-    return consignments
+    # Create dictionary where each inspection number maps to a list of rows
+    inspection_dict = defaultdict(list)
+
+    for _, row in inspection_dict.iterrows():
+        inspection_dict[row["INSPECTION_NUMBER"]].append(row.to_dict())
+
+    # Convert back to normal dict if needed
+    inspection_dict = dict(inspection_dict)
