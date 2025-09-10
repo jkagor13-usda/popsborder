@@ -758,9 +758,10 @@ class SimData(object):
         num_contaminats_per_box = []
         num_contaminated_boxes = 0
         if sum(consignment.items)>0:
-            num_contaminated_boxes+=1
             for box in consignment.boxes:
                 num_contaminats_per_box.append(sum(box.items))
+                if sum(box.items)>0:
+                    num_contaminated_boxes += 1
 
         # Fill with placeholder values based on column type/meaning
         default_row_consignment = {col: pd.NA for col in self.consignments.columns}
