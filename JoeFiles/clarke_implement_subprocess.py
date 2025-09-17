@@ -6,6 +6,9 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import numpy as np
+from scipy.optimize import minimize_scalar
+from scipy import stats
+import pandas as pd
 
 
 # === CONFIG ===
@@ -155,11 +158,6 @@ def run_clarke_bb_model(ty, b, B, Nbar, freq, theta, R, startval, se) -> float:
     return _parse_numeric_stdout(proc.stdout)
 
 
-
-
-
-
-
 def run_bb_group_model(
     ty: List[int],
     b: int,
@@ -212,47 +210,383 @@ def run_bb_group_model(
     except json.JSONDecodeError as e:
         raise ValueError("Expected JSON from R; got:\n" + proc.stdout) from e
 
-# (optional) keep your simple add_numbers test — but fix the R bug (a+b)
+
+
+def lambda_of_theta(theta, Nbar=100):
+    """
+    Compute lambda(theta) = Nbar / (1 + sum_{k=1}^{Nbar-1} theta/(theta+k)).
+    """
+    k = np.arange(1, Nbar)   # 1..Nbar-1
+    denom = 1.0 + np.sum(theta / (theta + k))
+    return Nbar / denom
+
+
+def theta_from_lambda(lambda_target, Nbar=100):
+    """
+    Solve for theta given target lambda in [1, Nbar].
+    Works with a single lambda (float) or an array-like of lambdas.
+    """
+    lambda_target = np.atleast_1d(lambda_target)  # handle scalars & arrays
+
+    def solve_single(lam_target):
+        def loss(logtheta):
+            theta = np.exp(logtheta)     # enforce positivity
+            lam = lambda_of_theta(theta, Nbar)
+            return (lam - lam_target)**2
+
+        result = minimize_scalar(loss, bounds=(-10, 10), method="bounded")
+        return np.exp(result.x)
+
+    thetas = np.array([solve_single(lam) for lam in lambda_target])
+
+    # Return scalar if input was scalar
+    return thetas if lambda_target.size > 1 else thetas.item()
+
+
+
+
+# Function to sample the distribution of X_ij given parameters alpha, beta, theta, and Nbar
+'''
+def sample_Xij_matrix(alpha, beta, theta, Nbar, I, J, rng=None):
+    """
+    Vectorized sampler for the hierarchy:
+        p_i ~ Beta(alpha, beta)                          (size I)
+        p_ij | p_i ~ Beta(theta * p_i, theta*(1-p_i))    (size I x J)
+        X_ij | p_ij ~ Binomial(Nbar, p_ij)               (size I x J)
+
+    Parameters
+    ----------
+    alpha, beta : float
+        Beta prior hyperparameters for p_i.
+    theta : float or array-like
+        Precision/concentration parameter for p_ij|p_i. Can be:
+          - scalar (shared)
+          - shape (I,) to vary by i
+          - shape (I,1) or (1,J) will broadcast as usual
+    Nbar : int or array-like
+        Binomial trials. Can be:
+          - scalar (shared)
+          - shape (I,J) to vary per (i,j)
+          - shape (I,1) or (1,J) will broadcast as usual
+    I, J : int
+        Number of consignments i and groups j.
+    rng : None or np.random.Generator
+        Random generator (pass a seeded Generator for reproducibility).
+
+    Returns
+    -------
+    X : ndarray, shape (I, J)
+        Samples of X_ij.
+    p_i : ndarray, shape (I,)
+        The sampled p_i (returned for convenience).
+    p_ij : ndarray, shape (I, J)
+        The sampled p_ij (returned for convenience).
+    """
+    rng = np.random.default_rng(rng)
+
+    # 1) p_i ~ Beta(alpha, beta), shape (I,)
+    p_i = rng.beta(alpha, beta, size=I)  # (I,)
+
+    # 2) p_ij | p_i ~ Beta(theta * p_i, theta*(1 - p_i)), shape (I, J)
+    if theta == np.Inf:
+
+    else:
+        theta = np.asarray(theta)
+        # Broadcast theta to (I, J) via (I,1) * (1,J)
+        theta_ij = np.broadcast_to(theta.reshape(-1, 1) if theta.ndim == 1 and theta.size == I
+                                   else np.array(theta), (I, J)) if theta.ndim != 0 else np.full((I, J), theta)
+
+        a_ij = theta_ij * p_i[:, None]  # (I, J)
+        b_ij = theta_ij * (1.0 - p_i[:, None])  # (I, J)
+        p_ij = rng.beta(a_ij, b_ij)  # (I, J)
+
+        # 3) X_ij | p_ij ~ Binomial(Nbar, p_ij), shape (I, J)
+        Nbar = np.asarray(Nbar)
+        if Nbar.ndim == 0:
+            N_ij = Nbar * np.ones((I, J), dtype=int)
+        else:
+            N_ij = np.broadcast_to(Nbar, (I, J)).astype(int)
+
+        X = rng.binomial(N_ij, p_ij)  # (I, J)
+        return X, p_i, p_ij
+
+'''
+
+def sample_Xij_matrix(alpha, beta, theta, Nbar, I, J, rng=None):
+    """
+    Vectorized sampler for:
+        p_i ~ Beta(alpha, beta)                          (size I)
+        p_ij | p_i ~ Beta(theta * p_i, theta*(1-p_i))    (size I x J)
+        X_ij | p_ij ~ Binomial(Nbar, p_ij)               (size I x J)
+
+    Special handling:
+        If theta == np.inf at any position, we set p_ij = p_i there.
+
+    Parameters
+    ----------
+    alpha, beta : float
+    theta : float or array-like
+        - scalar (shared for all i,j), may be np.inf
+        - shape (I,), (I,1), (1,J), or (I,J) (broadcastable). Entries may be np.inf.
+    Nbar : int or array-like
+        - scalar or broadcastable to (I,J)
+    I, J : int
+    rng : np.random.Generator or seed or None
+
+    Returns
+    -------
+    X : (I, J) int array
+    p_i : (I,) float array
+    p_ij : (I, J) float array
+    """
+    rng = np.random.default_rng(rng)
+
+    # 1) p_i ~ Beta(alpha, beta), shape (I,)
+    p_i = rng.beta(alpha, beta, size=I)
+
+    # --- Broadcast theta to (I, J)
+    theta = np.asarray(theta)
+    if theta.ndim == 0:
+        theta_ij = np.full((I, J), theta, dtype=float)
+    elif theta.shape == (I,):
+        theta_ij = np.repeat(theta[:, None], J, axis=1)
+    elif theta.shape == (I, 1) or theta.shape == (1, J) or theta.shape == (I, J):
+        theta_ij = np.broadcast_to(theta, (I, J)).astype(float)
+    else:
+        theta_ij = np.broadcast_to(theta, (I, J)).astype(float)
+
+    # 2) p_ij | p_i
+    # Start with the degenerate case p_ij = p_i for all cells,
+    # then overwrite where theta is finite.
+    p_ij = np.broadcast_to(p_i[:, None], (I, J)).copy()
+
+    finite_mask = np.isfinite(theta_ij)  # True where theta is finite
+    if np.any(finite_mask):
+        # Parameters only where theta is finite
+        a_ij = theta_ij * p_i[:, None]
+        b_ij = theta_ij * (1.0 - p_i[:, None])
+
+        # Draw only for finite cells (masked 1D arrays)
+        a = a_ij[finite_mask]
+        b = b_ij[finite_mask]
+
+        # NOTE: rng.beta accepts array-shaped a,b and returns matching shape
+        p_ij[finite_mask] = rng.beta(a, b)
+
+    # 3) X_ij | p_ij ~ Binomial(Nbar, p_ij)
+    Nbar = np.asarray(Nbar)
+    if Nbar.ndim == 0:
+        N_ij = np.full((I, J), int(Nbar))
+    else:
+        N_ij = np.broadcast_to(Nbar, (I, J)).astype(int)
+
+    X = rng.binomial(N_ij, p_ij)
+    return X, p_i, p_ij
 
 
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# === Example usage ===
 if __name__ == "__main__":
     # Testing from Clarke et al. (2023) paper
-    ty = [0, 4, 4, 7, 21]
-    freq = [68, 1, 1, 1, 1]
-    b = 94
-    B = 1000
-    Nbar = 100
+    # 72 consignments, 800 "groups" in each one, 94 "groups" sampled
+    # 68 had 0 groups with identified contamination
+    # Of the 4 consignments that had contamination, the number of groups out of the 94 sampled
+    # that were contaminated for each of those consignments were 4, 4, 7, 21
+    '''
+    ty = [0, 4, 7, 21] # Number of groups testing positive
+    freq = [68, 2, 1, 1] # Frequency of observations/consignments where that many groups tested positive
+    b = 94 # Total groups sampled
+    B = 800 # Total groups per consignment
+    Nbar = 100 #Group size
     theta = np.inf
     R = 1000
     startval = (0.0, 0.0)
     se = True
+    '''
 
-    #bb_output = run_bb_group_model(ty, b, B, Nbar, freq,theta, R, startval, se)
-    # BB.group.model <- function(ty,b,B,Nbar,freq,theta=Inf,R=1000,startval,SE=FALSE)
 
+    ### Our Synthetic Data Implementation
+
+    # Pull in the synthetic data
+    # Pull in synthetic information and compare
+    dir = r'C:\Users\agorjk1\Box\NHH15 - USDA APHIS EDISON\05 PPQ Engagement\PPQ RBS Data (Folder shared with APHIS)\APL Created Data Related Items\Synthetic_Data'
+    filename = os.path.join(dir, f'synthetic_pis_data.csv')
+    # Load in task log from a single replication of a run
+    df_pis_synthetic = pd.read_csv(filename)
+
+    # Create a dataframe to store results
+    columns = ['INSPECTION_ID',
+               'COUNTRY_OF_ORIGIN_NAME',
+               'Number of Boxes with Action']
+    action_summary = pd.DataFrame(columns=columns)
+
+    for inspection_id, group_df in df_pis_synthetic.groupby("INSPECTION_ID"):
+        group_df = group_df.reset_index(drop=True)
+
+        action_summary.loc[len(action_summary)] = {
+            'INSPECTION_ID': inspection_id,
+            'COUNTRY_OF_ORIGIN_NAME': group_df['COUNTRY_OF_ORIGIN_NAME'][0],
+            'Number of Boxes with Action': sum(group_df['action']),
+        }
+
+    value_counts = action_summary["Number of Boxes with Action"].value_counts().sort_index()
+    ty = value_counts.index.to_list()  # Number of boxes that have been identified actions
+    freq = value_counts.values.tolist()  # Frequency of observations/consignments where that many groups tested positive
+
+
+    #ty = [0, 1, 3, 13, 18, 23]  # Number of groups testing positive
+    #freq = [94, 1, 1, 1, 1, 2]  # Frequency of observations/consignments where that many groups tested positive
+    b = 25
+    B = 100
+    Nbar = 200
+    theta = np.inf
+    lambda_test = 1
+    R = 1000
+    startval = (0.0, 0.0)
+    se = True
+
+    #lambda_test = 5
+    #theta = theta_from_lambda(lambda_test, Nbar=Nbar)
+    # Calculate a theta from a fixed lambda
+    # Case 1: single lambda
+    #theta_single = theta_from_lambda(50, Nbar=100)
+    #print("Theta for lambda=50:", theta_single)
+
+    # Case 2: array of lambdas
+    lambdas = [10, 25, 50, 75, 90]
+    thetas = theta_from_lambda(lambdas, Nbar=Nbar)
+
+    print('')
+    print(f'FITTING WITH CLARKE 2023 METHOD (BETA-BINOMIAL APPROACH)')
+    print(f'   Parameters when NO CLUSTERING (theta = {theta}/lambda = {lambda_test})')
     res = run_bb_group_model(ty, b, B, Nbar, freq, theta, R, startval, se)
-    print(res)  # dict with fields: optim, alpha, beta, mu, rho, D, E_leak, prob_leak, log_prob_leak, pty0, and SE fields if requested
-    print(res["optim"]["par"])  # example: access MLEs (log-alpha, log-beta)
+    print(f'      Alpha = {res["alpha"]}')
+    print(f'      Beta = {res["beta"]}')
     print('')
 
+    '''
+    print(f'Parameters with CLUSTERING (0 < theta < Infinity)')
+    for i in range(len(thetas)):
+        theta = thetas[i]
+        res = run_bb_group_model(ty, b, B, Nbar, freq, theta, R, startval, se)
+        print(f'   lambda = {lambdas[i]}')
+        print(f'   theta = {thetas[i]}')
+        print(f'      Alpha = {res["alpha"]}')
+        print(f'      Beta = {res["beta"]}')
+        print('')
+    print('')
+    '''
 
-    #print(f'Output of R Run = : {run_r_add_numbers(5, 7)}')
+    # Example:  I number of consignments, J number of groups in each consignment
+    I, J = 100, 100
+    alpha, beta = res["alpha"], res["beta"]
+    theta = np.Inf  # scalar; you can also pass an array of shape (I,) to vary by group
+    Nbar = 200  # scalar; or pass an (I,J) array if trials vary
+
+    X, p_i, p_ij = sample_Xij_matrix(alpha, beta, theta, Nbar, I, J, rng=1)
+
+
+
+
+    # Calculate the summary stats across the 100 groups of the 100 consignments
+    row_sums = np.sum(X, axis=1)
+
+    # Step 1: mask rows with at least one value > 0
+    mask = (X > 0).any(axis=1)
+    X_filtered = X[mask]
+
+    # Step 2: row sums
+    row_sums = np.sum(X_filtered, axis=1)
+
+    # Step 3a: total number of qualifying rows
+    n_rows = len(row_sums)
+
+
+    # Contamination rate summary
+    contamination_rate = row_sums / (J*Nbar)
+    five_num_summary_rate = {
+        "min": np.min(contamination_rate),
+        "Q1": np.percentile(contamination_rate, 25),
+        "median": np.median(contamination_rate),
+        "Q3": np.percentile(contamination_rate, 75),
+        "max": np.max(contamination_rate),
+    }
+
+    n = len(contamination_rate)
+    mean_rate = np.mean(contamination_rate)
+    sem_rate = stats.sem(contamination_rate)  # standard error of the mean
+    ci_low_rate, ci_high_rate = stats.t.interval(0.95, df=n - 1, loc=mean_rate, scale=sem_rate)
+
+    print('')
+    print(f'FITTED:  CONTAMINATION RATE')
+    print("Number of contaminated consignments:", n_rows)
+    print("Five number summary:", five_num_summary_rate)
+    print("Mean contamination rate:", mean_rate)
+    print("95% CI for mean contamination rate:", (ci_low_rate, ci_high_rate))
+
+    from scipy.stats import beta
+
+    alpha, beta_param = 0.0102, 5.3839
+    beta_mean = alpha / (alpha + beta_param)
+
+
+    print('')
+    print(f'GROUND TRUTH:  CONTAMINATION RATE')
+    print(f'Theoretical mean contamination rate: {beta_mean}')
+    print(f'   Alpha parameter = {alpha}, beta parameter = {beta_param}')
+    if ci_low_rate <= beta_mean <= ci_high_rate:
+        print("   The mean contamination rate is consistent with the observed mean (within 95% CI).")
+    else:
+        print("   The mean contamination rate is outside the observed 95% CI.")
+
+    # Step 3b: five number summary
+    five_num_summary = {
+        "min": np.min(row_sums),
+        "Q1": np.percentile(row_sums, 25),
+        "median": np.median(row_sums),
+        "Q3": np.percentile(row_sums, 75),
+        "max": np.max(row_sums),
+    }
+
+    # Step 3c: mean and 95% CI
+    mean = np.mean(row_sums)
+    sem = stats.sem(row_sums)
+    ci_low, ci_high = stats.t.interval(0.95, df=n_rows - 1, loc=mean, scale=sem)
+
+    print('')
+    print(f'FITTED:  TOTAL PLANTS CONTAMINATED')
+    print("Number of contaminated consignments:", n_rows)
+    print("Five number summary:", five_num_summary)
+    print("Average number (across 100 consignments) plants infected (out of those that are infected):", mean)
+    print(f'Total number of plants contaminated (across 100 consignments): {sum(row_sums)}')
+    print("95% CI for mean infected:", (ci_low, ci_high))
+    print('')
+
+    # Pull in synthetic information and compare
+    dir = r'C:\Users\agorjk1\Box\NHH15 - USDA APHIS EDISON\05 PPQ Engagement\PPQ RBS Data (Folder shared with APHIS)\APL Created Data Related Items\Synthetic_Data'
+    filename = os.path.join(dir, f'synthetic_consignment_data.csv')
+    # Load in task log from a single replication of a run
+    df_consignment_synthetic = pd.read_csv(filename)
+
+    # Mask rows with at least one value > 0
+    df_temp = df_consignment_synthetic[df_consignment_synthetic['Total Items Contaminated'] > 0]
+
+    average_synthetic_data_plants_contaminated = df_temp['Total Items Contaminated'].mean()
+    total_number_contaminated = sum(df_temp['Total Items Contaminated'])
+
+    print('')
+    print(f'GROUND TRUTH:  TOTAL PLANTS CONTAMINATED')
+    print(f'Total number of consignments contaminated in synthetic data: {df_temp.shape[0]}')
+    print(
+        f'Average number plants infected (out of those that are infected) in synthetic data (across infected consignments): {average_synthetic_data_plants_contaminated}')
+    print(
+        f'Total number (across infected consignments) plants infected (out of those that are infected) in synthetic data: {total_number_contaminated}')
+    if ci_low <= average_synthetic_data_plants_contaminated <= ci_high:
+        print("The average contaminated items (plants) mean is consistent with the observed mean (within 95% CI).")
+    else:
+        print("The average contaminated items (plants) is outside the observed 95% CI.")
+
+
+    print('')
