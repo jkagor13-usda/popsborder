@@ -15,11 +15,64 @@
 # this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
 
 
-"""Consignment generation
+"""Consignment generation for USDA APHIS Plant Inspection Station simulation
 
-.. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
-.. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
+This module provides classes and functions for generating and managing consignments
+of plant materials for inspection simulation purposes.
+
+Original Authors:
+    Vaclav Petras <wenzeslaus gmail com>
+    Kellyn P. Montgomery <kellynmontgomery gmail com>
+
+JHU/APL Extensions and Modifications:
+=====================================
+
+New Classes Added:
+------------------
+- RBSConsignmentGenerator: 
+    * Generates consignments using risk-based sampling methodology
+    * Supports hierarchical packaging structure (boxes -> items -> plants)
+    * Designed for propagative material inspection workflows
+
+- SampleUnit: 
+    * Manages plant-level sampling units within individual items
+    * Provides contamination detection at the plant level
+    * Integrates with hierarchical inspection structure
+
+New Functions Added:
+-------------------  
+- get_plants_per_item(): 
+    * Determines number of plants per item based on pathway type
+    * Supports pathway-specific plant quantity configurations
+
+Modified Classes:
+----------------
+- Box: 
+    * Extended with sampleunit parameter for hierarchical structure
+    * Supports multi-level contamination detection (item + plant levels)
+    * Maintains backward compatibility with original functionality
+
+- Consignment: 
+    * Added plant-level attributes (num_plants, plants, plants_per_item)
+    * Enhanced with propagative_material classification
+    * Supports both traditional item-based and hierarchical plant-based inspection
+
+Modified Functions:
+----------------
+- get_consignment_generator():
+    * Supports RBS generation methods
+
+Contributors:
+    Gary Lin <gary.lin  at jhuapl edu> - JHU/APL
+    Joseph Agor <joseph.agor at jhuapl edu> - JHU/APL
+
+Version: 2.1.0
+Last Modified: September 2025
+Institutions: 
+    - Johns Hopkins University Applied Physics Laboratory (JHU/APL)
+    - United States Department of Agriculture Animal and Plant Health Inspection Service (USDA APHIS)
 """
+
 
 import collections
 import csv
@@ -262,7 +315,6 @@ class ParameterConsignmentGenerator:
             port=port,
             pathway=pathway,
         )
-
 
 class RBSConsignmentGenerator:
     """Generate a consignments with hierarchal packaging"""
