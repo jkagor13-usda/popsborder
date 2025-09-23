@@ -19,6 +19,33 @@
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
 .. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
+
+=====================================
+JHU/APL Extensions and Modifications:
+=====================================
+
+New Functions Added:
+-------------------  
+- sample_rbs():
+    * Implements risk-based sampling methodology using compliance-based detection levels
+    * Retrieves country/propagative material specific compliance parameters from lookup table
+    * Calculates sample size using hypergeometric distribution based on risk assessment
+
+Modified Functions:
+----------------
+- get_sample_function(): 
+    * Added RBS structured consignment inpsection
+    
+
+Contributors:
+    Gary Lin <gary.lin  at jhuapl edu> - JHU/APL
+    Joseph Agor <joseph.agor at jhuapl edu> - JHU/APL
+
+Version: 2.1.0
+Last Modified: September 2025
+Institutions: 
+    - Johns Hopkins University Applied Physics Laboratory (JHU/APL)
+    - United States Department of Agriculture Animal and Plant Health Inspection Service (USDA APHIS)
 """
 
 import math

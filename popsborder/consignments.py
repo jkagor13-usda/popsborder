@@ -15,15 +15,12 @@
 # this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
 
 
-"""Consignment generation for USDA APHIS Plant Inspection Station simulation
+"""Consignment generation
 
-This module provides classes and functions for generating and managing consignments
-of plant materials for inspection simulation purposes.
+.. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
+.. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
 
-Original Authors:
-    Vaclav Petras <wenzeslaus gmail com>
-    Kellyn P. Montgomery <kellynmontgomery gmail com>
-
+=====================================
 JHU/APL Extensions and Modifications:
 =====================================
 
