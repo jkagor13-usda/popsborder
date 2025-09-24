@@ -1,6 +1,7 @@
 from popsborder.scenarios import run_scenarios
 from popsborder.inputs import load_configuration, load_scenario_table, load_compliance_lookup_csv
 from popsborder.outputs import save_scenario_result_to_pandas
+from popsborder.generator import SyntheticConsignmentDataGenerator
 import old.rbs_consignment as rcon
 
 import numpy as np
@@ -57,39 +58,50 @@ except:
 
 # Create synthetic data
 try:
-    raw_df, synth_data = rcon.generate_synthetic_consignment_data(num_rows=500, 
-                                             output_file=f'{datadir}/synthetic_data.csv', 
-                                             input_file=f'{datadir}/fake_pis_data.csv', 
-                                             mask_cats=False)
+    # Example usage with input data file
+    input_file = "fake_pis_data.csv"  # Update path as needed
+    
+    generator = SyntheticConsignmentDataGenerator(input_data_file=input_file)
+    
+    # Generate synthetic dataset using advanced sampling
+    num_records = 5000
+    print(f"Generating {num_records} synthetic records using Gaussian Copula sampling...")
+    
+    try:
+        synthetic_dataset = generator.generate_dataset(num_records, use_input_data=True)
+        
+        # Save to files
+        generator.save_to_csv(synthetic_dataset, f"{datadir}/synthetic_consignments_advanced.csv")
+        generator.save_to_json(synthetic_dataset, f"{datadir}/synthetic_consignments_advanced.json")
+        
+        # Generate and display statistics
+        stats = generator.generate_statistics(synthetic_dataset)
+        print("\nSynthetic Dataset Statistics:")
+        print(f"Total records: {stats['total_records']}")
+        print(f"Columns: {len(stats['columns'])}")
+        print(f"Numeric columns: {stats['numeric_columns']}")
+        print(f"Categorical columns: {stats['categorical_columns']}")
+        
+        # Calculate quality metrics if original data is available
+        if generator.input_data is not None:
+            quality_metrics = generator.calculate_quality_metrics(
+                generator.input_data, synthetic_dataset
+            )
+            print("\nQuality Metrics (Wasserstein Distance):")
+            for metric, value in quality_metrics.items():
+                print(f"{metric}: {value:.4f}")
+        
+    except Exception as e:
+        print(f"Error generating synthetic data: {e}")
+        print("Falling back to config-based generation...")
+        
+        # Fallback to config-based generation
+        synthetic_dataset = generator.generate_dataset(1000, use_input_data=False)
+        generator.save_to_csv(synthetic_dataset, f"{datadir}/synthetic_consignments_fallback.csv")
+        print("Generated fallback dataset using config parameters.")
     
 except Exception as e:
     print(f"An error occurred: {e}")
-else:
-    cat_cols =['INSPECTION_LOCATION_NAME','PATHWAY','COUNTRY_OF_ORIGIN_NAME','PROPAGATIVE_MATERIAL_TYPE','TOTAL_SAMPLING_UNITS','TOTAL_PLANT_QUANTITY','PRODUCER']
-    rcon.plot_pairplots(raw_df, synth_data, cat_cols, output_dir="plots")
 
+# Ingest synthetic data
 
-    # Select only numeric columns
-    numeric_cols = raw_df.select_dtypes(include=[np.number]).columns
-    X = raw_df[numeric_cols].to_numpy()
-    Y = synth_data[numeric_cols].to_numpy()
-
-    import ot  # POT: Python Optimal Transport
-
-    # Uniform weights for empirical distributions
-    a = np.ones((X.shape[0],)) / X.shape[0]
-    b = np.ones((Y.shape[0],)) / Y.shape[0]
-
-    # Compute cost matrix (Euclidean distances)
-    M = ot.dist(X, Y, metric='euclidean')
-
-    # Compute the 2-Wasserstein distance (squared)
-    wass2 = ot.emd2(a, b, M)
-    wass = np.sqrt(wass2)
-    print(f"Multivariate Wasserstein distance: {wass}")
-
-
-# Feed in synthetic data
-# try:
-
-# except:
