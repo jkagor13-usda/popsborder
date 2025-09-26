@@ -26,9 +26,20 @@ JHU/APL Extensions and Modifications:
 New Functions Added:
 -------------------  
 - load_compliance_lookup_csv(): 
-    * Load compliance level csv for RBS inspection 
+    * Loads compliance level CSV files for RBS inspection workflows
+    * Parses country/material type combinations with associated detection and confidence levels
+    * Returns dictionary structure for efficient compliance level lookup during simulation
+
 - load_input_consignment_data():
-    * Load RBS calculator data 
+    * Loads RBS calculator data for realistic consignment generation
+    * Supports various input formats (CSV, Excel) for consignment parameter specifications
+    * Integrates with synthetic data generation workflows for enhanced simulation realism
+
+Configuration Enhancements:
+--------------------------
+- Enhanced configuration validation for new terminology (inspection_units vs boxes, sample_units vs items)
+- Added backward compatibility parameter mapping throughout configuration loading
+- Improved error handling and validation for RBS-specific configuration parameters 
 
 Contributors:
     Gary Lin <gary.lin  at jhuapl edu> - JHU/APL

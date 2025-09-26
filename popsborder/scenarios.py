@@ -26,7 +26,11 @@ JHU/APL Extensions and Modifications:
 Modified Functions:
 ------------------- 
 - run_scenarios():
-    * Inputs for plant-level parameters, compliance table file, and consignment data supported
+    * Enhanced to support plant-level parameters for hierarchical consignment structure
+    * Added compliance table file integration for RBS scenario execution
+    * Enhanced to support input consignment data for realistic scenario modeling
+    * Updated parameter handling for refactored terminology (boxes -> inspection_units, items -> sample_units)
+    * Maintains backward compatibility with existing scenario definition files
 
 Contributors:
     Gary Lin <gary.lin  at jhuapl edu> - JHU/APL

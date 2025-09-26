@@ -30,34 +30,79 @@ New Classes Added:
     * Generates consignments using risk-based sampling methodology
     * Supports hierarchical packaging structure (inspection_units -> sample_units -> plants)
     * Designed for propagative material inspection workflows
+    * Integrates with compliance-based detection level lookup
 
 - SampleUnit: 
     * Manages plant-level sampling units within individual sample_units
     * Provides contamination detection at the plant level
     * Integrates with hierarchical inspection structure
+    * Supports numpy array-based plant contamination tracking
 
 New Functions Added:
 -------------------  
 - get_plants_per_sample_unit(): 
-    * Determines number of plants per item based on pathway type
+    * Determines number of plants per sample_unit based on pathway type
     * Supports pathway-specific plant quantity configurations
+    * Handles backward compatibility for plants_per_item
+
+- get_sample_units_per_inspection_unit():
+    * Determines sample_units per inspection_unit based on pathway type
+    * Supports pathway-specific packaging configurations
+    * Handles backward compatibility for items_per_box
+
+- sample_unit_in_inspection_unit_to_sample_unit_index():
+    * Converts local sample_unit index within inspection_unit to global sample_unit index
+    * Essential for hierarchical structure navigation and detailed tracking
+
+- get_inspection_unit_and_sampleunit_index():
+    * Converts global sample_unit index to inspection_unit and local sample_unit indices
+    * Supports bidirectional navigation in hierarchical structure
 
 Modified Classes:
 ----------------
-- inspection_unit: 
+- InspectionUnit (formerly inspection_unit): 
     * Extended with sampleunit parameter for hierarchical structure
-    * Supports multi-level contamination detection (item + plant levels)
-    * Maintains backward compatibility with original functionality
+    * Supports multi-level contamination detection (sample_unit + plant levels)
+    * Enhanced with SampleUnit object array for hierarchical access
+    * Maintains backward compatibility with original array-based functionality
 
 - Consignment: 
     * Added plant-level attributes (num_plants, plants, plants_per_sample_unit)
-    * Enhanced with material_type classification
-    * Supports both traditional item-based and hierarchical plant-based inspection
+    * Enhanced with material_type classification for RBS workflows
+    * Supports both traditional sample_unit-based and hierarchical plant-based inspection
+    * Added backward compatibility attribute mapping (boxes -> inspection_units, items -> sample_units)
+    * Enhanced count_contaminated() method for flexible contamination counting
 
 Modified Functions:
 ----------------
 - get_consignment_generator():
-    * Supports RBS generation methods
+    * Supports RBS generation method selection
+    * Enhanced backward compatibility for configuration parameter mapping
+    * Handles both old terminology (items_per_box) and new terminology (sample_units_per_inspection_unit)
+
+Terminology Refactoring:
+-----------------------
+- Systematically refactored: boxes -> inspection_units, items -> sample_units
+- Updated all class names, method names, and variable names for consistency
+- Added comprehensive backward compatibility for existing configurations
+- Maintained dual access patterns for smooth migration from legacy terminology
+
+Backward Compatibility:
+----------------------
+- Configuration parameter mapping: boxes -> inspection_units, items -> sample_units
+- Legacy attribute access in Consignment class via __getattr__ and __hasattr__
+- Support for both items_per_box and sample_units_per_inspection_unit configuration keys
+- Maintained existing F280 and AQIM consignment generator functionality
+
+Contributors:
+    Gary Lin <gary.lin at jhuapl edu> - JHU/APL
+    Joseph Agor <joseph.agor at jhuapl edu> - JHU/APL
+
+Version: 2.1.0
+Last Modified: September 2025
+Institutions: 
+    - Johns Hopkins University Applied Physics Laboratory (JHU/APL)
+    - United States Department of Agriculture Animal and Plant Health Inspection Service (USDA APHIS)
 
 Contributors:
     Gary Lin <gary.lin  at jhuapl edu> - JHU/APL
