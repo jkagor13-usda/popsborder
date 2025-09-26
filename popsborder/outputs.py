@@ -29,7 +29,7 @@ import weakref
 from collections.abc import MutableMapping
 from functools import reduce
 
-from .inspections import count_contaminated_boxes
+from .inspections import count_contaminated_inspection_units
 
 
 def pretty_content(array, config=None):
@@ -81,8 +81,8 @@ def pretty_header(consignment, line=None, config=None):
     header = (
         f"{horizontal}{horizontal} Consignment"
         f" {horizontal}{horizontal}"
-        f" Boxes: {consignment.num_boxes} {horizontal}{horizontal}"
-        f" Items: {consignment.num_items} "
+        f" Inspection Units: {consignment.num_inspection_units} {horizontal}{horizontal}"
+        f" Sample Units: {consignment.num_sample_units} "
     )
     if size > len(header):
         size = size - len(header)
@@ -92,18 +92,18 @@ def pretty_header(consignment, line=None, config=None):
     return f"{header}{rule}"
 
 
-def pretty_consignment_items(consignment, config=None):
-    """Pretty-print consignment focusing on individual items"""
+def pretty_consignment_sample_units(consignment, config=None):
+    """Pretty-print consignment focusing on individual sample_units"""
     config = config if config else {}
     header = pretty_header(consignment, config=config)
-    body = pretty_content(consignment["items"], config=config)
+    body = pretty_content(consignment["sample_units"], config=config)
     return f"{header}\n{body}"
 
 
-def pretty_consignment_boxes(consignment, config=None):
-    """Pretty-print consignment showing individual items in boxes"""
+def pretty_consignment_inspection_units(consignment, config=None):
+    """Pretty-print consignment showing individual sample_units in inspection_units"""
     config = config if config else {}
-    line = config.get("box_line", "|")
+    line = config.get("inspection_unit_line", "|")
     spaces = config.get("spaces", True)
     if line == "pipe":
         line = "|"
@@ -113,32 +113,32 @@ def pretty_consignment_boxes(consignment, config=None):
         separator = line
     header = pretty_header(consignment, config=config)
     body = separator.join(
-        [pretty_content(box.items, config=config) for box in consignment["boxes"]]
+        [pretty_content(inspection_unit.sample_units, config=config) for inspection_unit in consignment["inspection_units"]]
     )
     return f"{header}\n{body}"
 
 
-def pretty_consignment_boxes_only(consignment, config=None):
-    """Pretty-print consignment showing individual boxes"""
+def pretty_consignment_inspection_units_only(consignment, config=None):
+    """Pretty-print consignment showing individual inspection_units"""
     config = config if config else {}
     line = config.get("horizontal_line", "light")
     header = pretty_header(consignment, line=line, config=config)
-    body = pretty_content(consignment["boxes"], config=config)
+    body = pretty_content(consignment["inspection_units"], config=config)
     return f"{header}\n{body}"
 
 
 def pretty_consignment(consignment, style, config=None):
     """Pretty-print consignment in a given style
 
-    :param style: Style of pretty-printing (boxes, boxes_only, items)
+    :param style: Style of pretty-printing (inspection_units, inspection_units_only, sample_units)
     """
     config = config if config else {}
-    if style == "boxes":
-        return pretty_consignment_boxes(consignment, config=config)
-    elif style == "boxes_only":
-        return pretty_consignment_boxes_only(consignment, config=config)
-    elif style == "items":
-        return pretty_consignment_items(consignment, config=config)
+    if style == "inspection_units":
+        return pretty_consignment_inspection_units(consignment, config=config)
+    elif style == "inspection_units_only":
+        return pretty_consignment_inspection_units_only(consignment, config=config)
+    elif style == "sample_units":
+        return pretty_consignment_sample_units(consignment, config=config)
     else:
         raise ValueError(
             f"Unknown style value for pretty printing of consignments: {style}"
@@ -158,8 +158,8 @@ class PrintReporter(object):
 
     def false_negative(self, consignment):
         print(
-            f"Inspection failed, missed {count_contaminated_boxes(consignment)} "
-            "boxes with contaminants [FN]"
+            f"Inspection failed, missed {count_contaminated_inspection_units(consignment)} "
+            "inspection_units with contaminants [FN]"
         )
 
 
@@ -340,12 +340,12 @@ def config_to_simplified_simulation_params(config):
         sim_params.contaminant_distribution = config["contamination"]["clustered"][
             "distribution"
         ]
-        sim_params.cluster_item_width = config["contamination"]["clustered"]["random"][
-            "cluster_item_width"
+        sim_params.cluster_sample_unit_width = config["contamination"]["clustered"]["random"][
+            "cluster_sample_unit_width"
         ]
     else:
         sim_params.contaminated_units_per_cluster = None
-        sim_params.cluster_item_width = None
+        sim_params.cluster_sample_unit_width = None
         sim_params.contaminant_distribution = None
     sim_params.inspection_unit = config["inspection"]["unit"]
     sim_params.within_box_proportion = config["inspection"]["within_box_proportion"]
@@ -387,12 +387,12 @@ def print_totals_as_text(num_consignments, config, totals):
     print("----------------------------------------------------------")
     print(f"consignments:\n\t Number consignments simulated: {num_consignments:,.0f}")
     print(
-        "\t Avg. number of boxes per consignment: "
-        f"{round(totals.num_boxes / num_consignments):,d}"
+        "\t Avg. number of inspection_units per consignment: "
+        f"{round(totals.num_inspection_units / num_consignments):,d}"
     )
     print(
-        "\t Avg. number of items per consignment: "
-        f"{round(totals.num_items / num_consignments):,d}"
+        "\t Avg. number of sample_units per consignment: "
+        f"{round(totals.num_sample_units / num_consignments):,d}"
     )
 
     print(
@@ -408,19 +408,19 @@ def print_totals_as_text(num_consignments, config, totals):
         )
     print(f"\t contaminant arrangement: {sim_params.contaminant_arrangement}")
     if sim_params.contaminant_arrangement == "clustered":
-        if sim_params.contamination_unit in ["box", "boxes"]:
+        if sim_params.contamination_unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
             print(
-                "\t\t maximum contaminated boxes per cluster: "
-                f"{sim_params.contaminated_units_per_cluster:,} boxes"
+                "\t\t maximum contaminated inspection_units per cluster: "
+                f"{sim_params.contaminated_units_per_cluster:,} inspection_units"
             )
-        if sim_params.contamination_unit in ["item", "items"]:
+        if sim_params.contamination_unit in ["sample_unit", "sample_units", "item", "items"]:
             print(
-                "\t\t maximum contaminated items per cluster: "
-                f"{sim_params.contaminated_units_per_cluster:,} items"
+                "\t\t maximum contaminated sample_units per cluster: "
+                f"{sim_params.contaminated_units_per_cluster:,} sample_units"
             )
             print(f"\t\t cluster distribution: {sim_params.contaminant_distribution}")
             if sim_params.contaminant_distribution == "random":
-                print(f"\t\t cluster width: {sim_params.cluster_item_width:,} items")
+                print(f"\t\t cluster width: {sim_params.cluster_sample_unit_width:,} sample_units")
 
     print(
         f"inspection:\n\t unit: {sim_params.inspection_unit}\n\t sample strategy: "
@@ -438,12 +438,12 @@ def print_totals_as_text(num_consignments, config, totals):
         if sim_params.selection_param_1 == "interval":
             print(f"\t\t box selection interval: {sim_params.selection_param_2}")
     if (
-        sim_params.inspection_unit in ["box", "boxes"]
+        sim_params.inspection_unit in ["inspection_unit", "inspection_units", "box", "boxes"]
         or sim_params.selection_strategy == "cluster"
     ):
         print(
-            "\t minimum proportion of items inspected within box: "
-            f"{sim_params.within_box_proportion}"
+            "\t minimum proportion of sample_units inspected within inspection_unit: "
+            f"{sim_params.within_inspection_unit_proportion}"
         )
     print(f"\t tolerance level: {sim_params.tolerance_level}")
     print("\n")
@@ -496,14 +496,14 @@ def print_totals_as_text(num_consignments, config, totals):
             f"{totals.max_intercepted_contamination_rate:.3f}"
         )
     print(
-        "Avg. number of boxes opened per consignment:\n\t to completion: "
-        f"{totals.avg_boxes_opened_completion:,.0f}\n"
-        f"\t to detection: {totals.avg_boxes_opened_detection:,.0f}"
+        "Avg. number of inspection_units opened per consignment:\n\t to completion: "
+        f"{totals.avg_inspection_units_opened_completion:,.0f}\n"
+        f"\t to detection: {totals.avg_inspection_units_opened_detection:,.0f}"
     )
     print(
-        "Avg. number of items inspected per consignment:\n\t to completion: "
-        f"{totals.avg_items_inspected_completion:,.0f}\n"
-        f"\t to detection: {totals.avg_items_inspected_detection:,.0f}"
+        "Avg. number of sample_units inspected per consignment:\n\t to completion: "
+        f"{totals.avg_sample_units_inspected_completion:,.0f}\n"
+        f"\t to detection: {totals.avg_sample_units_inspected_detection:,.0f}"
     )
     print(
         "Avg. % contaminated items unreported if sample ends at detection: "

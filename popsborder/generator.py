@@ -1,14 +1,22 @@
-"""
-Synthetic Consignment Data Generator
+""" Synthetic Consignment Data Generator
 
 This module generates synthetic consignment data for testing and simulation purposes.
 It creates realistic consignment records with randomized attributes based on 
 configurable parameters or input data files using advanced sampling techniques.
 
-Author: Gary Lin
-Created: 2024
-Updated: September 2025
+
+
+Contributors:
+    Gary Lin <gary.lin  at jhuapl edu> - JHU/APL
+    Joseph Agor <joseph.agor at jhuapl edu> - JHU/APL
+
+Version: 2.1.0
+Last Modified: September 2025
+Institutions: 
+    - Johns Hopkins University Applied Physics Laboratory (JHU/APL)
+    - United States Department of Agriculture Animal and Plant Health Inspection Service (USDA APHIS)
 """
+
 
 import random
 import json

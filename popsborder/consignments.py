@@ -28,30 +28,30 @@ New Classes Added:
 ------------------
 - RBSConsignmentGenerator: 
     * Generates consignments using risk-based sampling methodology
-    * Supports hierarchical packaging structure (boxes -> items -> plants)
+    * Supports hierarchical packaging structure (inspection_units -> sample_units -> plants)
     * Designed for propagative material inspection workflows
 
 - SampleUnit: 
-    * Manages plant-level sampling units within individual items
+    * Manages plant-level sampling units within individual sample_units
     * Provides contamination detection at the plant level
     * Integrates with hierarchical inspection structure
 
 New Functions Added:
 -------------------  
-- get_plants_per_item(): 
+- get_plants_per_sample_unit(): 
     * Determines number of plants per item based on pathway type
     * Supports pathway-specific plant quantity configurations
 
 Modified Classes:
 ----------------
-- Box: 
+- inspection_unit: 
     * Extended with sampleunit parameter for hierarchical structure
     * Supports multi-level contamination detection (item + plant levels)
     * Maintains backward compatibility with original functionality
 
 - Consignment: 
-    * Added plant-level attributes (num_plants, plants, plants_per_item)
-    * Enhanced with propagative_material classification
+    * Added plant-level attributes (num_plants, plants, plants_per_sample_unit)
+    * Enhanced with material_type classification
     * Supports both traditional item-based and hierarchical plant-based inspection
 
 Modified Functions:
@@ -80,34 +80,38 @@ from datetime import datetime, timedelta
 import numpy as np
 
 
-class Box:
-    """Box or inspection unit
+class InspectionUnit:
+    """Inspection unit (formerly Box)
 
     Evaluates to bool when it contains contaminant.
 
-    Box is a view into array of items, i.e. a slice of that array. The
-    assumption is that the original, and possibly modifed, items can not
-    only be accessed but also modifed through the box.
+    InspectionUnit is a view into array of sample_units, i.e. a slice of that array. The
+    assumption is that the original, and possibly modifed, sample_units can not
+    only be accessed but also modifed through the InspectionUnit.
     """
 
-    def __init__(self, items, sampleunit=None):
-        """Store reference to associated items
+    def __init__(self, sample_units):
+        """Store reference to associated sample_units
 
-        :param items: Array-like object of items
+        :param sample_units: Array-like object of sample_units
         """
-        self.items = items
-        self.sampleunit = sampleunit  # extended with plant unit
+        self.sample_units = sample_units
+        self.sampleunit = []  # For hierarchical structure - list of SampleUnit objects
 
     @property
-    def num_items(self):
-        """Number of items in the box"""
-        return self.items.shape[0]
+    def num_sample_units(self):
+        """Number of sample_units in the InspectionUnit"""
+        if hasattr(self.sample_units, 'shape'):
+            return self.sample_units.shape[0]
+        else:
+            return len(self.sample_units)
 
     def __bool__(self):
-        if self.sampleunit is None:
-            return bool(np.any(self.items > 0))
+        if isinstance(self.sample_units, np.ndarray):
+            return bool(np.any(self.sample_units > 0))
         else:
-            return any(bool(su) for su in self.sampleunit)
+            # Assuming it's a list of SampleUnit objects
+            return any(bool(su) for su in self.sample_units)
 
 
 class SampleUnit:
@@ -117,7 +121,7 @@ class SampleUnit:
 
     Item Container is a view into array of plants, i.e. a slice of that array. The
     assumption is that the original, and possibly modifed, plants can not
-    only be accessed but also modifed through the box.
+    only be accessed but also modifed through the InspectionUnit.
     """
 
     def __init__(self, plants):
@@ -129,7 +133,7 @@ class SampleUnit:
 
     @property
     def num_plants(self):
-        """Number of plants in the box"""
+        """Number of plants in the Sample Unit"""
         return self.plants.shape[0]
 
     def __bool__(self):
@@ -150,67 +154,64 @@ class Consignment(collections.UserDict):
 
     def __init__(
         self,
-        num_items,
-        items,
-        items_per_box,
-        num_boxes,
+        num_sample_units,
+        sample_units,
+        sample_units_per_inspection_unit,
+        num_inspection_units,
         date,
-        boxes,
+        inspection_units,
         origin,
         port,
         pathway,
-        propagative_material=None,
-        flower=None,
+        material_type=None,
         num_plants=None,
         plants=None,
-        plants_per_item=None,
+        plants_per_sample_unit=None,
     ):
         """Store reference to associated attributes
 
         :param flower: string
-        :param num_items: integer
-        :param propagative_material: string
-        :param items_per_box: integer
-        :param num_boxes: integer
+        :param num_sample_units: integer
+        :param material_type: string
+        :param sample_units_per_inspection_unit: integer
+        :param num_inspection_units: integer
         :param date: Array-like object of dates
-        :param boxes: Array-like object of boxes
+        :param inspection_units: Array-like object of inspection_units
         :param origin: string
         :param port: string
         :param pathway: string
         :param num_plants : string (optional)
         :param plants : Array-like object of plants (optional)
-        :param plants_per_item : string (optional)
+        :param plants_per_sample_unit : string (optional)
         """
         super().__init__(
-            num_items=num_items,
-            items=items,
-            items_per_box=items_per_box,
-            num_boxes=num_boxes,
+            num_sample_units=num_sample_units,
+            sample_units=sample_units,
+            sample_units_per_inspection_unit=sample_units_per_inspection_unit,
+            num_inspection_units=num_inspection_units,
             date=date,
-            boxes=boxes,
+            inspection_units=inspection_units,
             origin=origin,
             port=port,
             pathway=pathway,
-            propagative_material = propagative_material,
-            flower=flower,
+            material_type = material_type,
             num_plants=num_plants,
             plants=plants,
-            plants_per_item=plants_per_item,
+            plants_per_sample_unit=plants_per_sample_unit,
         )
-        self.num_items = num_items
-        self.items = items
-        self.items_per_box = items_per_box
-        self.num_boxes = num_boxes
+        self.num_sample_units = num_sample_units
+        self.sample_units = sample_units
+        self.sample_units_per_inspection_unit = sample_units_per_inspection_unit
+        self.num_inspection_units = num_inspection_units
         self._date = date
-        self.boxes = boxes
+        self.inspection_units = inspection_units
         self.origin = origin
         self.port = port
         self.pathway = pathway
-        self.propagative_material = propagative_material
-        self.flower = flower
+        self.material_type = material_type
         self.num_plants = num_plants
         self.plants = plants
-        self.plants_per_item = plants_per_item
+        self.plants_per_sample_unit = plants_per_sample_unit
 
     def __hasattr__(self, name):
         return name in self
@@ -237,40 +238,44 @@ class Consignment(collections.UserDict):
 
     def count_contaminated(self):
         if self.plants is None:
-            """Count contaminated items in box."""
-            return np.count_nonzero(self.items)
+            """Count contaminated sample_units in inspection_unit."""
+            return np.count_nonzero(self.sample_units)
         else:
-            """Count contaminated plants in box."""
+            """Count contaminated plants in inspection_unit."""
             return np.count_nonzero(self.plants)
 
-    def item_in_box_to_item_index(self, box_index, item_in_box_index):
-        """Convert item index in a box to item index in the consignment"""
-        if box_index == 0:
-            return item_in_box_index
-        items = 0
-        for box in self.boxes[:box_index]:
-            items += box.num_items
-        return items + item_in_box_index
+    def item_in_inspection_unit_to_item_index(self, inspection_unit_index, item_in_inspection_unit_index):
+        """Convert item index in a inspection_unit to item index in the consignment"""
+        if inspection_unit_index == 0:
+            return item_in_inspection_unit_index
+        sample_units = 0
+        for inspection_unit in self.inspection_units[:inspection_unit_index]:
+            sample_units += inspection_unit.sample_units_per_inspection_unit
+        return sample_units + item_in_inspection_unit_index
     
-    def get_box_and_sampleunit_index(self, item_index):
-        box_index = item_index // self.items_per_box
-        sampleunit_index = item_index % self.items_per_box
-        return box_index, sampleunit_index
+    def get_inspection_unit_and_sampleunit_index(self, sample_unit_index):
+        inspection_unit_index = sample_unit_index // self.sample_units_per_inspection_unit
+        sampleunit_index = sample_unit_index % self.sample_units_per_inspection_unit
+        return inspection_unit_index, sampleunit_index
+    
+    def sample_unit_in_inspection_unit_to_sample_unit_index(self, inspection_unit_index, sample_unit_in_inspection_unit_index):
+        """Convert sample_unit index within inspection_unit to global sample_unit index"""
+        return inspection_unit_index * self.sample_units_per_inspection_unit + sample_unit_in_inspection_unit_index
 
 
 class ParameterConsignmentGenerator:
     """Generate a consignments based on configuration parameters"""
 
-    def __init__(self, parameters, items_per_box, start_date):
+    def __init__(self, parameters, sample_units_per_inspection_unit, start_date):
         """Set parameters for consignment generation
 
         :param parameters: Consignment parameters
         :param ports: List of ports to choose from
-        :param items_per_box: Configuration driving number of items per box
+        :param sample_units_per_inspection_unit: Configuration driving number of sample_units per inspection_unit
         :param start_date: Date to start consignment dates from
         """
         self.params = parameters
-        self.items_per_box = items_per_box
+        self.sample_units_per_inspection_unit = sample_units_per_inspection_unit
         self.num_generated = 0
         if isinstance(start_date, str):
             start_date = datetime.strptime(start_date, "%Y-%m-%d")
@@ -282,51 +287,52 @@ class ParameterConsignmentGenerator:
         # flowers or commodities
         flower = random.choice(self.params["flowers"])
         origin = random.choice(self.params["origins"])
-        num_boxes_min = self.params["boxes"].get("min", 0)
-        num_boxes_max = self.params["boxes"]["max"]
+        num_inspection_units_min = self.params["inspection_units"].get("min", 0)
+        num_inspection_units_max = self.params["inspection_units"]["max"]
         pathway = "None"
-        items_per_box = self.items_per_box
-        items_per_box = get_items_per_box(items_per_box, pathway)
-        num_boxes = random.randint(num_boxes_min, num_boxes_max)
-        num_items = items_per_box * num_boxes
-        items = np.zeros(num_items, dtype=np.int64)
-        boxes = []
-        for i in range(num_boxes):
-            lower = i * items_per_box
-            upper = (i + 1) * items_per_box
-            boxes.append(Box(items[lower:upper]))
+        sample_units_per_inspection_unit = self.sample_units_per_inspection_unit
+        sample_units_per_inspection_unit = get_sample_units_per_inspection_unit(sample_units_per_inspection_unit, pathway)
+        num_inspection_units = random.randint(num_inspection_units_min, num_inspection_units_max)
+        num_sample_units = sample_units_per_inspection_unit * num_inspection_units
+        sample_units = np.zeros(sample_units_per_inspection_unit, dtype=np.int64)
+        inspection_units = []
+        for i in range(num_inspection_units):
+            lower = i * sample_units_per_inspection_unit
+            upper = (i + 1) * sample_units_per_inspection_unit
+            inspection_units.append(InspectionUnit(sample_units[lower:upper]))
         self.num_generated += 1
         # two consignments every nth day
         if self.num_generated % 3:
             self.date += timedelta(days=1)
 
         return Consignment(
-            flower=flower,
-            num_items=num_items,
-            items=items,
-            items_per_box=items_per_box,
-            num_boxes=num_boxes,
+            material_type=flower,
+            num_sample_units=num_sample_units,
+            sample_units=sample_units,
+            sample_units_per_inspection_unit=sample_units_per_inspection_unit,
+            num_inspection_units=num_inspection_units,
             date=self.date,
-            boxes=boxes,
+            inspection_units=inspection_units,
             origin=origin,
             port=port,
             pathway=pathway,
         )
 
+
 class RBSConsignmentGenerator:
     """Generate a consignments with hierarchal packaging"""
 
-    def __init__(self, parameters, items_per_box, plants_per_item, start_date):
+    def __init__(self, parameters, sample_units_per_inspection_unit, plants_per_sample_unit, start_date):
         """Set parameters for consignment generation
 
         :param parameters: Consignment parameters
         :param ports: List of ports to choose from
-        :param items_per_box: Configuration driving number of items per box
+        :param sample_units_per_inspection_unit: Configuration driving number of sample_units per inspection_unit
         :param start_date: Date to start consignment dates from
         """
         self.params = parameters
-        self.items_per_box = items_per_box
-        self.plants_per_item = plants_per_item
+        self.sample_units_per_inspection_unit = sample_units_per_inspection_unit
+        self.plants_per_sample_unit = plants_per_sample_unit
         self.num_generated = 0
         if isinstance(start_date, str):
             start_date = datetime.strptime(start_date, "%Y-%m-%d")
@@ -336,62 +342,71 @@ class RBSConsignmentGenerator:
         """Generate a new consignment"""
         port = random.choice(self.params["ports"])
         # propagative materials or commodities
-        propagative_material = random.choice(self.params["propagative_materials"])
+        material_type = random.choice(self.params["material_types"])
         origin = random.choice(self.params["origins"])
-        num_boxes_min = self.params["boxes"].get("min", 0)
-        num_boxes_max = self.params["boxes"]["max"]
+        # Handle backward compatibility for old "boxes" terminology
+        inspection_units_config = self.params.get("inspection_units", self.params.get("boxes", {}))
+        num_inspection_units_min = inspection_units_config.get("min", 0)
+        num_inspection_units_max = inspection_units_config.get("max", 1)
         pathway = "None"
-        items_per_box = self.items_per_box
-        items_per_box = get_items_per_box(items_per_box, pathway)
-        plants_per_item = self.plants_per_item
-        plants_per_item = get_plants_per_item(plants_per_item, pathway)
-        num_boxes = random.randint(num_boxes_min, num_boxes_max)
-        num_items = items_per_box * num_boxes
-        items = np.zeros(num_items, dtype=np.int64)
-        num_plants = plants_per_item * num_items
+        sample_units_per_inspection_unit = self.sample_units_per_inspection_unit
+        sample_units_per_inspection_unit = get_sample_units_per_inspection_unit(sample_units_per_inspection_unit, pathway)
+        plants_per_sample_unit = self.plants_per_sample_unit
+        plants_per_sample_unit = get_plants_per_sample_unit(plants_per_sample_unit, pathway)
+        num_inspection_units = random.randint(num_inspection_units_min, num_inspection_units_max)
+        num_sample_units = sample_units_per_inspection_unit * num_inspection_units
+        sample_units = np.zeros(num_sample_units, dtype=np.int64)
+        num_plants = plants_per_sample_unit * num_sample_units
         plants = np.zeros(num_plants, dtype=np.int64)
-        boxes = []
-        for box_index in range(num_boxes):
-            sampleunits = []
-            item_start = box_index * items_per_box
-            item_end = item_start + items_per_box
+        inspection_units = []
+        for inspection_unit_index in range(num_inspection_units):
+            # Each inspection_unit gets a slice of the sample_units array
+            start_idx = inspection_unit_index * sample_units_per_inspection_unit
+            end_idx = start_idx + sample_units_per_inspection_unit
+            inspection_unit_sample_units = sample_units[start_idx:end_idx]
+            
+            # Create SampleUnit objects for hierarchical access if needed
+            sampleunit_objects = []
+            for item_index in range(sample_units_per_inspection_unit):
+                plant_start = (start_idx + item_index) * plants_per_sample_unit
+                plant_end = plant_start + plants_per_sample_unit
+                sampleunit_objects.append(SampleUnit(plants[plant_start:plant_end]))
 
-            for item_index in range(items_per_box):
-                plant_start = (item_start + item_index) * plants_per_item
-                plant_end = plant_start + plants_per_item
-
-                sampleunits.append(SampleUnit(plants[plant_start:plant_end]))
-
-            boxes.append(Box(items[item_start:item_end], sampleunits))
+            # Create InspectionUnit with the numpy array slice
+            inspection_unit = InspectionUnit(inspection_unit_sample_units)
+            # Also store the SampleUnit objects for hierarchical access
+            inspection_unit.sampleunit = sampleunit_objects
+            inspection_units.append(inspection_unit)
         self.num_generated += 1
+
         # two consignments every nth day
         if self.num_generated % 3:
             self.date += timedelta(days=1)
 
         return Consignment(
-            num_items=num_items,
-            items=items,
-            items_per_box=items_per_box,
-            num_boxes=num_boxes,
+            num_sample_units=num_sample_units,
+            sample_units=sample_units,
+            sample_units_per_inspection_unit=sample_units_per_inspection_unit,
+            num_inspection_units=num_inspection_units,
             date=self.date,
-            boxes=boxes,
+            inspection_units=inspection_units,
             origin=origin,
             port=port,
             pathway=pathway,
-            propagative_material=propagative_material,
+            material_type=material_type,
             num_plants=num_plants,
             plants=plants,
-            plants_per_item=plants_per_item,
+            plants_per_sample_unit=plants_per_sample_unit,
         )
 
 
 class F280ConsignmentGenerator:
     """Generate a consignments based on existing F280 records"""
 
-    def __init__(self, items_per_box, filename, separator=","):
+    def __init__(self, sample_units_per_inspection_unit, filename, separator=","):
         self.infile = open(filename)
         self.reader = csv.DictReader(self.infile, delimiter=separator)
-        self.items_per_box = items_per_box
+        self.sample_units_per_inspection_unit = sample_units_per_inspection_unit
 
     def generate_consignment(self, consignment_data=None):
         """Generate a new consignment"""
@@ -402,33 +417,33 @@ class F280ConsignmentGenerator:
                 "More consignments requested than number of records in provided F280"
             ) from None
 
-        num_items = int(record["QUANTITY"])
-        items = np.zeros(num_items, dtype=np.int64)
+        num_sample_units = int(record["QUANTITY"])
+        sample_units = np.zeros(num_sample_units, dtype=np.int64)
 
         pathway = record["PATHWAY"]
-        items_per_box = self.items_per_box
-        items_per_box = get_items_per_box(items_per_box, pathway)
+        sample_units_per_inspection_unit = self.sample_units_per_inspection_unit
+        sample_units_per_inspection_unit = get_sample_units_per_inspection_unit(sample_units_per_inspection_unit, pathway)
 
-        # rounding up to keep the max per box and have enough boxes
-        num_boxes = int(math.ceil(num_items / float(items_per_box)))
-        num_boxes = max(num_boxes, 1)
-        boxes = []
-        for i in range(num_boxes):
-            lower = i * items_per_box
-            # slicing does not go over the size even if our last box is smaller
-            upper = (i + 1) * items_per_box
-            boxes.append(Box(items[lower:upper]))
-        assert sum([box.num_items for box in boxes]) == num_items
+        # rounding up to keep the max per inspection_unit and have enough inspection_units
+        num_inspection_units = int(math.ceil(sample_units_per_inspection_unit / float(sample_units_per_inspection_unit)))
+        num_inspection_units = max(num_inspection_units, 1)
+        inspection_units = []
+        for i in range(num_inspection_units):
+            lower = i * sample_units_per_inspection_unit
+            # slicing does not go over the size even if our last inspection_unit is smaller
+            upper = (i + 1) * sample_units_per_inspection_unit
+            inspection_units.append(InspectionUnit(sample_units[lower:upper]))
+        assert sum([inspection_unit.sample_units_per_inspection_unit for inspection_unit in inspection_units]) == sample_units_per_inspection_unit
 
         date = datetime.strptime(record["REPORT_DT"], "%Y-%m-%d")
         return Consignment(
-            flower=record["COMMODITY"],
-            num_items=num_items,
-            items=items,
-            items_per_box=items_per_box,
-            num_boxes=num_boxes,
+            material_type=record["COMMODITY"],
+            num_sample_units=num_sample_units,
+            sample_units=sample_units,
+            sample_units_per_inspection_unit=sample_units_per_inspection_unit,
+            num_inspection_units=num_inspection_units,
             date=date,
-            boxes=boxes,
+            inspection_units=inspection_units,
             origin=record["ORIGIN_NM"],
             port=record["LOCATION"],
             pathway=pathway,
@@ -438,10 +453,10 @@ class F280ConsignmentGenerator:
 class AQIMConsignmentGenerator:
     """Generate a consignments based on existing AQIM records"""
 
-    def __init__(self, items_per_box, filename, separator=","):
+    def __init__(self, sample_units_per_inspection_unit, filename, separator=","):
         self.infile = open(filename)
         self.reader = csv.DictReader(self.infile, delimiter=separator)
-        self.items_per_box = items_per_box
+        self.sample_units_per_inspection_unit = sample_units_per_inspection_unit
 
     def generate_consignment(self, consignment_data=None):
         """Generate a new consignment"""
@@ -452,67 +467,67 @@ class AQIMConsignmentGenerator:
                 "More consignments requested than number of records in AQIM data"
             ) from None
         pathway = record["CARGO_FORM"]
-        items_per_box = self.items_per_box
-        items_per_box = get_items_per_box(items_per_box, pathway)
+        sample_units_per_inspection_unit = self.sample_units_per_inspection_unit
+        sample_units_per_inspection_unit = get_sample_units_per_inspection_unit(sample_units_per_inspection_unit, pathway)
         unit = record["UNIT"]
 
-        # Generate items based on quantity in AQIM records.
-        # If quantity is given in boxes, use item_per_box to convert to items.
-        if unit in ["Box/Carton"]:
-            num_items = int(record["QUANTITY"]) * items_per_box
+        # Generate sample_units based on quantity in AQIM records.
+        # If quantity is given in inspection_units, use item_per_inspection_unit to convert to sample_units.
+        if unit in ["box/Carton"]:
+            num_sample_units = int(record["QUANTITY"]) * sample_units_per_inspection_unit
         elif unit in ["Stems"]:
-            num_items = int(record["QUANTITY"])
+            num_sample_units = int(record["QUANTITY"])
         else:
             raise RuntimeError(f"Unsupported quantity unit: {unit}")
 
-        items = np.zeros(num_items, dtype=np.int64)
+        sample_units = np.zeros(num_sample_units, dtype=np.int64)
 
-        # rounding up to keep the max per box and have enough boxes
-        num_boxes = int(math.ceil(num_items / float(items_per_box)))
-        num_boxes = max(num_boxes, 1)
-        boxes = []
-        for i in range(num_boxes):
-            lower = i * items_per_box
-            # slicing does not go over the size even if our last box is smaller
-            upper = (i + 1) * items_per_box
-            boxes.append(Box(items[lower:upper]))
-        assert sum([box.num_items for box in boxes]) == num_items
+        # rounding up to keep the max per inspection_unit and have enough inspection_units
+        num_inspection_units = int(math.ceil(sample_units_per_inspection_unit / float(sample_units_per_inspection_unit)))
+        num_inspection_units = max(num_inspection_units, 1)
+        inspection_units = []
+        for i in range(num_inspection_units):
+            lower = i * sample_units_per_inspection_unit
+            # slicing does not go over the size even if our last inspection_unit is smaller
+            upper = (i + 1) * sample_units_per_inspection_unit
+            inspection_units.append(InspectionUnit(sample_units[lower:upper]))
+        assert sum([inspection_unit.sample_units_per_inspection_unit for inspection_unit in inspection_units]) == sample_units_per_inspection_unit
 
         date = record["CALENDAR_YR"]
         return Consignment(
-            flower=record["COMMODITY_LIST"],
-            num_items=num_items,
-            items=items,
-            items_per_box=items_per_box,
-            num_boxes=num_boxes,
+            material_type=record["COMMODITY_LIST"],
+            num_sample_units=num_sample_units,
+            sample_units=sample_units,
+            sample_units_per_inspection_unit=sample_units_per_inspection_unit,
+            num_inspection_units=num_inspection_units,
             date=date,
-            boxes=boxes,
+            inspection_units=inspection_units,
             origin=record["ORIGIN"],
             port=record["LOCATION"],
             pathway=pathway,
         )
 
 
-def get_items_per_box(items_per_box, pathway):
-    """Based on config and pathway, return number of items per box."""
-    if pathway.lower() == "airport" and "air" in items_per_box:
-        items_per_box = items_per_box["air"]["default"]
-    elif pathway.lower() == "maritime" and "maritime" in items_per_box:
-        items_per_box = items_per_box["maritime"]["default"]
+def get_sample_units_per_inspection_unit(sample_units_per_inspection_unit, pathway):
+    """Based on config and pathway, return number of sample_units per inspection_unit."""
+    if pathway.lower() == "airport" and "air" in sample_units_per_inspection_unit:
+        sample_units_per_inspection_unit = sample_units_per_inspection_unit["air"]["default"]
+    elif pathway.lower() == "maritime" and "maritime" in sample_units_per_inspection_unit:
+        sample_units_per_inspection_unit = sample_units_per_inspection_unit["maritime"]["default"]
     else:
-        items_per_box = items_per_box["default"]
-    return items_per_box
+        sample_units_per_inspection_unit = sample_units_per_inspection_unit["default"]
+    return sample_units_per_inspection_unit
 
 
-def get_plants_per_item(plants_per_item, pathway):
-    """Based on config and pathway, return number of items per box."""
-    if pathway.lower() == "airport" and "air" in plants_per_item:
-        plants_per_item = plants_per_item["air"]["default"]
-    elif pathway.lower() == "maritime" and "maritime" in plants_per_item:
-        plants_per_item = plants_per_item["maritime"]["default"]
+def get_plants_per_sample_unit(plants_per_sample_unit, pathway):
+    """Based on config and pathway, return number of sample_units per inspection_unit."""
+    if pathway.lower() == "airport" and "air" in plants_per_sample_unit:
+        plants_per_sample_unit = plants_per_sample_unit["air"]["default"]
+    elif pathway.lower() == "maritime" and "maritime" in plants_per_sample_unit:
+        plants_per_sample_unit = plants_per_sample_unit["maritime"]["default"]
     else:
-        plants_per_item = plants_per_item["default"]
-    return plants_per_item
+        plants_per_sample_unit = plants_per_sample_unit["default"]
+    return plants_per_sample_unit
 
 
 def get_consignment_generator(config):
@@ -522,30 +537,32 @@ def get_consignment_generator(config):
     if (generation_method == "input_file") and (
         config["input_file"]["file_type"] == "F280"
     ):
+        # Backward compatibility: check for both old and new terminology
+        sample_units_config = config.get("sample_units_per_inspection_unit", config.get("items_per_box"))
         consignment_generator = F280ConsignmentGenerator(
-            items_per_box=config["items_per_box"],
+            sample_units_per_inspection_unit=sample_units_config,
             filename=config["input_file"]["file_name"],
         )
     elif (generation_method == "input_file") and (
         config["input_file"]["file_type"] == "AQIM"
     ):
         consignment_generator = AQIMConsignmentGenerator(
-            items_per_box=config["items_per_box"],
+            sample_units_per_inspection_unit=config["items_per_box"],
             filename=config["input_file"]["file_name"],
         )
     elif generation_method == "parameter_based":
         start_date = config.get("start_date", "2020-01-01")
         consignment_generator = ParameterConsignmentGenerator(
             parameters=config["parameter_based"],
-            items_per_box=config["items_per_box"],
+            sample_units_per_inspection_unit=config["items_per_box"],
             start_date=start_date,
         )
     elif generation_method == "RBS":
         start_date = config.get("start_date", "2020-01-01")
         consignment_generator = RBSConsignmentGenerator(
             parameters=config["rbs_parameter_based"],
-            items_per_box=config["items_per_box"],
-            plants_per_item=config["plants_per_item"],
+            sample_units_per_inspection_unit=config["sample_units_per_inspection_unit"],
+            plants_per_sample_unit=config.get("plants_per_sample_unit", config.get("plants_per_item")),
             start_date=start_date,
         )
     else:

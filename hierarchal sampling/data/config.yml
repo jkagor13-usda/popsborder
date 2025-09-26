@@ -1,6 +1,6 @@
 consignment:
   generation_method: RBS
-  items_per_box:
+  sample_units_per_inspection_unit:
     default: 200
     air:
       default: 200
@@ -24,7 +24,7 @@ consignment:
       - New Zealand
       - India
       - Tanzania
-    propagative_materials:
+    material_types:
       - Budwood/Graftwood (scion)
       - Bulb, Corm, Rhizome, Tuberous Stem
       - Meristem or Callus Tissue Culture (micropropagated/in vitro culture)

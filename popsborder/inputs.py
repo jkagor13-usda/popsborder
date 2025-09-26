@@ -41,7 +41,6 @@ Institutions:
     - United States Department of Agriculture Animal and Plant Health Inspection Service (USDA APHIS)
 """
 
-
 import copy
 import json
 import math
