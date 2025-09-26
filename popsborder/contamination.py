@@ -19,6 +19,37 @@
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
 .. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
+
+=====================================
+JHU/APL Extensions and Modifications:
+=====================================
+
+Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
+
+Modified Functions:
+------------------
+- add_contaminant_uniform_random():
+    * Added backward compatibility for contamination_unit parameter
+    * Maps old terminology: "box"/"boxes" -> "inspection_unit", "item"/"items" -> "sample_unit"
+    * Enhanced to support both inspection_unit and sample_unit level contamination
+    * Added plant-level contamination support with pooled contamination methodology
+
+- add_contaminant_clusters():
+    * Updated contamination_unit parameter handling for backward compatibility
+    * Supports legacy "box"/"item" terminology while using new "inspection_unit"/"sample_unit" internally
+    * Enhanced clustering algorithms for hierarchical contamination patterns
+
+- add_contaminant_clusters_to_sample_units():
+    * Added backward compatibility for cluster_sample_unit_width (formerly cluster_item_width)
+    * Updated to handle both old and new terminology in clustering configuration
+    * Enhanced plant-level contamination with percentage-based pooled contamination
+
+Notes:
+------
+- Updated contamination_unit parameter mapping throughout contamination functions
+- All contamination functions now support both legacy and new terminology
+- Enhanced support for hierarchical contamination at inspection_unit, sample_unit, and plant levels
+- Maintains full backward compatibility with existing contamination configuration files
 """
 
 import math

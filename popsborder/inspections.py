@@ -24,6 +24,8 @@
 JHU/APL Extensions and Modifications:
 =====================================
 
+Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
+
 New Functions Added:
 -------------------  
 - sample_rbs():
@@ -74,17 +76,7 @@ Backward Compatibility:
 - Added aliases: count_contaminated_items() -> count_contaminated_sample_units()
 - Configuration parameter mapping: boxes -> inspection_units, items -> sample_units
 - Maintained support for legacy configuration keys while enabling new terminology
-    
 
-Contributors:
-    Gary Lin <gary.lin  at jhuapl edu> - JHU/APL
-    Joseph Agor <joseph.agor at jhuapl edu> - JHU/APL
-
-Version: 2.1.0
-Last Modified: September 2025
-Institutions: 
-    - Johns Hopkins University Applied Physics Laboratory (JHU/APL)
-    - United States Department of Agriculture Animal and Plant Health Inspection Service (USDA APHIS)
 """
 
 import math

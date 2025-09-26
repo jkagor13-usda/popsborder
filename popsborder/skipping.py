@@ -18,6 +18,24 @@
 """Skipping inspections of consignments
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
+
+=====================================
+JHU/APL Extensions and Modifications:
+=====================================
+
+Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
+
+Modified Functions:
+------------------
+- naive_cfrp():
+    * Updated to support refactored terminology (num_boxes -> num_inspection_units)
+    * Maintains backward compatibility with existing configuration parameters
+
+Notes:
+------
+- This module handles inspection skipping logic and release programs
+- Updated references from 'boxes' terminology to 'inspection_units' for consistency
+- Maintains full backward compatibility with existing CFRP and skip lot programs
 """
 
 import functools
@@ -74,7 +92,7 @@ def naive_cfrp(config, name, consignment, date):
     cfrp = config["flowers"]
     max_boxes = config["max_boxes"]
     # we have flowers in the CFRP, flower is in CFRP, and not too big consignment
-    if cfrp and flower in cfrp and consignment.num_boxes <= max_boxes:
+    if cfrp and flower in cfrp and consignment.num_inspection_units <= max_boxes:
         if is_naive_flower_of_the_day(cfrp, flower, date):
             return True, name  # is FotD, inspect
         return False, name  # not FotD, release

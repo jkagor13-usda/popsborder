@@ -24,6 +24,8 @@
 JHU/APL Extensions and Modifications:
 =====================================
 
+Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
+
 New Classes Added:
 ------------------
 - RBSConsignmentGenerator: 
@@ -93,26 +95,6 @@ Backward Compatibility:
 - Legacy attribute access in Consignment class via __getattr__ and __hasattr__
 - Support for both items_per_box and sample_units_per_inspection_unit configuration keys
 - Maintained existing F280 and AQIM consignment generator functionality
-
-Contributors:
-    Gary Lin <gary.lin at jhuapl edu> - JHU/APL
-    Joseph Agor <joseph.agor at jhuapl edu> - JHU/APL
-
-Version: 2.1.0
-Last Modified: September 2025
-Institutions: 
-    - Johns Hopkins University Applied Physics Laboratory (JHU/APL)
-    - United States Department of Agriculture Animal and Plant Health Inspection Service (USDA APHIS)
-
-Contributors:
-    Gary Lin <gary.lin  at jhuapl edu> - JHU/APL
-    Joseph Agor <joseph.agor at jhuapl edu> - JHU/APL
-
-Version: 2.1.0
-Last Modified: September 2025
-Institutions: 
-    - Johns Hopkins University Applied Physics Laboratory (JHU/APL)
-    - United States Department of Agriculture Animal and Plant Health Inspection Service (USDA APHIS)
 """
 
 

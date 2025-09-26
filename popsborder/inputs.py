@@ -23,6 +23,8 @@
 JHU/APL Extensions and Modifications:
 =====================================
 
+Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
+
 New Functions Added:
 -------------------  
 - load_compliance_lookup_csv(): 
@@ -39,17 +41,8 @@ Configuration Enhancements:
 --------------------------
 - Enhanced configuration validation for new terminology (inspection_units vs boxes, sample_units vs items)
 - Added backward compatibility parameter mapping throughout configuration loading
-- Improved error handling and validation for RBS-specific configuration parameters 
+- Improved error handling and validation for RBS-specific configuration parameters
 
-Contributors:
-    Gary Lin <gary.lin  at jhuapl edu> - JHU/APL
-    Joseph Agor <joseph.agor at jhuapl edu> - JHU/APL
-
-Version: 2.1.0
-Last Modified: September 2025
-Institutions: 
-    - Johns Hopkins University Applied Physics Laboratory (JHU/APL)
-    - United States Department of Agriculture Animal and Plant Health Inspection Service (USDA APHIS)
 """
 
 import copy

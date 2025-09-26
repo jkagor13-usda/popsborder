@@ -25,6 +25,8 @@
 JHU/APL Extensions and Modifications:
 =====================================
 
+Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
+
 Modified Functions:
 ------------------- 
 - simulation():
@@ -41,31 +43,13 @@ Terminology Updates:
 -------------------
 - Updated all variable names from box/item terminology to inspection_unit/sample_unit terminology
 - Enhanced result aggregation to handle both legacy and new terminology reporting
-- Maintained backward compatibility in simulation result structures
-
-Contributors:
-    Gary Lin <gary.lin at jhuapl edu> - JHU/APL
-    Joseph Agor <joseph.agor at jhuapl edu> - JHU/APL
-
-Version: 2.1.0
-Last Modified: September 2025
-Institutions: 
+- Maintained backward compatibility in simulation result structures 
     - Johns Hopkins University Applied Physics Laboratory (JHU/APL)
     - United States Department of Agriculture Animal and Plant Health Inspection Service (USDA APHIS)
     * Supports hierarchical packaging structure (boxes -> items -> plants)
     * Custom consignment data input from CSV
 - run_simulation():
     * Inputs for plant-level parameters, compliance table file, and consignment data supported
-
-Contributors:
-    Gary Lin <gary.lin  at jhuapl edu> - JHU/APL
-    Joseph Agor <joseph.agor at jhuapl edu> - JHU/APL
-
-Version: 2.1.0
-Last Modified: September 2025
-Institutions: 
-    - Johns Hopkins University Applied Physics Laboratory (JHU/APL)
-    - United States Department of Agriculture Animal and Plant Health Inspection Service (USDA APHIS)
 """
 
 import random
