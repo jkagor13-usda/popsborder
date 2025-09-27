@@ -56,14 +56,14 @@ New Functions Added:
     * Converts local sample_unit index within inspection_unit to global sample_unit index
     * Essential for hierarchical structure navigation and detailed tracking
 
-- get_inspection_unit_and_sampleunit_index():
+- get_inspection_unit_and_sample_unit_index():
     * Converts global sample_unit index to inspection_unit and local sample_unit indices
     * Supports bidirectional navigation in hierarchical structure
 
 Modified Classes:
 ----------------
 - InspectionUnit (formerly inspection_unit): 
-    * Extended with sampleunit parameter for hierarchical structure
+    * Extended with sample_unit_objects parameter for hierarchical structure
     * Supports multi-level contamination detection (sample_unit + plant levels)
     * Enhanced with SampleUnit object array for hierarchical access
     * Maintains backward compatibility with original array-based functionality
@@ -123,7 +123,7 @@ class InspectionUnit:
         :param sample_units: Array-like object of sample_units
         """
         self.sample_units = sample_units
-        self.sampleunit = []  # For hierarchical structure - list of SampleUnit objects
+        self.sample_unit_objects = []  # For hierarchical structure - list of SampleUnit objects
 
     @property
     def num_sample_units(self):
@@ -280,10 +280,10 @@ class Consignment(collections.UserDict):
             sample_units += inspection_unit.sample_units_per_inspection_unit
         return sample_units + item_in_inspection_unit_index
     
-    def get_inspection_unit_and_sampleunit_index(self, sample_unit_index):
+    def get_inspection_unit_and_sample_unit_index(self, sample_unit_index):
         inspection_unit_index = sample_unit_index // self.sample_units_per_inspection_unit
-        sampleunit_index = sample_unit_index % self.sample_units_per_inspection_unit
-        return inspection_unit_index, sampleunit_index
+        sample_unit_index_in_inspection_unit = sample_unit_index % self.sample_units_per_inspection_unit
+        return inspection_unit_index, sample_unit_index_in_inspection_unit
     
     def sample_unit_in_inspection_unit_to_sample_unit_index(self, inspection_unit_index, sample_unit_in_inspection_unit_index):
         """Convert sample_unit index within inspection_unit to global sample_unit index"""
@@ -393,16 +393,16 @@ class RBSConsignmentGenerator:
             inspection_unit_sample_units = sample_units[start_idx:end_idx]
             
             # Create SampleUnit objects for hierarchical access if needed
-            sampleunit_objects = []
+            sample_unit_objects = []
             for item_index in range(sample_units_per_inspection_unit):
                 plant_start = (start_idx + item_index) * plants_per_sample_unit
                 plant_end = plant_start + plants_per_sample_unit
-                sampleunit_objects.append(SampleUnit(plants[plant_start:plant_end]))
+                sample_unit_objects.append(SampleUnit(plants[plant_start:plant_end]))
 
             # Create InspectionUnit with the numpy array slice
             inspection_unit = InspectionUnit(inspection_unit_sample_units)
             # Also store the SampleUnit objects for hierarchical access
-            inspection_unit.sampleunit = sampleunit_objects
+            inspection_unit.sample_unit_objects = sample_unit_objects
             inspection_units.append(inspection_unit)
         self.num_generated += 1
 
