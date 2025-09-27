@@ -1,0 +1,4 @@
+contamination/contamination_unit,contamination/contamination_rate/distribution,contamination/contamination_rate/value,contamination/arrangement,inspection/sample_strategy,inspection/proportion/value,inspection/tolerance_level,num_inspections,intercepted,false_neg,missing,true_contamination_rate,avg_missed_contamination_rate,max_missed_contamination_rate,total_missed_contaminants,total_intercepted_contaminants
+sample_unit,beta,0.0027,random,rbs,0.02,0.005,20,1,0,0.0,0.004640371229698376,0.0,0.0,0,0
+sample_unit,beta,0.0027,random,rbs,0.02,0.005,20,3,1,25.0,0.01575451348574853,0.0076103500761035,0.0076103500761035,0,0
+sample_unit,beta,0.0027,random,rbs,0.02,0.005,20,1,2,66.66666666666667,0.0026095998395409777,0.00239396679270097,0.0031645569620253164,0,0

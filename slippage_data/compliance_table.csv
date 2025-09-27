@@ -1,0 +1,29 @@
+Origin Location Country Name,Propagative Material type,Compliance,Detection Level,Confidence Levels
+Netherlands,Budwood/Graftwood (scion),Medium Compliance,0.2,0.95
+Mexico,Budwood/Graftwood (scion),High Compliance,0.3,0.95
+Israel,Budwood/Graftwood (scion),Low Compliance,0.1,0.95
+Japan,Budwood/Graftwood (scion),Low Compliance,0.1,0.95
+New Zealand,Budwood/Graftwood (scion),Low Compliance,0.1,0.95
+India,Budwood/Graftwood (scion),Low Compliance,0.1,0.95
+Tanzania,Budwood/Graftwood (scion),Medium Compliance,0.2,0.95
+Netherlands,"Bulb, Corm, Rhizome, Tuberous Stem",Medium Compliance,0.2,0.95
+Mexico,"Bulb, Corm, Rhizome, Tuberous Stem",High Compliance,0.3,0.95
+Israel,"Bulb, Corm, Rhizome, Tuberous Stem",Medium Compliance,0.2,0.95
+Japan,"Bulb, Corm, Rhizome, Tuberous Stem",Low Compliance,0.1,0.95
+New Zealand,"Bulb, Corm, Rhizome, Tuberous Stem",High Compliance,0.3,0.95
+India,"Bulb, Corm, Rhizome, Tuberous Stem",Medium Compliance,0.2,0.95
+Tanzania,"Bulb, Corm, Rhizome, Tuberous Stem",High Compliance,0.3,0.95
+Netherlands,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),High Compliance,0.3,0.95
+Mexico,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),Low Compliance,0.1,0.95
+Israel,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),Low Compliance,0.1,0.95
+Japan,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),Low Compliance,0.1,0.95
+New Zealand,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),Low Compliance,0.1,0.95
+India,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),High Compliance,0.3,0.95
+Tanzania,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),High Compliance,0.3,0.95
+Netherlands,"Root cutting, crown, or clump, Tuberous Root",Medium Compliance,0.2,0.95
+Mexico,"Root cutting, crown, or clump, Tuberous Root",Medium Compliance,0.2,0.95
+Israel,"Root cutting, crown, or clump, Tuberous Root",High Compliance,0.3,0.95
+Japan,"Root cutting, crown, or clump, Tuberous Root",Medium Compliance,0.2,0.95
+New Zealand,"Root cutting, crown, or clump, Tuberous Root",High Compliance,0.3,0.95
+India,"Root cutting, crown, or clump, Tuberous Root",High Compliance,0.3,0.95
+Tanzania,"Root cutting, crown, or clump, Tuberous Root",Medium Compliance,0.2,0.95

@@ -34,6 +34,12 @@ New Classes Added:
     * Designed for propagative material inspection workflows
     * Integrates with compliance-based detection level lookup
 
+- RBSRecordConsignmentGenerator:
+    * Generates consignments from CSV records with hierarchical RBS structure
+    * Supports flexible record formats with multiple quantity specifications
+    * Handles pathway-specific configurations for sample_units and plants
+    * Maintains hierarchical packaging for plant-level contamination modeling
+
 - SampleUnit: 
     * Manages plant-level sampling units within individual sample_units
     * Provides contamination detection at the plant level
@@ -64,6 +70,7 @@ Modified Classes:
 ----------------
 - InspectionUnit (formerly inspection_unit): 
     * Extended with sample_unit_objects parameter for hierarchical structure
+    * Added material_type attribute to support different materials within a consignment
     * Supports multi-level contamination detection (sample_unit + plant levels)
     * Enhanced with SampleUnit object array for hierarchical access
     * Maintains backward compatibility with original array-based functionality
@@ -78,9 +85,10 @@ Modified Classes:
 Modified Functions:
 ----------------
 - get_consignment_generator():
-    * Supports RBS generation method selection
+    * Supports RBS generation method selection (parameter-based and record-based)
     * Enhanced backward compatibility for configuration parameter mapping
     * Handles both old terminology (items_per_box) and new terminology (sample_units_per_inspection_unit)
+    * Automatically selects PISConsignmentGenerator when file_type="PIS" is specified for RBS method
 
 Terminology Refactoring:
 -----------------------
@@ -117,13 +125,15 @@ class InspectionUnit:
     only be accessed but also modifed through the InspectionUnit.
     """
 
-    def __init__(self, sample_units):
+    def __init__(self, sample_units, material_type=None):
         """Store reference to associated sample_units
 
         :param sample_units: Array-like object of sample_units
+        :param material_type: Material type for this inspection unit
         """
         self.sample_units = sample_units
         self.sample_unit_objects = []  # For hierarchical structure - list of SampleUnit objects
+        self.material_type = material_type
 
     @property
     def num_sample_units(self):
@@ -308,7 +318,7 @@ class ParameterConsignmentGenerator:
             start_date = datetime.strptime(start_date, "%Y-%m-%d")
         self.date = start_date
 
-    def generate_consignment(self, consignment_data=None):
+    def generate_consignment(self):
         """Generate a new consignment"""
         port = random.choice(self.params["ports"])
         # flowers or commodities
@@ -326,7 +336,7 @@ class ParameterConsignmentGenerator:
         for i in range(num_inspection_units):
             lower = i * sample_units_per_inspection_unit
             upper = (i + 1) * sample_units_per_inspection_unit
-            inspection_units.append(InspectionUnit(sample_units[lower:upper]))
+            inspection_units.append(InspectionUnit(sample_units[lower:upper], material_type=flower))
         self.num_generated += 1
         # two consignments every nth day
         if self.num_generated % 3:
@@ -365,7 +375,7 @@ class RBSConsignmentGenerator:
             start_date = datetime.strptime(start_date, "%Y-%m-%d")
         self.date = start_date
 
-    def generate_consignment(self, consignment_data=None):
+    def generate_consignment(self):
         """Generate a new consignment"""
         port = random.choice(self.params["ports"])
         # propagative materials or commodities
@@ -400,7 +410,7 @@ class RBSConsignmentGenerator:
                 sample_unit_objects.append(SampleUnit(plants[plant_start:plant_end]))
 
             # Create InspectionUnit with the numpy array slice
-            inspection_unit = InspectionUnit(inspection_unit_sample_units)
+            inspection_unit = InspectionUnit(inspection_unit_sample_units, material_type=material_type)
             # Also store the SampleUnit objects for hierarchical access
             inspection_unit.sample_unit_objects = sample_unit_objects
             inspection_units.append(inspection_unit)
@@ -435,7 +445,7 @@ class F280ConsignmentGenerator:
         self.reader = csv.DictReader(self.infile, delimiter=separator)
         self.sample_units_per_inspection_unit = sample_units_per_inspection_unit
 
-    def generate_consignment(self, consignment_data=None):
+    def generate_consignment(self):
         """Generate a new consignment"""
         try:
             record = next(self.reader)
@@ -459,7 +469,7 @@ class F280ConsignmentGenerator:
             lower = i * sample_units_per_inspection_unit
             # slicing does not go over the size even if our last inspection_unit is smaller
             upper = (i + 1) * sample_units_per_inspection_unit
-            inspection_units.append(InspectionUnit(sample_units[lower:upper]))
+            inspection_units.append(InspectionUnit(sample_units[lower:upper], material_type=record["COMMODITY"]))
         assert sum([inspection_unit.sample_units_per_inspection_unit for inspection_unit in inspection_units]) == sample_units_per_inspection_unit
 
         date = datetime.strptime(record["REPORT_DT"], "%Y-%m-%d")
@@ -477,6 +487,172 @@ class F280ConsignmentGenerator:
         )
 
 
+class PISConsignmentGenerator:
+    """Generate consignments based on existing Plant Inspection System (PIS) records
+    
+    This is a record-based generator under the RBS (Risk-Based Sampling) method that handles
+    real Plant Inspection System data with multiple material types per consignment.
+    
+    The generator is fully data-driven and calculates sample_units_per_inspection_unit and 
+    plants_per_sample_unit directly from the TOTAL_SAMPLING_UNITS and TOTAL_PLANT_QUANTITY 
+    columns in the PIS data. No configuration parameters are needed for quantities.
+    
+    Timestamp Integration:
+    - Uses CREATED_DATETIME column (MM:SS.S format) for realistic consignment timing
+    - Converts timestamps to datetime objects with base date 2020-01-01
+    - Falls back to default date if timestamp parsing fails
+    - Preserves inspection timing information for temporal analysis
+    
+    Configuration:
+        generation_method: "RBS"
+        input_file:
+            file_type: "PIS"
+            file_name: "path/to/pis_data.csv"
+    """
+
+    def __init__(self, filename, separator=","):
+        """Initialize PIS record-based consignment generator
+
+        :param filename: CSV file containing PIS records with columns:
+                        - INSPECTION_NUMBER: Unique consignment identifier
+                        - PROPAGATIVE_MATERIAL_TYPE: Material type for each inspection unit
+                        - TOTAL_SAMPLING_UNITS: Actual number of sample units
+                        - TOTAL_PLANT_QUANTITY: Actual number of plants
+                        - COUNTRY_OF_ORIGIN_NAME, INSPECTION_LOCATION_NAME, PATHWAY
+                        - CREATED_DATETIME: Timestamp in MM:SS.S format (optional)
+                        - PRODUCER: Producer name (optional)
+        :param separator: CSV field separator
+        """
+        import pandas as pd
+        self.df = pd.read_csv(filename, sep=separator)
+        # Group by inspection number to create consignments
+        self.consignment_groups = list(self.df.groupby('INSPECTION_NUMBER'))
+        self.current_consignment_index = 0
+
+    def generate_consignment(self):
+        """Generate a new consignment from PIS records"""
+        if self.current_consignment_index >= len(self.consignment_groups):
+            raise RuntimeError(
+                "More consignments requested than number of inspection numbers in provided PIS data"
+            ) from None
+
+        inspection_number, inspection_units_data = self.consignment_groups[self.current_consignment_index]
+        self.current_consignment_index += 1
+
+        # Extract common consignment info from first record
+        first_record = inspection_units_data.iloc[0]
+        pathway = first_record.get("PATHWAY", "None")
+        origin = first_record["COUNTRY_OF_ORIGIN_NAME"]
+        port = first_record["INSPECTION_LOCATION_NAME"]
+        
+        # Calculate total quantities across all inspection units in this consignment
+        total_sample_units = 0
+        total_plants = 0
+        inspection_units = []
+        
+        # Process each inspection unit (row) in this consignment
+        for _, record in inspection_units_data.iterrows():
+            material_type = record["PROPAGATIVE_MATERIAL_TYPE"]
+            
+            # Use the actual quantities from the PIS data
+            inspection_unit_sample_units = int(record["TOTAL_SAMPLING_UNITS"])
+            inspection_unit_plants = int(record["TOTAL_PLANT_QUANTITY"])
+            
+            # Calculate plants per sample_unit for this inspection unit
+            if inspection_unit_sample_units > 0:
+                base_plants_per_sample_unit = inspection_unit_plants // inspection_unit_sample_units
+                remainder_plants = inspection_unit_plants % inspection_unit_sample_units
+            else:
+                base_plants_per_sample_unit = 1
+                remainder_plants = 0
+                inspection_unit_sample_units = 1
+            
+            # Create arrays for this inspection unit
+            sample_units_array = np.zeros(inspection_unit_sample_units, dtype=np.int64)
+            plants_array = np.zeros(inspection_unit_plants, dtype=np.int64)
+            
+            # Create SampleUnit objects for hierarchical access
+            sample_unit_objects = []
+            plant_index = 0
+            
+            for item_index in range(inspection_unit_sample_units):
+                # Distribute remainder plants among first few sample units
+                plants_in_this_unit = base_plants_per_sample_unit
+                if item_index < remainder_plants:
+                    plants_in_this_unit += 1
+                
+                # Ensure we don't exceed total plants
+                plants_in_this_unit = min(plants_in_this_unit, inspection_unit_plants - plant_index)
+                
+                # Create slice for this sample unit
+                sample_unit_plants = plants_array[plant_index:plant_index + plants_in_this_unit]
+                sample_unit_objects.append(SampleUnit(sample_unit_plants))
+                
+                plant_index += plants_in_this_unit
+
+            # Create InspectionUnit
+            inspection_unit = InspectionUnit(sample_units_array, material_type=material_type)
+            inspection_unit.sample_unit_objects = sample_unit_objects
+            inspection_units.append(inspection_unit)
+            
+            total_sample_units += inspection_unit_sample_units
+            total_plants += inspection_unit_plants
+
+        # Create overall arrays for the entire consignment
+        consignment_sample_units = np.zeros(total_sample_units, dtype=np.int64)
+        consignment_plants = np.zeros(total_plants, dtype=np.int64)
+        
+        # Calculate average plants per sample_unit for consignment-level tracking
+        if total_sample_units > 0:
+            avg_plants_per_sample_unit = total_plants // total_sample_units
+        else:
+            avg_plants_per_sample_unit = 1
+
+        # Use CREATED_DATETIME from PIS data if available, otherwise use default date
+        if 'CREATED_DATETIME' in first_record and first_record['CREATED_DATETIME'] is not None and str(first_record['CREATED_DATETIME']).strip():
+            try:
+                # Convert MM:SS.S timestamp to a datetime object
+                # Use base date with the timestamp as time offset
+                timestamp = str(first_record['CREATED_DATETIME']).strip()
+                minutes, seconds_tenths = timestamp.split(':')
+                seconds, tenths = seconds_tenths.split('.')
+                
+                # Create datetime with base date but using timestamp as time offset
+                base_date = datetime(2020, 1, 1)  # Base date for consistency
+                # Convert tenths to microseconds: 1 tenth = 100,000 microseconds
+                microseconds = int(tenths) * 100000
+                time_offset = timedelta(minutes=int(minutes), seconds=int(seconds), microseconds=microseconds)
+                date = base_date + time_offset
+            except (ValueError, KeyError, AttributeError):
+                # Fallback to default date if timestamp parsing fails
+                date = datetime.strptime("2020-01-01", "%Y-%m-%d")
+        else:
+            # Use default date if no CREATED_DATETIME column
+            date = datetime.strptime("2020-01-01", "%Y-%m-%d")
+
+        # Calculate average sample_units_per_inspection_unit for compatibility
+        if len(inspection_units) > 0:
+            avg_sample_units_per_inspection_unit = total_sample_units // len(inspection_units)
+        else:
+            avg_sample_units_per_inspection_unit = 1
+
+        return Consignment(
+            num_sample_units=total_sample_units,
+            sample_units=consignment_sample_units,
+            sample_units_per_inspection_unit=avg_sample_units_per_inspection_unit,  # Average for compatibility
+            num_inspection_units=len(inspection_units),
+            date=date,
+            inspection_units=inspection_units,
+            origin=origin,
+            port=port,
+            pathway=pathway,
+            material_type=f"Mixed ({len(inspection_units)} types)",  # Mixed material types
+            num_plants=total_plants,
+            plants=consignment_plants,
+            plants_per_sample_unit=avg_plants_per_sample_unit,
+        )
+
+
 class AQIMConsignmentGenerator:
     """Generate a consignments based on existing AQIM records"""
 
@@ -485,7 +661,7 @@ class AQIMConsignmentGenerator:
         self.reader = csv.DictReader(self.infile, delimiter=separator)
         self.sample_units_per_inspection_unit = sample_units_per_inspection_unit
 
-    def generate_consignment(self, consignment_data=None):
+    def generate_consignment(self):
         """Generate a new consignment"""
         try:
             record = next(self.reader)
@@ -517,7 +693,7 @@ class AQIMConsignmentGenerator:
             lower = i * sample_units_per_inspection_unit
             # slicing does not go over the size even if our last inspection_unit is smaller
             upper = (i + 1) * sample_units_per_inspection_unit
-            inspection_units.append(InspectionUnit(sample_units[lower:upper]))
+            inspection_units.append(InspectionUnit(sample_units[lower:upper], material_type=record["COMMODITY_LIST"]))
         assert sum([inspection_unit.sample_units_per_inspection_unit for inspection_unit in inspection_units]) == sample_units_per_inspection_unit
 
         date = record["CALENDAR_YR"]
@@ -585,13 +761,27 @@ def get_consignment_generator(config):
             start_date=start_date,
         )
     elif generation_method == "RBS":
-        start_date = config.get("start_date", "2020-01-01")
-        consignment_generator = RBSConsignmentGenerator(
-            parameters=config["rbs_parameter_based"],
-            sample_units_per_inspection_unit=config["sample_units_per_inspection_unit"],
-            plants_per_sample_unit=config.get("plants_per_sample_unit", config.get("plants_per_item")),
-            start_date=start_date,
-        )
+        if "input_file" in config and "file_name" in config["input_file"]:
+            # RBS record-based generation from file
+            file_type = config["input_file"].get("file_type", "RBS")
+            if file_type == "PIS":
+                # PIS data with multiple material types per consignment
+                # PIS generator is fully data-driven - no configuration parameters needed
+                consignment_generator = PISConsignmentGenerator(
+                    filename=config["input_file"]["file_name"],
+                )
+            else:
+                # Other RBS record formats would go here
+                raise RuntimeError(f"Unsupported RBS file type: {file_type}")
+        else:
+            # RBS parameter-based generation
+            start_date = config.get("start_date", "2020-01-01")
+            consignment_generator = RBSConsignmentGenerator(
+                parameters=config["rbs_parameter_based"],
+                sample_units_per_inspection_unit=config["sample_units_per_inspection_unit"],
+                plants_per_sample_unit=config.get("plants_per_sample_unit", config.get("plants_per_item")),
+                start_date=start_date,
+            )
     else:
         raise RuntimeError(
             f"Unknown consignment generation method: {generation_method}"

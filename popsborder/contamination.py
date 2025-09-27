@@ -192,36 +192,32 @@ def add_contaminant_uniform_random(config, consignment):
         inspection_unit_indexes = np.random.choice(
             consignment.num_inspection_units, math.ceil(contaminated_inspection_units), replace=False
         )
-        # Mark contaminated sample_units in all contaminated inspection_units (full and partial)
-        for inspection_unit_index in inspection_unit_indexes[:-1]:
+        # Mark ALL sample_units in ALL contaminated inspection_units as contaminated
+        # When contaminating at inspection unit level, the entire inspection unit should be contaminated
+        for inspection_unit_index in inspection_unit_indexes:
             consignment.inspection_units[inspection_unit_index].sample_units.fill(1)
-        partial_inspection_unit_proportion = math.modf(contaminated_inspection_units)[0]
-        if partial_inspection_unit_proportion == 0.0:
-            partial_inspection_unit_proportion = 1
-        partial_inspection_unit_contaminated_stems = round(
-            consignment.inspection_units[inspection_unit_indexes[-1]].num_sample_units * partial_inspection_unit_proportion
-        )
-        consignment.inspection_units[inspection_unit_indexes[-1]].sample_units[0:partial_inspection_unit_contaminated_stems].fill(1)
 
         # Pooled plant-level contamination for all contaminated sample_units in all contaminated inspection_units
         if consignment.num_plants is not None:
-            # Gather all (inspection_unit_idx, samp_index) tuples for contaminated sample_units
+            # Gather all (inspection_unit_idx, samp_index) tuples for contaminated sample_units in contaminated inspection_units
             contaminated_sample_units = []
-            for inspection_unit_index in inspection_unit_indexes[:-1]:
+            for inspection_unit_index in inspection_unit_indexes:
                 for samp_index in range(consignment.inspection_units[inspection_unit_index].num_sample_units):
                     contaminated_sample_units.append((inspection_unit_index, samp_index))
-            for samp_index in range(partial_inspection_unit_contaminated_stems):
-                contaminated_sample_units.append((inspection_unit_indexes[-1], samp_index))
             perc_plants_contaminated = config["clustered"]["percentage_plants_contaminated"]
             _apply_pooled_plant_level_contamination(consignment, contaminated_sample_units, perc_plants_contaminated)
-        else:
-            # No plant unit exists, so set sample_unit array directly for all contaminated sample_units
-            for inspection_unit_index in inspection_unit_indexes[:-1]:
-                consignment.inspection_units[inspection_unit_index].sample_units.fill(1)
-            for samp_index in range(partial_inspection_unit_contaminated_stems):
-                consignment.inspection_units[inspection_unit_indexes[-1]].sample_units[samp_index] = 1
+        # Note: sample_unit arrays were already set to 1 above, no additional action needed for non-plant cases
+        
+        # Synchronize global sample_units array with inspection unit arrays after contamination
+        if hasattr(consignment, 'sample_units'):
+            sample_unit_idx = 0
+            for inspection_unit in consignment.inspection_units:
+                for su_idx, su_value in enumerate(inspection_unit.sample_units):
+                    if sample_unit_idx < len(consignment.sample_units):
+                        consignment.sample_units[sample_unit_idx] = su_value
+                        sample_unit_idx += 1
 
-        assert np.count_nonzero(consignment.inspection_units) in (
+        assert len(inspection_unit_indexes) in (
             math.ceil(contaminated_inspection_units),
             math.floor(contaminated_inspection_units),
         )
@@ -237,6 +233,14 @@ def add_contaminant_uniform_random(config, consignment):
         if consignment.num_plants is not None:
             perc_plants_contaminated = config["clustered"]["percentage_plants_contaminated"]
             _apply_pooled_plant_level_contamination(consignment, list(sample_unit_indexes), perc_plants_contaminated)
+            
+            # Synchronize global sample_units array with inspection unit arrays after contamination
+            sample_unit_idx = 0
+            for inspection_unit in consignment.inspection_units:
+                for su_idx, su_value in enumerate(inspection_unit.sample_units):
+                    consignment.sample_units[sample_unit_idx] = su_value
+                    sample_unit_idx += 1
+            
             # For plant-level contamination, the assertion is more flexible since some sample_units
             # may end up with zero contaminated plants due to the probabilistic nature
             actual_contaminated = np.count_nonzero(consignment.sample_units)

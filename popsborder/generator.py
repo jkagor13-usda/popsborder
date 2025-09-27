@@ -1,46 +1,82 @@
-""" Synthetic Consignment Data Generator
+# Simulation of contaminated consignments and their inspections
+# Copyright (C) 2018-2025 Vaclav Petras and others (see below)
 
-This module generates synthetic consignment data for testing and simulation purposes.
-It creates realistic consignment records with randomized attributes based on 
-configurable parameters or input data files using advanced sampling techniques.
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation; either version 2 of the License, or (at your option) any later
+# version.
+
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+# details.
+
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
 
 
+"""Synthetic consignment data generation
 
-******************
-Contributors:
-    Gary Lin <gary.lin  at jhuapl edu> - JHU/APL
-    Joseph Agor <joseph.agor at jhuapl edu> - JHU/APL
+.. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
+.. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
 
-Version: 2.1.0
-Last Modified: September 2025
-Institutions: 
-    - Johns Hopkins University Applied Physics Laboratory (JHU/APL)
-    - United States Department of Agriculture Animal and Plant Health Inspection Service (USDA APHIS)
+=====================================
+JHU/APL Extensions and Modifications:
+=====================================
+
+Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
+
+New Classes Added:
+------------------
+- SyntheticConsignmentDataGenerator:
+    * Generates synthetic consignment data for testing and simulation purposes
+    * Creates realistic consignment records with randomized attributes
+    * Uses advanced sampling techniques including Gaussian copulas
+    * Supports multiple sampling methods: naive, sequential, GMM, gaussian_copula
+    * Integrates with real PIS data for training synthetic data generation
+
+Sampling Methods Implemented:
+----------------------------
+- multinomial_sample(): Naive approach sampling each column independently
+- sequential_multinomial_sample(): Sequential sampling preserving conditional dependencies
+- gmm_sample(): Gaussian Mixture Model sampling for numeric columns
+- gaussian_copula_sample(): Category-conditional Gaussian copula preserving correlations
+
+Data Generation Features:
+------------------------
+- Configurable consignment attributes (origins, ports, pathways, commodities)
+- Propagative material and flower commodity support
+- Contamination modeling with configurable probability and quantities
+- Quality metrics calculation comparing original and synthetic data
+- Multiple output formats (CSV, JSON) with comprehensive statistics
 """
 
 
-import random
-import json
 import csv
+import json
+import random
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
+
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from sklearn.mixture import GaussianMixture
 from scipy.stats import norm, wasserstein_distance
+from sklearn.mixture import GaussianMixture
 
 
 class SyntheticConsignmentDataGenerator:
-    """Generate synthetic consignment data using advanced sampling techniques"""
+    """Generate synthetic consignment data using advanced sampling techniques
     
-    def __init__(self, config_file: Optional[str] = None, input_data_file: Optional[str] = None):
-        """
-        Initialize the synthetic data generator
+    This generator creates realistic consignment records with randomized attributes
+    based on configurable parameters or input data files. It supports multiple
+    sampling methods for preserving statistical relationships in the data.
+    """
+    
+    def __init__(self, config_file=None, input_data_file=None):
+        """Initialize the synthetic data generator
         
-        Args:
-            config_file: Optional path to configuration file
-            input_data_file: Optional path to input data file for training
+        :param config_file: Optional path to configuration file
+        :param input_data_file: Optional path to input data file for training
         """
         self.config = self._load_default_config()
         if config_file:
@@ -54,7 +90,7 @@ class SyntheticConsignmentDataGenerator:
         random.seed(42)
         np.random.seed(42)
     
-    def _load_default_config(self) -> Dict[str, Any]:
+    def _load_default_config(self):
         """Load default configuration for synthetic data generation"""
         return {
             "origins": [
@@ -102,8 +138,12 @@ class SyntheticConsignmentDataGenerator:
         except json.JSONDecodeError as e:
             print(f"Error parsing config file: {e}. Using default configuration.")
     
-    def _load_input_data(self, input_file: str) -> Optional[pd.DataFrame]:
-        """Load input data file for training sampling models"""
+    def _load_input_data(self, input_file):
+        """Load input data file for training sampling models
+        
+        :param input_file: Path to input data file
+        :return: DataFrame with loaded data or None if failed
+        """
         try:
             df = pd.read_csv(input_file)
             df = df.dropna()
@@ -113,8 +153,7 @@ class SyntheticConsignmentDataGenerator:
             print(f"Error loading input data file: {e}")
             return None
     
-    def multinomial_sample(self, df: pd.DataFrame, columns: List[str], 
-                          n_samples: int = 1, random_state: Optional[int] = None) -> pd.DataFrame:
+    def multinomial_sample(self, df, columns, n_samples=1, random_state=None):
         """Naive approach - sample each column independently"""
         np.random.seed(random_state)
         sampled = {}
@@ -124,8 +163,7 @@ class SyntheticConsignmentDataGenerator:
             sampled[col] = np.random.choice(values, size=n_samples, p=probs)
         return pd.DataFrame(sampled)
     
-    def sequential_multinomial_sample(self, df: pd.DataFrame, columns: List[str], 
-                                     n_samples: int = 1, random_state: Optional[int] = None) -> pd.DataFrame:
+    def sequential_multinomial_sample(self, df, columns, n_samples=1, random_state=None):
         """Sequential sampling to preserve conditional dependencies"""
         np.random.seed(random_state)
         samples = []
@@ -148,9 +186,7 @@ class SyntheticConsignmentDataGenerator:
             samples.append(sample)
         return pd.DataFrame(samples)
     
-    def gmm_sample(self, df: pd.DataFrame, columns: List[str], 
-                   n_samples: int = 1, random_state: Optional[int] = None, 
-                   n_components: int = 3) -> pd.DataFrame:
+    def gmm_sample(self, df, columns, n_samples=1, random_state=None, n_components=3):
         """Gaussian Mixture Model sampling for numeric columns with sequential for categorical"""
         numeric_cols = [col for col in columns if np.issubdtype(df[col].dtype, np.number)]
         cat_cols = [col for col in columns if col not in numeric_cols]
@@ -206,9 +242,7 @@ class SyntheticConsignmentDataGenerator:
             Z[:, j] = norm.ppf(u)
         return Z
     
-    def gaussian_copula_sample(self, df: pd.DataFrame, columns: List[str], 
-                              n_samples: int = 1, random_state: Optional[int] = None, 
-                              min_group_corr_rows: int = 20) -> pd.DataFrame:
+    def gaussian_copula_sample(self, df, columns, n_samples=1, random_state=None, min_group_corr_rows=20):
         """
         Category-conditional Gaussian copula sampler that preserves P(C) and P(X|C).
         """
@@ -373,9 +407,13 @@ class SyntheticConsignmentDataGenerator:
         
         return out[columns]
     
-    def generate_from_input_data(self, n_samples: int = 1000, 
-                                sampling_method: Optional[str] = None) -> pd.DataFrame:
-        """Generate synthetic data based on input data file using specified sampling method"""
+    def generate_from_input_data(self, n_samples=1000, sampling_method=None):
+        """Generate synthetic data based on input data file using specified sampling method
+        
+        :param n_samples: Number of synthetic samples to generate
+        :param sampling_method: Sampling method to use (naive, sequential, gmm, gaussian_copula)
+        :return: DataFrame with synthetic data
+        """
         if self.input_data is None:
             raise ValueError("No input data loaded. Please provide input_data_file parameter.")
         
@@ -417,8 +455,11 @@ class SyntheticConsignmentDataGenerator:
         
         return synthetic_data
     
-    def generate_consignment_record(self) -> Dict[str, Any]:
-        """Generate a single synthetic consignment record using default config"""
+    def generate_consignment_record(self):
+        """Generate a single synthetic consignment record using default config
+        
+        :return: Dictionary containing consignment record data
+        """
         # Basic consignment attributes
         origin = random.choice(self.config["origins"])
         port = random.choice(self.config["ports"])
@@ -490,16 +531,12 @@ class SyntheticConsignmentDataGenerator:
         
         return record
     
-    def generate_dataset(self, num_consignments: int, use_input_data: bool = True) -> pd.DataFrame:
-        """
-        Generate a dataset of synthetic consignment records
+    def generate_dataset(self, num_consignments, use_input_data=True):
+        """Generate a dataset of synthetic consignment records
         
-        Args:
-            num_consignments: Number of consignment records to generate
-            use_input_data: Whether to use input data file for advanced sampling
-            
-        Returns:
-            DataFrame with synthetic consignment records
+        :param num_consignments: Number of consignment records to generate
+        :param use_input_data: Whether to use input data file for advanced sampling
+        :return: DataFrame with synthetic consignment records
         """
         if use_input_data and self.input_data is not None:
             return self.generate_from_input_data(num_consignments)
@@ -511,19 +548,31 @@ class SyntheticConsignmentDataGenerator:
                 dataset.append(record)
             return pd.DataFrame(dataset)
     
-    def save_to_csv(self, dataset: pd.DataFrame, filename: str):
-        """Save dataset to CSV file"""
+    def save_to_csv(self, dataset, filename):
+        """Save dataset to CSV file
+        
+        :param dataset: DataFrame to save
+        :param filename: Output CSV filename
+        """
         dataset.to_csv(filename, index=False)
         print(f"Saved {len(dataset)} records to {filename}")
     
-    def save_to_json(self, dataset: pd.DataFrame, filename: str):
-        """Save dataset to JSON file"""
+    def save_to_json(self, dataset, filename):
+        """Save dataset to JSON file
+        
+        :param dataset: DataFrame to save
+        :param filename: Output JSON filename
+        """
         dataset.to_json(filename, orient='records', indent=2)
         print(f"Saved {len(dataset)} records to {filename}")
     
-    def calculate_quality_metrics(self, original_df: pd.DataFrame, 
-                                 synthetic_df: pd.DataFrame) -> Dict[str, float]:
-        """Calculate quality metrics comparing original and synthetic data"""
+    def calculate_quality_metrics(self, original_df, synthetic_df):
+        """Calculate quality metrics comparing original and synthetic data
+        
+        :param original_df: Original DataFrame for comparison
+        :param synthetic_df: Synthetic DataFrame to evaluate
+        :return: Dictionary of quality metrics
+        """
         if original_df is None:
             return {}
         
@@ -546,12 +595,15 @@ class SyntheticConsignmentDataGenerator:
                         )
                     else:
                         # For categorical columns, use alphabetical ordering
-                        cats = pd.Index(pd.unique(pd.concat([
-                            orig_vals.astype("string"),
-                            synth_vals.astype("string")
-                        ]))).sort_values()
+                        # Get unique categories from both datasets
+                        all_vals = pd.concat([
+                            orig_vals.astype(str),
+                            synth_vals.astype(str)
+                        ])
+                        unique_vals = all_vals.drop_duplicates().values
+                        cats = pd.Index(unique_vals).sort_values()
                         
-                        enc = lambda s: pd.Categorical(s.astype("string"), categories=cats, ordered=True).codes
+                        enc = lambda s: pd.Categorical(s.astype(str), categories=cats, ordered=True).codes
                         oa, sa = map(enc, (orig_vals, synth_vals))
                         
                         va, vs = map(pd.Series, (oa, sa))
@@ -567,8 +619,12 @@ class SyntheticConsignmentDataGenerator:
         
         return metrics
     
-    def generate_statistics(self, dataset: pd.DataFrame) -> Dict[str, Any]:
-        """Generate statistics about the synthetic dataset"""
+    def generate_statistics(self, dataset):
+        """Generate statistics about the synthetic dataset
+        
+        :param dataset: DataFrame to analyze
+        :return: Dictionary of dataset statistics
+        """
         if dataset.empty:
             return {}
         

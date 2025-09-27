@@ -1,0 +1,15 @@
+metric,value,description
+total_consignments,20.0,Number of consignments in simulation
+total_inspection_units,20.0,Total inspection units across all consignments
+total_sample_units,8987.0,Total sample units across all consignments
+total_plants,454652.0,Total plants across all consignments
+intercepted_consignments,1.0,Consignments where contamination was detected
+missed_consignments,0.0,Consignments where contamination was missed (slipped)
+slippage_rate_percent,0.0,Percentage of contaminated consignments that slipped through
+true_contamination_rate,0.004640371229698376,Overall contamination rate in the simulation
+total_missed_contaminants,0.0,Total number of individual contaminants that were missed
+total_intercepted_contaminants,0.0,Total number of individual contaminants that were intercepted
+pct_sample_units_inspected,26.148881718037163,Percentage of sample units that were inspected
+pct_inspection_units_opened,100.0,Percentage of inspection units that were opened/inspected
+avg_sample_units_inspected,117.5,Average number of sample units inspected per consignment
+avg_inspection_units_opened,1.0,Average number of inspection units opened per consignment
