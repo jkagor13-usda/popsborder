@@ -4,6 +4,38 @@ import pandas as pd
 import statsmodels.api as sm
 from dataclasses import dataclass
 from typing import Optional, Tuple
+import math
+
+
+def beta_from_mean_sd(mean, sd, eps=1e-12):
+    # clip mean to (0,1) to avoid boundary issues
+    m = min(max(mean, eps), 1.0 - eps)
+    vmax = m * (1.0 - m)  # max possible variance for a Beta (as K -> 0+)
+    v = sd * sd
+    if v >= vmax:
+        # soften to a feasible value
+        v = 0.999 * vmax
+    K = (m * (1.0 - m)) / v - 1.0
+    alpha = m * K
+    beta = (1.0 - m) * K
+    return float(alpha), float(beta), float(K)
+
+def beta_from_mean_ci(mean, lower, upper, z=1.959963984540054):
+    # infer sd from a symmetric normal approx to the CI, then call above
+    sd = (upper - lower) / (2.0 * z)
+    return beta_from_mean_sd(mean, sd)
+
+def beta_from_mean_K(mean, K, eps=1e-12):
+    m = min(max(mean, eps), 1.0 - eps)
+    if K <= 0:
+        raise ValueError("K must be > 0 for a Beta distribution.")
+    alpha = m * K
+    beta = (1.0 - m) * K
+    # implied sd if you're curious:
+    sd = math.sqrt(m * (1.0 - m) / (K + 1.0))
+    return float(alpha), float(beta), float(sd)
+
+
 
 @dataclass
 class CloglogGLMResult:
@@ -32,7 +64,7 @@ def aggregate_to_lots(df: pd.DataFrame,
     return pd.concat([n, r], axis=1).reset_index()
 
 def fit_cloglog_statsmodels(df: pd.DataFrame,
-                            id_col: str = "Inspection_ID",
+                            id_col: str = "INSPECTION_ID",
                             action_col: str = "action",
                             detection_rate: Optional[float] = None) -> CloglogGLMResult:
     """
@@ -48,7 +80,7 @@ def fit_cloglog_statsmodels(df: pd.DataFrame,
     X = np.ones((len(lots), 1))                    # intercept column
     offset = np.log(np.clip(n, 1.0, None))        # guard log(0)
 
-    family = sm.families.Binomial(link=sm.families.links.cloglog())
+    family = sm.families.Binomial(link=sm.families.links.CLogLog())
     model = sm.GLM(r, X, family=family, offset=offset)
 
     # Fit with a couple of robust fallbacks
@@ -110,3 +142,4 @@ if __name__ == "__main__":
     print("theta_hat (exp(alpha)):", res.theta_hat)
     print("gamma_mean (if eps given):", res.gamma_mean)
     print("\nLots used:\n", res.lots.head())
+    print('')
