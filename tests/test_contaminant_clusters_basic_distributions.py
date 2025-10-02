@@ -3,7 +3,7 @@ import datetime
 import numpy as np
 import pytest
 
-from popsborder.consignments import Box, Consignment
+from popsborder.consignments import InspectionUnit, Consignment
 from popsborder.contamination import add_contaminant_clusters, num_items_to_contaminate
 from popsborder.inputs import load_configuration_yaml_from_text
 from popsborder.simulation import random_seed
@@ -47,7 +47,7 @@ def get_consignment(num_items):
         num_items=num_items,
         items=items,
         num_boxes=1,
-        boxes=[Box(items)],
+        boxes=[InspectionUnit(items)],
         items_per_box=num_items,
         pathway="air",
     )

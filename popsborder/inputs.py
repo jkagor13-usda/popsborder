@@ -18,6 +18,31 @@
 """Inputs, especially loading of configuration
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
+
+=====================================
+JHU/APL Extensions and Modifications:
+=====================================
+
+Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
+
+New Functions Added:
+-------------------  
+- load_compliance_lookup_csv(): 
+    * Loads compliance level CSV files for RBS inspection workflows
+    * Parses country/material type combinations with associated detection and confidence levels
+    * Returns dictionary structure for efficient compliance level lookup during simulation
+
+- load_input_consignment_data():
+    * Loads RBS calculator data for realistic consignment generation
+    * Supports various input formats (CSV, Excel) for consignment parameter specifications
+    * Integrates with synthetic data generation workflows for enhanced simulation realism
+
+Configuration Enhancements:
+--------------------------
+- Enhanced configuration validation for new terminology (inspection_units vs boxes, sample_units vs items)
+- Added backward compatibility parameter mapping throughout configuration loading
+- Improved error handling and validation for RBS-specific configuration parameters
+
 """
 
 import copy
@@ -682,12 +707,13 @@ def load_input_consignment_data(file_path):
     """
     Load custom csv data to generate consignment. 
     """
-    import csv
-    consignments = []
+    from collections import defaultdict
 
-    with open(file_path, encoding="utf-8") as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            consignment = {k: text_to_value(v) for k, v in row.items()}
-            consignments.append(consignment)
-    return consignments
+    # Create dictionary where each inspection number maps to a list of rows
+    inspection_dict = defaultdict(list)
+
+    for _, row in inspection_dict.iterrows():
+        inspection_dict[row["INSPECTION_NUMBER"]].append(row.to_dict())
+
+    # Convert back to normal dict if needed
+    inspection_dict = dict(inspection_dict)

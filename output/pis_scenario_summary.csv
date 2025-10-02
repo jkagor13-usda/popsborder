@@ -1,0 +1,16 @@
+scenario_name,contamination_unit,contamination_rate,consignments_tested_inspection_units,contaminated_consignments_inspection_units,detected_consignments_inspection_units,slipped_consignments_inspection_units,detection_rate_percent,slippage_rate_percent,avg_contamination_rate_per_plant_unit,total_contaminants_missed_plant_units,total_contaminants_detected_plant_units
+pis low contamination random,sample_unit,0.01,50.0,45.0,45.0,0.0,100.0,0.0,0.009128225464894453,0.0,0.0
+pis medium contamination random,sample_unit,0.05,50.0,48.0,48.0,0.0,100.0,0.0,0.047533117069843873,0.0,0.0
+pis high contamination random,sample_unit,0.1,50.0,48.0,48.0,0.0,100.0,0.0,0.09531074560725554,0.0,0.0
+pis beta contamination random,sample_unit,0.027,50.0,5.0,5.0,0.0,100.0,0.0,0.010737909984363516,0.0,0.0
+pis country targeted japan,sample_unit,0.08,50.0,48.0,48.0,0.0,100.0,0.0,0.07615671364590976,0.0,0.0
+pis country targeted netherlands,sample_unit,0.06,50.0,48.0,48.0,0.0,100.0,0.0,0.05794985681350535,0.0,0.0
+pis small consignments,sample_unit,0.15,50.0,48.0,48.0,0.0,100.0,0.0,0.14205608746747003,0.0,0.0
+pis large consignments,sample_unit,0.02,50.0,48.0,48.0,0.0,100.0,0.0,0.01966908038814644,0.0,0.0
+pis realistic outbreak,sample_unit,0.03,50.0,48.0,48.0,0.0,100.0,0.0,0.028560636875876396,0.0,0.0
+pis detection threshold,sample_unit,0.005,50.0,43.0,43.0,0.0,100.0,0.0,0.0044479157403707606,0.0,0.0
+pis seasonal variation low,sample_unit,0.008,50.0,45.0,45.0,0.0,100.0,0.0,0.007338010590054372,0.0,0.0
+pis seasonal variation high,sample_unit,0.12,50.0,48.0,48.0,0.0,100.0,0.0,0.11314520599530668,0.0,0.0
+pis mixed material risk,sample_unit,0.07,50.0,48.0,48.0,0.0,100.0,0.0,0.06692527013687823,0.0,0.0
+pis port specific miami,sample_unit,0.09,50.0,48.0,48.0,0.0,100.0,0.0,0.0855626697253038,0.0,0.0
+pis inspection intensive,sample_unit,0.04,50.0,48.0,48.0,0.0,100.0,0.0,0.03837328993137582,0.0,0.0
