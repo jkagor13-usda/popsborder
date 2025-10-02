@@ -17,6 +17,12 @@ def main():
 
     # Load configuration and compliance table
     config = load_configuration(config_file)
+    
+    # TODO: SYNTHETIC GENERATION + rbs calc + pis  
+    # TODO: Contamination data
+
+    config[rbs_calc_file] = YYYY
+
     compliance_table = load_compliance_lookup_csv(compliance_file)
 
     # Load scenario table
@@ -28,8 +34,8 @@ def main():
         config=config,
         scenario_table=scenarios,
         seed=42,
-        num_simulations=1,           # Only one simulation
-        num_consignments=5,        # You can change this number if needed
+        num_simulations=1,            # Only one simulation
+        num_consignments=5,           # You can change this number if needed
         compliance_table=compliance_table,
         detailed=True
     )

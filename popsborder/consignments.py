@@ -156,7 +156,7 @@ class SampleUnit:
 
     Evaluates to bool when it contains contaminant.
 
-    Item Container is a view into array of plants, i.e. a slice of that array. The
+    SampleUnit Container is a view into array of plants, i.e. a slice of that array. The
     assumption is that the original, and possibly modifed, plants can not
     only be accessed but also modifed through the InspectionUnit.
     """
