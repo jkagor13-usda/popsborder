@@ -85,7 +85,6 @@ def simulation(
     config,
     num_consignments,
     seed,
-    input_consignment_data=None, # consignment data 
     compliance_table=None,
     output_f280_file=None,
     verbose=False,
@@ -137,17 +136,9 @@ def simulation(
     is_inspection_needed = get_inspection_needed_function(config)
     sample = get_sample_function(config, compliance_table)
     tolerance_level = config["inspection"]["tolerance_level"]
-    if input_consignment_data is not None:
-        consignment_data = load_input_consignment_data(input_consignment_data)
 
     for i in range(num_consignments):
-        if input_consignment_data is None:
-            consignment = consignment_generator.generate_consignment()
-        else:
-            if consignment_data and len(consignment_data) > 0:
-                consignment = consignment_generator.generate_consignment(consignment_data=consignment_data[i % len(consignment_data)])
-            else:
-                consignment = consignment_generator.generate_consignment()
+        consignment = consignment_generator.generate_consignment()
         add_contaminant(consignment)
         if detailed:
             for inspection_unit in consignment.inspection_units:
@@ -296,7 +287,6 @@ def run_simulation(
     config,
     num_simulations,
     num_consignments,
-    input_consignment_data=None,
     compliance_table=None,
     seed=None,
     output_f280_file=None,
@@ -347,7 +337,6 @@ def run_simulation(
             config=config,
             num_consignments=num_consignments,
             seed=seed + i if seed is not None else None,
-            input_consignment_data=input_consignment_data,
             compliance_table=compliance_table,
             output_f280_file=output_f280_file,
             verbose=verbose,

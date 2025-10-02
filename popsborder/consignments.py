@@ -762,26 +762,12 @@ def get_consignment_generator(config):
         )
     elif generation_method == "RBS":
         if "input_file" in config and "file_name" in config["input_file"]:
-            # RBS record-based generation from file
-            file_type = config["input_file"].get("file_type", "RBS")
-            if file_type == "PIS":
-                # PIS data with multiple material types per consignment
-                # PIS generator is fully data-driven - no configuration parameters needed
-                consignment_generator = PISConsignmentGenerator(
-                    filename=config["input_file"]["file_name"],
-                )
-            else:
-                # Other RBS record formats would go here
-                raise RuntimeError(f"Unsupported RBS file type: {file_type}")
-        else:
-            # RBS parameter-based generation
-            start_date = config.get("start_date", "2020-01-01")
-            consignment_generator = RBSConsignmentGenerator(
-                parameters=config["rbs_parameter_based"],
-                sample_units_per_inspection_unit=config["sample_units_per_inspection_unit"],
-                plants_per_sample_unit=config.get("plants_per_sample_unit", config.get("plants_per_item")),
-                start_date=start_date,
+        # RBS record-based generation from file
+            consignment_generator = PISConsignmentGenerator(
+                filename=config["input_file"]["file_name"],
             )
+        else:
+            print("No consignment data available")
     else:
         raise RuntimeError(
             f"Unknown consignment generation method: {generation_method}"

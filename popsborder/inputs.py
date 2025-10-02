@@ -707,7 +707,6 @@ def load_input_consignment_data(file_path):
     """
     Load custom csv data to generate consignment. 
     """
-    import csv
     from collections import defaultdict
 
     # Create dictionary where each inspection number maps to a list of rows
