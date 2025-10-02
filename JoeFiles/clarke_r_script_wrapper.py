@@ -12,12 +12,7 @@ import pandas as pd
 
 
 # === CONFIG ===
-# Your R script (specify path to R script)
-R_SCRIPT_PATH_test = r"C:\Users\agorjk1\PycharmProjects\plant-inspection-station-simulation\JoeFiles\clarke_2023_code\add_function.R"
-
 # Beta-Binomial Model
-
-R_SCRIPT_PATH_bb_model_clarke = r"C:\Users\agorjk1\PycharmProjects\plant-inspection-station-simulation\JoeFiles\clarke_2023_code\simstudy_paperspace_27_04_2023.R"
 R_SCRIPT_PATH_bb_cli = r"C:\Users\agorjk1\PycharmProjects\plant-inspection-station-simulation\JoeFiles\clarke_2023_code\clarke_bb_model.R"
 
 # Absolute path to conda.exe (adjust for your install if needed)
