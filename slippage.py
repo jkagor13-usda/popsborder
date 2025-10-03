@@ -39,19 +39,15 @@ def main():
     ### Read in Data ###
     ####################
 
+    #############################################################
     ##### TODO: Replace this block with the appropriate data ####
     #############################################################
-
-    #temp_data_dir = Path(r'C:\Users\agorjk1\Box\NHH15 - USDA APHIS EDISON\05 PPQ Engagement\PPQ RBS Data (Folder shared with APHIS)\APL Created Data Related Items\Synthetic_Data')
-    # Load in PIS Data
-    #filename = dir / f'synthetic_pis_data.csv'
     # Load in PIS Data
     df_pis_data = pd.read_csv(pis_data)
 
     # Load in RBS Calculator Data
-    #filename = dir / f'synthetic_rbs_calc_data.csv'
     df_rbs_calculator = pd.read_csv(rbs_calc_data)
-
+    #############################################################
     ##### TODO: Replace this block with the appropriate data ####
     #############################################################
 
@@ -72,9 +68,9 @@ def main():
     print(f'   Beta = {res["beta"]}')
     print('')
 
-
-
-    config[rbs_calc_file] = YYYY
+    # Update original parameters of config
+    config['contamination']['contamination_rate']['parameters'][0] = res["alpha"]
+    config['contamination']['contamination_rate']['parameters'][1] = res["beta"]
 
     ####################################################################
     ####################################################################
