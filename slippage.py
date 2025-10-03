@@ -6,7 +6,7 @@ import pandas as pd
 from popsborder.scenarios import run_scenarios
 from popsborder.inputs import load_configuration, load_scenario_table, load_compliance_lookup_csv
 from popsborder.outputs import save_scenario_result_to_pandas
-
+from popsborder.generator import SyntheticConsignmentDataGenerator, save_to_csv
 
 def main():
     # Set up data folder and file names
@@ -17,12 +17,15 @@ def main():
 
     # Load configuration and compliance table
     config = load_configuration(config_file)
-    
-    # TODO: SYNTHETIC GENERATION + rbs calc + pis  
+
+    # Synthetic data generation
+    synthetic_data_generator = SyntheticConsignmentDataGenerator(data_dir / "fake_pis_data.csv")
+    synth_data = synthetic_data_generator.generate_from_input_data(n_samples=10, sampling_method="sequential")
+    save_to_csv(synth_data, filename= data_dir / "synth_data.csv")
+
+    config["consignment"]["input_file"]["rbs_file_name"] = str(data_dir / "synth_data.csv")
+
     # TODO: Contamination data
-
-    config[rbs_calc_file] = YYYY
-
     compliance_table = load_compliance_lookup_csv(compliance_file)
 
     # Load scenario table
