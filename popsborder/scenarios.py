@@ -18,6 +18,22 @@
 """Functionality for running multiple scenarios
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
+
+=====================================
+JHU/APL Extensions and Modifications:
+=====================================
+
+Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
+
+Modified Functions:
+------------------- 
+- run_scenarios():
+    * Enhanced to support plant-level parameters for hierarchical consignment structure
+    * Added compliance table file integration for RBS scenario execution
+    * Enhanced to support input consignment data for realistic scenario modeling
+    * Updated parameter handling for refactored terminology (boxes -> inspection_units, items -> sample_units)
+    * Maintains backward compatibility with existing scenario definition files
+
 """
 
 from .inputs import update_config

@@ -19,6 +19,37 @@
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
 .. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
+
+
+=====================================
+JHU/APL Extensions and Modifications:
+=====================================
+
+Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
+
+Modified Functions:
+------------------- 
+- simulation():
+    * Added RBS functionalities that utilize compliance levels to adjust hypergeometric sampling parameters
+    * Enhanced to support compliance table integration for country/material type specific detection levels
+    * Updated variable names throughout for terminology consistency (boxes -> inspection_units, items -> sample_units)
+
+- run_simulation():
+    * Enhanced result tracking and aggregation for refactored terminology
+    * Updated contamination and inspection counting for new hierarchical structure
+    * Added support for plant-level contamination tracking in hierarchical consignments
+
+Terminology Updates:
+-------------------
+- Updated all variable names from box/item terminology to inspection_unit/sample_unit terminology
+- Enhanced result aggregation to handle both legacy and new terminology reporting
+- Maintained backward compatibility in simulation result structures 
+    - Johns Hopkins University Applied Physics Laboratory (JHU/APL)
+    - United States Department of Agriculture Animal and Plant Health Inspection Service (USDA APHIS)
+    * Supports hierarchical packaging structure (boxes -> items -> plants)
+    * Custom consignment data input from CSV
+- run_simulation():
+    * Inputs for plant-level parameters, compliance table file, and consignment data supported
 """
 
 import random
@@ -42,7 +73,7 @@ from .outputs import (
     pretty_consignment,
 )
 from .skipping import get_inspection_needed_function
-
+from .inputs import load_input_consignment_data
 
 def random_seed(seed):
     """Set seed for all generators used"""
@@ -54,7 +85,6 @@ def simulation(
     config,
     num_consignments,
     seed,
-    input_consignment_data=None,
     compliance_table=None,
     output_f280_file=None,
     verbose=False,
@@ -83,23 +113,23 @@ def simulation(
     success_rates = SuccessRates(reporter)
     missed_within_tolerance = 0
     num_inspections = 0
-    total_num_boxes = 0
-    total_num_items = 0
+    total_num_inspection_units = 0
+    total_num_sample_units = 0
     total_num_plants = 0
-    total_boxes_opened_completion = 0
-    total_boxes_opened_detection = 0
-    total_items_inspected_completion = 0
-    total_items_inspected_detection = 0
-    total_contaminated_items_completion = 0
-    total_contaminated_items_detection = 0
+    total_inspection_units_opened_completion = 0
+    total_inspection_units_opened_detection = 0
+    total_sample_units_inspected_completion = 0
+    total_sample_units_inspected_detection = 0
+    total_contaminated_sample_units_completion = 0
+    total_contaminated_sample_units_detection = 0
     true_contamination_rate = 0
     intercepted_contamination_rate = []
     missed_contamination_rate = []
     total_intercepted_contaminants = 0
     total_missed_contaminants = 0
     if detailed:
-        item_details = []
-        inspected_item_details = []
+        sample_unit_details = []
+        inspected_sample_unit_details = []
 
     consignment_generator = get_consignment_generator(config)
     add_contaminant = get_contaminant_function(config)
@@ -107,66 +137,72 @@ def simulation(
     sample = get_sample_function(config, compliance_table)
     tolerance_level = config["inspection"]["tolerance_level"]
 
-    for unused_i in range(num_consignments):
-        consignment = consignment_generator.generate_consignment()
-        add_contaminant(consignment)
-        if detailed:
-            for box in consignment.boxes:
-                item_details.append(box.items)
-        if pretty:
-            pretty_config = config.get("pretty", {})
-            print(pretty_consignment(consignment, style=pretty, config=pretty_config))
-
-        must_inspect, applied_program = is_inspection_needed(
-            consignment, consignment.date
-        )
-        if must_inspect:
-            n_units_to_inspect = sample(consignment)
-            ret = inspect(config, consignment, n_units_to_inspect, detailed)
-            consignment_checked_ok = ret.consignment_checked_ok
-            num_inspections += 1
-            total_num_boxes += consignment.num_boxes
-            total_num_items += consignment.num_items
-            total_num_plants += consignment.num_plants
-            total_boxes_opened_completion += ret.boxes_opened_completion
-            total_boxes_opened_detection += ret.boxes_opened_detection
-            total_items_inspected_completion += ret.items_inspected_completion
-            total_items_inspected_detection += ret.items_inspected_detection
-            total_contaminated_items_completion += ret.contaminated_items_completion
-            total_contaminated_items_detection += ret.contaminated_items_detection
+    for i in range(num_consignments):
+        try:
+            consignment = consignment_generator.generate_consignment()
+            add_contaminant(consignment)
             if detailed:
-                inspected_item_details.append(ret.inspected_item_indexes)
-        else:
-            consignment_checked_ok = True  # assuming or hoping it's ok
-            total_num_boxes += consignment.num_boxes
-            total_num_items += consignment.num_items
-            total_num_plants += consignment.num_plants
+                for inspection_unit in consignment.inspection_units:
+                    sample_unit_details.append(inspection_unit.sample_units)
+            if pretty:
+                pretty_config = config.get("pretty", {})
+                print(pretty_consignment(consignment, style=pretty, config=pretty_config))
 
-        form280.fill(
-            consignment.date,
-            consignment,
-            consignment_checked_ok,
-            must_inspect,
-            applied_program,
-        )
-        consignment_actually_ok = not is_consignment_contaminated(consignment)
-        success_rates.record_success_rate(
-            consignment_checked_ok, consignment_actually_ok, consignment
-        )
-        true_contamination_rate += consignment_contamination_rate(consignment)
-        if not consignment_actually_ok:
-            if consignment_checked_ok:
-                if consignment_contamination_rate(consignment) < tolerance_level:
-                    missed_within_tolerance += 1
-                missed_contamination_rate.append(
-                    consignment_contamination_rate(consignment)
-                )
-                total_missed_contaminants += consignment.count_contaminated()
+            must_inspect, applied_program = is_inspection_needed(
+                consignment, consignment.date
+            )
+            if must_inspect:
+                n_units_to_inspect = sample(consignment)
+                ret = inspect(config, consignment, n_units_to_inspect, detailed)
+                consignment_checked_ok = ret.consignment_checked_ok
+                num_inspections += 1
+                total_num_inspection_units += consignment.num_inspection_units
+                total_num_sample_units += consignment.num_sample_units
+                if consignment.num_plants is not None:
+                    total_num_plants += consignment.num_plants
+                total_inspection_units_opened_completion += ret.inspection_units_opened_completion
+                total_inspection_units_opened_detection += ret.inspection_units_opened_detection
+                total_sample_units_inspected_completion += ret.sample_units_inspected_completion
+                total_sample_units_inspected_detection += ret.sample_units_inspected_detection
+                total_contaminated_sample_units_completion += ret.contaminated_sample_units_completion
+                total_contaminated_sample_units_detection += ret.contaminated_sample_units_detection
+                if detailed:
+                    inspected_sample_unit_details.append(ret.inspected_sample_unit_indexes)
             else:
-                intercepted_contamination_rate.append(
-                    consignment_contamination_rate(consignment)
-                )
-                total_intercepted_contaminants += consignment.count_contaminated()
+                consignment_checked_ok = True  # assuming or hoping it's ok
+                total_num_inspection_units += consignment.num_inspection_units
+                total_num_sample_units += consignment.num_sample_units
+                if consignment.num_plants is not None:
+                    total_num_plants += consignment.num_plants
+
+            form280.fill(
+                consignment.date,
+                consignment,
+                consignment_checked_ok,
+                must_inspect,
+                applied_program,
+            )
+            consignment_actually_ok = not is_consignment_contaminated(consignment)
+            success_rates.record_success_rate(
+                consignment_checked_ok, consignment_actually_ok, consignment
+            )
+            true_contamination_rate += consignment_contamination_rate(consignment)
+            if not consignment_actually_ok:
+                if consignment_checked_ok:
+                    if consignment_contamination_rate(consignment) < tolerance_level:
+                        missed_within_tolerance += 1
+                    missed_contamination_rate.append(
+                        consignment_contamination_rate(consignment)
+                    )
+                    total_missed_contaminants += consignment.count_contaminated()
+                else:
+                    intercepted_contamination_rate.append(
+                        consignment_contamination_rate(consignment)
+                    )
+                    total_intercepted_contaminants += consignment.count_contaminated()
+        except RuntimeError as e:
+            print(f"Stopped simulation early: {e}")
+            pass
 
     num_contaminated = num_consignments - success_rates.ok
     if num_contaminated:
@@ -199,7 +235,7 @@ def simulation(
         )
         pct_contaminant_unreported_if_detection = (
             1
-            - (total_contaminated_items_detection / total_contaminated_items_completion)
+            - (total_contaminated_sample_units_detection / total_contaminated_sample_units_completion)
         ) * 100
     else:
         true_positive_present = False
@@ -213,26 +249,26 @@ def simulation(
         missed_within_tolerance=missed_within_tolerance,
         intercepted=success_rates.true_positive,
         num_inspections=num_inspections,
-        total_num_boxes=total_num_boxes,
-        total_num_items=total_num_items,
+        total_num_inspection_units=total_num_inspection_units,
+        total_num_sample_units=total_num_sample_units,
         total_num_plants=total_num_plants,
-        avg_boxes_opened_completion=total_boxes_opened_completion / num_consignments,
-        avg_boxes_opened_detection=total_boxes_opened_detection / num_consignments,
-        pct_boxes_opened_completion=(
-            (total_boxes_opened_completion / total_num_boxes) * 100
+        avg_inspection_units_opened_completion=total_inspection_units_opened_completion / num_consignments,
+        avg_inspection_units_opened_detection=total_inspection_units_opened_detection / num_consignments,
+        pct_inspection_units_opened_completion=(
+            (total_inspection_units_opened_completion / total_num_inspection_units) * 100
         ),
-        pct_boxes_opened_detection=(
-            (total_boxes_opened_detection / total_num_boxes) * 100
+        pct_inspection_units_opened_detection=(
+            (total_inspection_units_opened_detection / total_num_inspection_units) * 100
         ),
-        avg_items_inspected_completion=total_items_inspected_completion
+        avg_sample_units_inspected_completion=total_sample_units_inspected_completion
         / num_consignments,
-        avg_items_inspected_detection=total_items_inspected_detection
+        avg_sample_units_inspected_detection=total_sample_units_inspected_detection
         / num_consignments,
-        pct_items_inspected_completion=(
-            (total_items_inspected_completion / total_num_items) * 100
+        pct_sample_units_inspected_completion=(
+            (total_sample_units_inspected_completion / total_num_sample_units) * 100
         ),
-        pct_items_inspected_detection=(
-            (total_items_inspected_detection / total_num_items) * 100
+        pct_sample_units_inspected_detection=(
+            (total_sample_units_inspected_detection / total_num_sample_units) * 100
         ),
         pct_contaminant_unreported_if_detection=pct_contaminant_unreported_if_detection,
         true_contamination_rate=true_contamination_rate / num_consignments,
@@ -246,7 +282,7 @@ def simulation(
         total_missed_contaminants=total_missed_contaminants,
     )
     if detailed:
-        simulation_results.details = [item_details, inspected_item_details]
+        simulation_results.details = [sample_unit_details, inspected_sample_unit_details]
 
     return simulation_results
 
@@ -255,7 +291,6 @@ def run_simulation(
     config,
     num_simulations,
     num_consignments,
-    input_consignment_data=None,
     compliance_table=None,
     seed=None,
     output_f280_file=None,
@@ -278,17 +313,17 @@ def run_simulation(
         missed_within_tolerance=0,
         intercepted=0,
         num_inspections=0,
-        num_boxes=0,
-        num_items=0,
+        num_inspection_units=0,
+        num_sample_units=0,
         num_plants=0,
-        avg_boxes_opened_completion=0,
-        avg_boxes_opened_detection=0,
-        pct_boxes_opened_completion=0,
-        pct_boxes_opened_detection=0,
-        avg_items_inspected_completion=0,
-        avg_items_inspected_detection=0,
-        pct_items_inspected_completion=0,
-        pct_items_inspected_detection=0,
+        avg_inspection_units_opened_completion=0,
+        avg_inspection_units_opened_detection=0,
+        pct_inspection_units_opened_completion=0,
+        pct_inspection_units_opened_detection=0,
+        avg_sample_units_inspected_completion=0,
+        avg_sample_units_inspected_detection=0,
+        pct_sample_units_inspected_completion=0,
+        pct_sample_units_inspected_detection=0,
         pct_contaminant_unreported_if_detection=0,
         true_contamination_rate=0,
         max_missed_contamination_rate=0,
@@ -306,7 +341,6 @@ def run_simulation(
             config=config,
             num_consignments=num_consignments,
             seed=seed + i if seed is not None else None,
-            input_consignment_data=input_consignment_data,
             compliance_table=compliance_table,
             output_f280_file=output_f280_file,
             verbose=verbose,
@@ -322,17 +356,17 @@ def run_simulation(
         totals.missed_within_tolerance += result.missed_within_tolerance
         totals.intercepted += result.intercepted
         totals.num_inspections += result.num_inspections
-        totals.num_boxes += result.total_num_boxes
-        totals.num_items += result.total_num_items
+        totals.num_inspection_units += result.total_num_inspection_units
+        totals.num_sample_units += result.total_num_sample_units
         totals.num_plants += result.total_num_plants
-        totals.avg_boxes_opened_completion += result.avg_boxes_opened_completion
-        totals.avg_boxes_opened_detection += result.avg_boxes_opened_detection
-        totals.pct_boxes_opened_completion += result.pct_boxes_opened_completion
-        totals.pct_boxes_opened_detection += result.pct_boxes_opened_detection
-        totals.avg_items_inspected_completion += result.avg_items_inspected_completion
-        totals.avg_items_inspected_detection += result.avg_items_inspected_detection
-        totals.pct_items_inspected_completion += result.pct_items_inspected_completion
-        totals.pct_items_inspected_detection += result.pct_items_inspected_detection
+        totals.avg_inspection_units_opened_completion += result.avg_inspection_units_opened_completion
+        totals.avg_inspection_units_opened_detection += result.avg_inspection_units_opened_detection
+        totals.pct_inspection_units_opened_completion += result.pct_inspection_units_opened_completion
+        totals.pct_inspection_units_opened_detection += result.pct_inspection_units_opened_detection
+        totals.avg_sample_units_inspected_completion += result.avg_sample_units_inspected_completion
+        totals.avg_sample_units_inspected_detection += result.avg_sample_units_inspected_detection
+        totals.pct_sample_units_inspected_completion += result.pct_sample_units_inspected_completion
+        totals.pct_sample_units_inspected_detection += result.pct_sample_units_inspected_detection
         totals.pct_contaminant_unreported_if_detection += (
             result.pct_contaminant_unreported_if_detection
         )
@@ -355,16 +389,16 @@ def run_simulation(
     totals.missed_within_tolerance /= float(num_simulations)
     totals.intercepted /= float(num_simulations)
     totals.num_inspections /= float(num_simulations)
-    totals.num_boxes /= float(num_simulations)
-    totals.num_items /= float(num_simulations)
-    totals.avg_boxes_opened_completion /= float(num_simulations)
-    totals.avg_boxes_opened_detection /= float(num_simulations)
-    totals.pct_boxes_opened_completion /= float(num_simulations)
-    totals.pct_boxes_opened_detection /= float(num_simulations)
-    totals.avg_items_inspected_completion /= float(num_simulations)
-    totals.avg_items_inspected_detection /= float(num_simulations)
-    totals.pct_items_inspected_completion /= float(num_simulations)
-    totals.pct_items_inspected_detection /= float(num_simulations)
+    totals.num_inspection_units /= float(num_simulations)
+    totals.num_sample_units /= float(num_simulations)
+    totals.avg_inspection_units_opened_completion /= float(num_simulations)
+    totals.avg_inspection_units_opened_detection /= float(num_simulations)
+    totals.pct_inspection_units_opened_completion /= float(num_simulations)
+    totals.pct_inspection_units_opened_detection /= float(num_simulations)
+    totals.avg_sample_units_inspected_completion /= float(num_simulations)
+    totals.avg_sample_units_inspected_detection /= float(num_simulations)
+    totals.pct_sample_units_inspected_completion /= float(num_simulations)
+    totals.pct_sample_units_inspected_detection /= float(num_simulations)
     totals.pct_contaminant_unreported_if_detection /= float(num_simulations)
     totals.true_contamination_rate /= float(num_simulations)
     if totals.num_plants:
