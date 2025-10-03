@@ -1,8 +1,5 @@
-import os
-import pandas as pd
-
-from JoeFiles.clarke_r_script_wrapper import *
-from JoeFiles.clarke_model_support_functions import *
+from slippage_model_utils.clarke_r_script_wrapper import *
+from slippage_model_utils.clarke_model_support_functions import *
 from JoeFiles.pis_rbs_calculator_data import *
 
 if __name__ == "__main__":

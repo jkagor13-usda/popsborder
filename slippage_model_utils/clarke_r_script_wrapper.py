@@ -13,7 +13,7 @@ import pandas as pd
 
 # === CONFIG ===
 # Beta-Binomial Model
-R_SCRIPT_PATH_bb_cli = r"C:\Users\agorjk1\PycharmProjects\plant-inspection-station-simulation\JoeFiles\clarke_2023_code\clarke_bb_model.R"
+R_SCRIPT_PATH_bb_cli = r"/JoeFiles/clarke_2023_code/clarke_bb_model.R"
 
 # Absolute path to conda.exe (adjust for your install if needed)
 CONDA_EXE_PATH = r"C:\Users\agorjk1\AppData\Local\anaconda3\Scripts\conda.exe"
