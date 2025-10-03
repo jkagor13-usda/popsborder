@@ -64,6 +64,8 @@ def main():
                                     inputs.R,
                                     inputs.start_val,
                                     inputs.se)
+
+    print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
     print(f'   Alpha = {res["alpha"]}')
     print(f'   Beta = {res["beta"]}')
     print('')

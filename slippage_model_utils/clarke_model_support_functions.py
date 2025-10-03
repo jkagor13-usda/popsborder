@@ -90,8 +90,6 @@ def group_by_inspection_id(
     inspection_id_grouped_pis_data = {k: inspection_id_grouped_pis_data_orig[k] for k in shared_inspection_ids}
     inspection_id_grouped_rbs_data = {k: inspection_id_grouped_rbs_data_orig[k] for k in shared_inspection_ids}
 
-    print(f"Number of shared inspection IDs: {len(shared_inspection_ids)}")
-
     return inspection_id_grouped_pis_data, inspection_id_grouped_rbs_data
 
 def identify_relevant_consignments(
@@ -105,18 +103,23 @@ def identify_relevant_consignments(
 
     Function also find the consignments/inspection IDs that are shared across both the PIS and calculator data
     """
-
+    print(f"\nIdentifying Relevant Consignments for Use in Contamination Parameterization Process")
+    print(f'Conditions Include:')
+    print(f"   Within PIS Data, the 'IS_RBS' variable needs to be 1 (indicating that inspection ID comes fro an RBS process)")
+    print(
+        f"   Within PIS Data, removes any commodity line where the 'RBS_STATUS' variable is 'Not RBS' "
+        f"(indicating that inspection ID does not comes from an RBS process)\n")
     # Count how many inspection IDs in PIS data are IS_RBS = 1 and RBS_STATS != 'Not RBS'
     pis_data_rbs_only= df_pis_data[df_pis_data.IS_RBS == 1]
-    print(f'After remove of IS_RBS == 1 ONLY: {pis_data_rbs_only.shape[0]}')
-    print(f'    # of Rows: {pis_data_rbs_only.shape[0]}')
-    print(f'    # of Rows Removed: {df_pis_data.shape[0]-pis_data_rbs_only.shape[0]}')
-    print(f'    % of Rows Removed: {round(((df_pis_data.shape[0]-pis_data_rbs_only.shape[0])/df_pis_data.shape[0])*100,2)}%')
+    print(f'   After remove of IS_RBS == 1 ONLY:')
+    print(f'       # of Rows: {pis_data_rbs_only.shape[0]}')
+    print(f'       # of Rows Removed: {df_pis_data.shape[0]-pis_data_rbs_only.shape[0]}')
+    print(f'       % of Rows Removed: {round(((df_pis_data.shape[0]-pis_data_rbs_only.shape[0])/df_pis_data.shape[0])*100,2)}%')
     pis_data_rbs_only2 = pis_data_rbs_only[pis_data_rbs_only.RBS_STATUS != 'Not RBS']
-    print(f'Size after remove of RBS_STATUS != Not RBS: {pis_data_rbs_only2.shape[0]}')
-    print(f'    # of Rows: {pis_data_rbs_only2.shape[0]}')
-    print(f'    # of Rows Removed: {pis_data_rbs_only2.shape[0]-pis_data_rbs_only2.shape[0]}')
-    print(f'    % of Rows Removed: {round(((pis_data_rbs_only2.shape[0]-pis_data_rbs_only2.shape[0])/pis_data_rbs_only2.shape[0])*100,2)}%\n')
+    print(f'   Size after remove of RBS_STATUS != Not RBS:')
+    print(f'       # of Rows: {pis_data_rbs_only2.shape[0]}')
+    print(f'       # of Rows Removed: {pis_data_rbs_only2.shape[0]-pis_data_rbs_only2.shape[0]}')
+    print(f'       % of Rows Removed: {round(((pis_data_rbs_only2.shape[0]-pis_data_rbs_only2.shape[0])/pis_data_rbs_only2.shape[0])*100,2)}%\n')
 
     # Find intersection of inspection ids
     shared_inspection_ids = set(pis_data_rbs_only2.INSPECTION_ID.unique()) & set(df_rbs_calculator.INSPECTION_ID.unique())
@@ -125,7 +128,7 @@ def identify_relevant_consignments(
     df_rbs_calculator_filtered = df_rbs_calculator[df_rbs_calculator.INSPECTION_ID.isin(shared_inspection_ids)]
     df_pis_data_filtered = df_pis_data[df_pis_data.INSPECTION_ID.isin(shared_inspection_ids)]
 
-    print(f"Number of shared inspection IDs: {len(shared_inspection_ids)}")
+    print(f"   Number of shared inspection IDs (between RBS Calculator and PIS Data after removal): {len(shared_inspection_ids)}\n")
 
     return df_pis_data_filtered, df_rbs_calculator_filtered
 
@@ -134,6 +137,7 @@ def _get_b_B_nbar_inputs(
         df_pis_data_filtered: pd.DataFrame,
         df_rbs_calculator_filtered: pd.DataFrame
 ):
+    print(f"   Determining Inputs 'b', 'B' and 'Nbar'")
     # Function to generate b, B, and Nbar input parameters
     # Get applicable and interesected inspection ids
     df_pis_data_grouped, df_rbs_calculator_grouped = group_by_inspection_id(df_pis_data_filtered, df_rbs_calculator_filtered)
@@ -176,9 +180,6 @@ def _get_b_B_nbar_inputs(
 
     # Remove outliers from per_inspection_df
     per_inspection_df_no_outliers = remove_outliers_iqr(per_inspection_df, ["b", "B", "Nbar"])
-
-    print("Before:", per_inspection_df.shape)
-    print("After:", per_inspection_df_no_outliers.shape)
     per_inspection_df = per_inspection_df_no_outliers.copy()
 
     # Overall (unweighted) averages across inspection IDs
@@ -186,10 +187,10 @@ def _get_b_B_nbar_inputs(
     B = per_inspection_df["B"].mean()
     Nbar = per_inspection_df["Nbar"].mean()
 
-    print("\nFinal inputs (averaged across inspection IDs):")
-    print(f"   b = {round(b,0)}")
-    print(f"   B = {round(B,0)}")
-    print(f"   Nbar = {round(Nbar,0)}")
+    print("      Final inputs (averaged across inspection IDs):")
+    print(f"         b = {round(b,0)}")
+    print(f"         B = {round(B,0)}")
+    print(f"         Nbar = {round(Nbar,0)}\n")
 
     return round(b,0), round(B,0), round(Nbar,0)
 
@@ -208,6 +209,7 @@ def calc_ty_freq(df_pis_data_filtered_by_inspection_id: pd.DataFrame):
     OUTPUTS
     Two lists ty and freq as defined above.
     """
+    print(f"   Determining Inputs 'ty' and 'freq'")
     # Create a dataframe to store results
     columns = ['INSPECTION_ID',
                'COUNTRY_OF_ORIGIN_NAME',
@@ -227,6 +229,12 @@ def calc_ty_freq(df_pis_data_filtered_by_inspection_id: pd.DataFrame):
     ty = value_counts.index.to_list()  # Number of boxes that have been identified actions
     freq = value_counts.values.tolist()  # Frequency of observations/consignments where that many groups tested positive
 
+    print("      Final inputs:")
+    print(f"         ty = {ty}")
+    print(f"         freq = {freq}")
+    print("      Represents...")
+    for i in range(len(ty)):
+        print(f"         There is/are {freq[i]} consignments with {ty[i]} inspections finding a pest/contaminant.")
     return ty, freq
 
 
@@ -267,6 +275,7 @@ def gen_clarke_model_inputs(
     df_pis_data_filtered_by_inspection_id, df_rbs_calculator_filtered_by_inspection_id = identify_relevant_consignments(df_pis_data, df_rbs_calculator)
 
     # Function to generate b, B, and Nbar input parameters
+    print(f"Determining All Clarke Model Required Inputs")
     clarke_inputs.b, clarke_inputs.B, clarke_inputs.Nbar = _get_b_B_nbar_inputs(df_pis_data_filtered_by_inspection_id, df_rbs_calculator_filtered_by_inspection_id)
 
     # Calculate the ty and freq input parameters
