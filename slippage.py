@@ -52,11 +52,15 @@ def main():
                       'avg_missed_contamination_rate', 'max_missed_contamination_rate',
                       'total_missed_contaminants', 'total_intercepted_contaminants']
 
+    # Create output folder if not there already
+    output_dir = Path("output")
+    output_dir.mkdir(exist_ok=True)
+
     # Save results to CSV
     results_df = save_scenario_result_to_pandas(scenario_results,
                                                 config_columns=config_columns,
                                                 result_columns=result_columns)
-    results_df.to_csv("output/pis_contamination_scenario_results.csv", index=False)
+    results_df.to_csv(output_dir / "pis_contamination_scenario_results.csv", index=False)
     print("Results saved to output/pis_contamination_scenario_results.csv")
 
 if __name__ == "__main__":
