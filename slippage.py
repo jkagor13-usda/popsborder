@@ -7,6 +7,10 @@ from popsborder.scenarios import run_scenarios
 from popsborder.inputs import load_configuration, load_scenario_table, load_compliance_lookup_csv
 from popsborder.outputs import save_scenario_result_to_pandas
 
+# Import utility functions for contamination module
+from slippage_model_utils.clarke_r_script_wrapper import *
+from slippage_model_utils.clarke_model_support_functions import *
+
 
 def main():
     # Set up data folder and file names
@@ -14,6 +18,8 @@ def main():
     config_file = data_dir / "config.yml"
     compliance_file = data_dir / "compliance_table.csv"
     scenario_file = data_dir / "pis_contaminate_scenarios.csv"
+    pis_data = data_dir / 'synthetic_pis_data.csv'
+    rbs_calc_data = data_dir / 'synthetic_rbs_calc_data.csv'
 
     # Load configuration and compliance table
     config = load_configuration(config_file)
@@ -29,15 +35,25 @@ def main():
     ####################################################################
     ####################################################################
 
-    ### Read in Data
-    dir = r'C:\Users\agorjk1\Box\NHH15 - USDA APHIS EDISON\05 PPQ Engagement\PPQ RBS Data (Folder shared with APHIS)\APL Created Data Related Items\Synthetic_Data'
-    filename = os.path.join(dir, f'synthetic_pis_data.csv')
-    # Load in task log from a single replication of a run
-    df_pis_data = pd.read_csv(filename)
+    ####################
+    ### Read in Data ###
+    ####################
 
-    filename = os.path.join(dir, f'synthetic_rbs_calc_data.csv')
-    # Load in task log from a single replication of a run
-    df_rbs_calculator = pd.read_csv(filename)
+    ##### TODO: Replace this block with the appropriate data ####
+    #############################################################
+
+    #temp_data_dir = Path(r'C:\Users\agorjk1\Box\NHH15 - USDA APHIS EDISON\05 PPQ Engagement\PPQ RBS Data (Folder shared with APHIS)\APL Created Data Related Items\Synthetic_Data')
+    # Load in PIS Data
+    #filename = dir / f'synthetic_pis_data.csv'
+    # Load in PIS Data
+    df_pis_data = pd.read_csv(pis_data)
+
+    # Load in RBS Calculator Data
+    #filename = dir / f'synthetic_rbs_calc_data.csv'
+    df_rbs_calculator = pd.read_csv(rbs_calc_data)
+
+    ##### TODO: Replace this block with the appropriate data ####
+    #############################################################
 
     ### Generate clarke inputs via input data
     inputs = gen_clarke_model_inputs(df_pis_data, df_rbs_calculator)

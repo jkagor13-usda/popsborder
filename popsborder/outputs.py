@@ -65,7 +65,7 @@ from functools import reduce
 import pandas as pd
 import os
 
-from inspections import count_contaminated_boxes
+from .inspections import count_contaminated_boxes
 
 
 def pretty_content(array, config=None):

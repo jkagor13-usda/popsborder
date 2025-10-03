@@ -36,8 +36,8 @@ Modified Functions:
 
 """
 
-from inputs import update_config
-from simulation import run_simulation
+from .inputs import update_config
+from .simulation import run_simulation
 
 
 def run_scenarios(

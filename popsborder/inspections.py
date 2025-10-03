@@ -85,7 +85,7 @@ import types
 
 import numpy as np
 
-from inputs import get_validated_effectiveness, load_compliance_lookup_csv
+from .inputs import get_validated_effectiveness, load_compliance_lookup_csv
 
 
 def inspect_first(consignment):
