@@ -86,6 +86,29 @@ def main():
     scenarios = load_scenario_table(scenario_file)
     print(f"Loaded {len(scenarios)} scenarios from {scenario_file}")
 
+    ####################################################################
+    ####################################################################
+    ######## CONTAMINATION MODULE (Scenario Update)  ###################
+    ####################################################################
+    ####################################################################
+
+    # Loop through each of the scenarios stored in "scenarios" (which is
+    # a list of dictionaries) and replace with the updated fitted
+    # contamination parameters
+    for scenario in scenarios:
+        scenario["contamination/contamination_rate/distribution"] = "beta"
+        scenario["contamination/contamination_rate/parameters"] = [res["alpha"], res["beta"]]
+        scenario["contamination/contamination_rate/value"] = None
+
+    ####################################################################
+    ####################################################################
+    ######## END CONTAMINATION MODULE (Scenario Update)  ###############
+    ####################################################################
+    ####################################################################
+
+
+
+
     # Run one scenario analysis simulation
     scenario_results_raw = run_scenarios(
         config=config,
