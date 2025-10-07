@@ -32,7 +32,6 @@ def main():
 
     config["consignment"]["input_file"]["rbs_file_name"] = str(data_dir / "synth_data.csv")
 
-    # TODO: Contamination data
     ####################################################################
     ####################################################################
     #################    CONTAMINATION MODULE  #########################
