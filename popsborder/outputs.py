@@ -760,15 +760,14 @@ class SimData(object):
                 'Origin',
                 'Pathway',
                 'Port',
-                'Commodity',
-                'Number of Boxes',
-                'Items Per Box',
+                'Total Number of Sample Units',
+                'Plants Per Sample Unit',
                 'Total Items',
                 'Plants Per Item',
                 'Total Plants',
-                'Total Number of Boxes Contaminated',
-                'Total Items Contaminated',
-                'Total Number Contaminated in Each Box',
+                'Total Plants Contaminated',
+                'Total Number of Inspection Units Contaminated',
+                'Total Number Contaminated in Each Inspection Unit',
             ]
         )
         self.current_id = 0
@@ -788,31 +787,34 @@ class SimData(object):
 
     def add_consignment(self,consignment):
 
-        # If contaminated, determine which boxes are truly contaminated
-        num_contaminats_per_box = []
-        num_contaminated_boxes = 0
-        if sum(consignment.items)>0:
-            for box in consignment.boxes:
-                num_contaminats_per_box.append(sum(box.items))
-                if sum(box.items)>0:
-                    num_contaminated_boxes += 1
+        # If contaminated, determine which sample units are contaminated
+        num_contaminats_per_inspection_unit = []
+        num_contaminated_inspection_units = 0
+        if sum(consignment.plants)>0:
+            for inspection_unit in consignment.inspection_units:
+                num_contaminats_per_sample_unit = []
+                for sample_unit in inspection_unit.sample_unit_objects:
+                    num_contaminats_per_sample_unit.append(sum(sample_unit.plants))
+                    if sum(sample_unit.plants)>0:
+                        num_contaminated_inspection_units += 1
+                num_contaminats_per_inspection_unit.append(num_contaminats_per_sample_unit)
+
 
         # Fill with placeholder values based on column type/meaning
         default_row_consignment = {col: pd.NA for col in self.consignments.columns}
 
         # Set column values for consignment data
         default_row_consignment.update({
-            'ID': self.gen_consignment_id(),
+            'ID': consignment.inspection_number,
             'Origin': consignment.origin,
             'Pathway': consignment.pathway,
             'Port': consignment.port,
-            'Commodity': consignment.commodity,
-            'Number of Boxes': consignment.num_boxes,
-            'Items Per Box': consignment.items_per_box,
-            'Total Items': consignment.num_items,
-            'Total Items Contaminated': sum(consignment.items),
-            'Total Number of Boxes Contaminated': num_contaminated_boxes,
-            'Total Number Contaminated in Each Box': num_contaminats_per_box,
+            'Total Number of Sample Units': consignment.num_sample_units,
+            'Plants Per Sample Unit': consignment.plants_per_sample_unit,
+            'Total Plants': consignment.num_plants,
+            'Total Plants Contaminated': sum(consignment.plants),
+            'Total Number of Inspection Units Contaminated': num_contaminated_inspection_units ,
+            'Total Number Contaminated in Each Inspection Unit': num_contaminats_per_inspection_unit,
         })
 
         # Add rows to synthetic consignment data set
@@ -830,8 +832,8 @@ class SimData(object):
 
             # Set column values for rbs_calc data
             default_row_rbs_calc.update({
-                'TOTAL_PLANT_QUANTITY': consignment.num_items,
-                "TOTAL_SAMPLING_UNITS": consignment.num_boxes,
+                'TOTAL_PLANT_QUANTITY': consignment.num_plants,
+                "TOTAL_SAMPLING_UNITS": consignment.num_sample_units,
                 "REQUIRED_NUMBER_OF_BOXES": n_units_to_inspect,
                 "INSPECTION_ID": self.current_id,
                 "COUNTRY_OF_ORIGIN_NAME": consignment.origin,
@@ -840,15 +842,14 @@ class SimData(object):
 
             # Set column values for pis data
             default_row_pis.update({
-                'QUANTITY': consignment.num_items,
-                'COMMODITY_COMMON_NAME': consignment.commodity,
-                "INSPECTION_ID": self.current_id,
+                'QUANTITY': consignment.num_plants,
+                "INSPECTION_ID": consignment.inspection_number,
                 "COUNTRY_OF_ORIGIN_NAME": consignment.origin,
                 "year": consignment.date.year,
                 "month": consignment.date.month,
                 "PATHWAY": consignment.pathway,
                 "action": ret.inspected_box_result[box],
-                "TOTAL_SAMPLING_UNITS (rbs calc data)": consignment.num_boxes,
+                "TOTAL_SAMPLING_UNITS (rbs calc data)": consignment.num_sample_units,
                 "REQUIRED_NUMBER_OF_BOXES (rbs calc data)": n_units_to_inspect,
             })
 

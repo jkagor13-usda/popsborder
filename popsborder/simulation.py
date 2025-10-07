@@ -144,6 +144,7 @@ def simulation(
         try:
             consignment = consignment_generator.generate_consignment()
             add_contaminant(consignment)
+            simData.add_consignment(consignment)
             if detailed:
                 for inspection_unit in consignment.inspection_units:
                     sample_unit_details.append(inspection_unit.sample_units)

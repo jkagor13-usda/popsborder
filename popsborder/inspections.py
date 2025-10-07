@@ -520,6 +520,8 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     # sample_units to detection and completion
     ret = types.SimpleNamespace(
         inspected_sample_unit_indexes=[],
+        insepcted_box_indexes=[],
+        inspected_box_result=[],
         inspection_units_opened_completion=0,
         inspection_units_opened_detection=0,
         sample_units_inspected_completion=0,
@@ -611,6 +613,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
             ret.inspection_units_opened_completion = len(set(inspection_units_opened_completion))
             ret.inspection_units_opened_detection = len(set(inspection_units_opened_detection))
     elif unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
+        ret.inspected_box_indexes = indexes_to_inspect
         # Partial inspection_unit inspections allowed to reduce number of sample_units inspected if desired
         # Handle backward compatibility for within inspection unit proportion
         within_inspection_unit_proportion = config["inspection"].get("within_inspection_unit_proportion",
