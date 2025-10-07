@@ -378,8 +378,6 @@ Rrep     <- payload$R
 startval <- if (!is.null(payload$startval)) unlist(payload$startval) else c(0, 0)
 SE       <- isTRUE(payload$se)
 
-# Source the file that defines BB.group.model and its dependencies (negll, beta.ratio, etc.)
-source("C:/Users/agorjk1/PycharmProjects/plant-inspection-station-simulation/JoeFiles/clarke_2023_code/simstudy_paperspace_27_04_2023_2.R")
 
 # Call the original function (unchanged)
 res <- BB.group.model(
