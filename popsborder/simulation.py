@@ -28,7 +28,7 @@ JHU/APL Extensions and Modifications:
 Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
 
 Modified Functions:
--------------------
+------------------- 
 - simulation():
     * Added RBS functionalities that utilize compliance levels to adjust hypergeometric sampling parameters
     * Enhanced to support compliance table integration for country/material type specific detection levels
@@ -43,7 +43,7 @@ Terminology Updates:
 -------------------
 - Updated all variable names from box/item terminology to inspection_unit/sample_unit terminology
 - Enhanced result aggregation to handle both legacy and new terminology reporting
-- Maintained backward compatibility in simulation result structures
+- Maintained backward compatibility in simulation result structures 
     - Johns Hopkins University Applied Physics Laboratory (JHU/APL)
     - United States Department of Agriculture Animal and Plant Health Inspection Service (USDA APHIS)
     * Supports hierarchical packaging structure (boxes -> items -> plants)
@@ -140,92 +140,73 @@ def simulation(
     sample = get_sample_function(config, compliance_table)
     tolerance_level = config["inspection"]["tolerance_level"]
 
-
-    count = 0
-    for unused_i in range(num_consignments):
-        if count==round(0.1*num_consignments,0):
-            print(f'   10% of consignments done ({unused_i} out of {num_consignments})')
-        elif count==round(0.2*num_consignments,0):
-            print(f'   20% of consignments done ({unused_i} out of {num_consignments})')
-        elif count==round(0.3*num_consignments,0):
-            print(f'   30% of consignments done ({unused_i} out of {num_consignments})')
-        elif count==round(0.4*num_consignments,0):
-            print(f'   40% of consignments done ({unused_i} out of {num_consignments})')
-        elif count==round(0.5*num_consignments,0):
-            print(f'   50% of consignments done ({unused_i} out of {num_consignments})')
-        elif count == round(0.6 * num_consignments, 0):
-            print(f'   60% of consignments done ({unused_i} out of {num_consignments})')
-        elif count == round(0.7 * num_consignments, 0):
-            print(f'   70% of consignments done ({unused_i} out of {num_consignments})')
-        elif count == round(0.8 * num_consignments, 0):
-            print(f'   80% of consignments done ({unused_i} out of {num_consignments})')
-        elif count == round(0.9 * num_consignments, 0):
-            print(f'   90% of consignments done ({unused_i} out of {num_consignments})')
-        count+=1
-        consignment = consignment_generator.generate_consignment()
-        add_contaminant(consignment)
-        simData.add_consignment(consignment)
-        if detailed:
-            for inspection_unit in consignment.inspection_units:
-                sample_unit_details.append(inspection_unit.sample_units)
-        if pretty:
-            pretty_config = config.get("pretty", {})
-            print(pretty_consignment(consignment, style=pretty, config=pretty_config))
-
-        must_inspect, applied_program = is_inspection_needed(
-            consignment, consignment.date
-        )
-        if must_inspect:
-            n_units_to_inspect = sample(consignment)
-            ret = inspect(config, consignment, n_units_to_inspect, detailed)
-            simData.add_to_synthetic_data(ret,consignment, n_units_to_inspect)
-            consignment_checked_ok = ret.consignment_checked_ok
-            num_inspections += 1
-            total_num_inspection_units += consignment.num_inspection_units
-            total_num_sample_units += consignment.num_sample_units
-            if consignment.num_plants is not None:
-                total_num_plants += consignment.num_plants
-            total_inspection_units_opened_completion += ret.inspection_units_opened_completion
-            total_inspection_units_opened_detection += ret.inspection_units_opened_detection
-            total_sample_units_inspected_completion += ret.sample_units_inspected_completion
-            total_sample_units_inspected_detection += ret.sample_units_inspected_detection
-            total_contaminated_sample_units_completion += ret.contaminated_sample_units_completion
-            total_contaminated_sample_units_detection += ret.contaminated_sample_units_detection
+    for i in range(num_consignments):
+        try:
+            consignment = consignment_generator.generate_consignment()
+            add_contaminant(consignment)
             if detailed:
-                inspected_sample_unit_details.append(ret.inspected_sample_unit_indexes)
-        else:
-            consignment_checked_ok = True  # assuming or hoping it's ok
-            total_num_inspection_units += consignment.num_inspection_units
-            total_num_sample_units += consignment.num_sample_units
-            if consignment.num_plants is not None:
-                total_num_plants += consignment.num_plants
+                for inspection_unit in consignment.inspection_units:
+                    sample_unit_details.append(inspection_unit.sample_units)
+            if pretty:
+                pretty_config = config.get("pretty", {})
+                print(pretty_consignment(consignment, style=pretty, config=pretty_config))
 
-
-        form280.fill(
-            consignment.date,
-            consignment,
-            consignment_checked_ok,
-            must_inspect,
-            applied_program,
-        )
-        consignment_actually_ok = not is_consignment_contaminated(consignment)
-        success_rates.record_success_rate(
-            consignment_checked_ok, consignment_actually_ok, consignment
-        )
-        true_contamination_rate += consignment_contamination_rate(consignment)
-        if not consignment_actually_ok:
-            if consignment_checked_ok:
-                if consignment_contamination_rate(consignment) < tolerance_level:
-                    missed_within_tolerance += 1
-                missed_contamination_rate.append(
-                    consignment_contamination_rate(consignment)
-                )
-                total_missed_contaminants += consignment.count_contaminated()
+            must_inspect, applied_program = is_inspection_needed(
+                consignment, consignment.date
+            )
+            if must_inspect:
+                n_units_to_inspect = sample(consignment)
+                ret = inspect(config, consignment, n_units_to_inspect, detailed)
+                simData.add_to_synthetic_data(ret, consignment, n_units_to_inspect)
+                consignment_checked_ok = ret.consignment_checked_ok
+                num_inspections += 1
+                total_num_inspection_units += consignment.num_inspection_units
+                total_num_sample_units += consignment.num_sample_units
+                if consignment.num_plants is not None:
+                    total_num_plants += consignment.num_plants
+                total_inspection_units_opened_completion += ret.inspection_units_opened_completion
+                total_inspection_units_opened_detection += ret.inspection_units_opened_detection
+                total_sample_units_inspected_completion += ret.sample_units_inspected_completion
+                total_sample_units_inspected_detection += ret.sample_units_inspected_detection
+                total_contaminated_sample_units_completion += ret.contaminated_sample_units_completion
+                total_contaminated_sample_units_detection += ret.contaminated_sample_units_detection
+                if detailed:
+                    inspected_sample_unit_details.append(ret.inspected_sample_unit_indexes)
             else:
-                intercepted_contamination_rate.append(
-                    consignment_contamination_rate(consignment)
-                )
-                total_intercepted_contaminants += consignment.count_contaminated()
+                consignment_checked_ok = True  # assuming or hoping it's ok
+                total_num_inspection_units += consignment.num_inspection_units
+                total_num_sample_units += consignment.num_sample_units
+                if consignment.num_plants is not None:
+                    total_num_plants += consignment.num_plants
+
+            form280.fill(
+                consignment.date,
+                consignment,
+                consignment_checked_ok,
+                must_inspect,
+                applied_program,
+            )
+            consignment_actually_ok = not is_consignment_contaminated(consignment)
+            success_rates.record_success_rate(
+                consignment_checked_ok, consignment_actually_ok, consignment
+            )
+            true_contamination_rate += consignment_contamination_rate(consignment)
+            if not consignment_actually_ok:
+                if consignment_checked_ok:
+                    if consignment_contamination_rate(consignment) < tolerance_level:
+                        missed_within_tolerance += 1
+                    missed_contamination_rate.append(
+                        consignment_contamination_rate(consignment)
+                    )
+                    total_missed_contaminants += consignment.count_contaminated()
+                else:
+                    intercepted_contamination_rate.append(
+                        consignment_contamination_rate(consignment)
+                    )
+                    total_intercepted_contaminants += consignment.count_contaminated()
+        except RuntimeError as e:
+            print(f"Stopped simulation early: {e}")
+            pass
 
     filename = r'C:\Users\agorjk1\Box\NHH15 - USDA APHIS EDISON\05 PPQ Engagement\PPQ RBS Data (Folder shared with APHIS)\APL Created Data Related Items\Synthetic_Data'
     simData.write_synthetic_data_to_csv(filename)
@@ -362,7 +343,6 @@ def run_simulation(
     )
 
     for i in range(num_simulations):
-        print(f'Replication {i+1} out of {num_simulations}')
         result = simulation(
             config=config,
             num_consignments=num_consignments,

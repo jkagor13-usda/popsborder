@@ -204,6 +204,8 @@ class Consignment(collections.UserDict):
         num_plants=None,
         plants=None,
         plants_per_sample_unit=None,
+        inspection_number=None,
+        producer=None,
     ):
         """Store reference to associated attributes
 
@@ -235,6 +237,8 @@ class Consignment(collections.UserDict):
             num_plants=num_plants,
             plants=plants,
             plants_per_sample_unit=plants_per_sample_unit,
+            inspection_number=inspection_number,
+            producer=producer,
         )
         self.num_sample_units = num_sample_units
         self.sample_units = sample_units
@@ -249,6 +253,8 @@ class Consignment(collections.UserDict):
         self.num_plants = num_plants
         self.plants = plants
         self.plants_per_sample_unit = plants_per_sample_unit
+        self.inspection_number = inspection_number
+        self.producer = producer
 
     def __hasattr__(self, name):
         return name in self
@@ -636,6 +642,13 @@ class PISConsignmentGenerator:
         else:
             avg_sample_units_per_inspection_unit = 1
 
+        # Determine consignment-level material_type
+        unique_material_types = set(iu.material_type for iu in inspection_units)
+        if len(unique_material_types) > 1:
+            consignment_material_type = f"Mixed ({len(unique_material_types)} types)"
+        else:
+            consignment_material_type = next(iter(unique_material_types), None)
+
         return Consignment(
             num_sample_units=total_sample_units,
             sample_units=consignment_sample_units,
@@ -646,10 +659,11 @@ class PISConsignmentGenerator:
             origin=origin,
             port=port,
             pathway=pathway,
-            material_type=f"Mixed ({len(inspection_units)} types)",  # Mixed material types
+            material_type=consignment_material_type,
             num_plants=total_plants,
             plants=consignment_plants,
             plants_per_sample_unit=avg_plants_per_sample_unit,
+            inspection_number=inspection_number,
         )
 
 
@@ -761,10 +775,11 @@ def get_consignment_generator(config):
             start_date=start_date,
         )
     elif generation_method == "RBS":
-        if "input_file" in config and "file_name" in config["input_file"]:
+        if "input_file" in config and "rbs_file_name" in config["input_file"]:
         # RBS record-based generation from file
             consignment_generator = PISConsignmentGenerator(
-                filename=config["input_file"]["file_name"],
+                filename=config["input_file"]["rbs_file_name"],
+                #TODO: add filename for contamination
             )
         else:
             print("No consignment data available")

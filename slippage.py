@@ -6,6 +6,7 @@ import pandas as pd
 from popsborder.scenarios import run_scenarios
 from popsborder.inputs import load_configuration, load_scenario_table, load_compliance_lookup_csv
 from popsborder.outputs import save_scenario_result_to_pandas
+from popsborder.generator import SyntheticConsignmentDataGenerator, save_to_csv
 
 # Import utility functions for contamination module
 from slippage_model_utils.clarke_r_script_wrapper import *
@@ -23,10 +24,13 @@ def main():
 
     # Load configuration and compliance table
     config = load_configuration(config_file)
-    
-    # TODO: SYNTHETIC GENERATION + rbs calc + pis
 
+    # Synthetic data generation
+    synthetic_data_generator = SyntheticConsignmentDataGenerator(data_dir / "fake_pis_data.csv")
+    synth_data = synthetic_data_generator.generate_from_input_data(n_samples=10, sampling_method="sequential")
+    save_to_csv(synth_data, filename= data_dir / "synth_data.csv")
 
+    config["consignment"]["input_file"]["rbs_file_name"] = str(data_dir / "synth_data.csv")
 
     # TODO: Contamination data
     ####################################################################
@@ -129,11 +133,15 @@ def main():
                       'avg_missed_contamination_rate', 'max_missed_contamination_rate',
                       'total_missed_contaminants', 'total_intercepted_contaminants']
 
+    # Create output folder if not there already
+    output_dir = Path("output")
+    output_dir.mkdir(exist_ok=True)
+
     # Save results to CSV
     results_df = save_scenario_result_to_pandas(scenario_results,
                                                 config_columns=config_columns,
                                                 result_columns=result_columns)
-    results_df.to_csv("output/pis_contamination_scenario_results.csv", index=False)
+    results_df.to_csv(output_dir / "pis_contamination_scenario_results.csv", index=False)
     print("Results saved to output/pis_contamination_scenario_results.csv")
 
 if __name__ == "__main__":

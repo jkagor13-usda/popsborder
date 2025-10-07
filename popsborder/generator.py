@@ -17,13 +17,6 @@
 
 """Synthetic consignment data generation
 
-.. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
-.. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
-
-=====================================
-JHU/APL Extensions and Modifications:
-=====================================
-
 Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
 
 New Classes Added:
@@ -72,16 +65,12 @@ class SyntheticConsignmentDataGenerator:
     sampling methods for preserving statistical relationships in the data.
     """
     
-    def __init__(self, config_file=None, input_data_file=None):
+    def __init__(self, input_data_file=None):
         """Initialize the synthetic data generator
         
-        :param config_file: Optional path to configuration file
         :param input_data_file: Optional path to input data file for training
         """
-        self.config = self._load_default_config()
-        if config_file:
-            self._load_config(config_file)
-        
+
         self.input_data = None
         if input_data_file:
             self.input_data = self._load_input_data(input_data_file)
@@ -89,54 +78,6 @@ class SyntheticConsignmentDataGenerator:
         # Initialize random seed for reproducible results
         random.seed(42)
         np.random.seed(42)
-    
-    def _load_default_config(self):
-        """Load default configuration for synthetic data generation"""
-        return {
-            "origins": [
-                "Netherlands", "Colombia", "Ecuador", "Kenya", 
-                "Ethiopia", "Israel", "Mexico", "Guatemala", "Costa Rica"
-            ],
-            "ports": [
-                "JFK", "LAX", "MIA", "ORD", "ATL", "DFW", "SEA", "BOS", "IAH"
-            ],
-            "pathways": ["air", "maritime", "land"],
-            "commodities": [
-                "roses", "chrysanthemums", "carnations", "lilies", 
-                "orchids", "tulips", "daffodils", "sunflowers"
-            ],
-            "propagative_materials": [
-                "seeds", "bulbs", "cuttings", "grafts", 
-                "tissue cultures", "seedlings", "saplings"
-            ],
-            "quantity_ranges": {
-                "min_items": 50,
-                "max_items": 5000,
-                "min_boxes": 1,
-                "max_boxes": 50
-            },
-            "contamination": {
-                "probability": 0.02,
-                "min_contaminated": 1,
-                "max_contaminated": 10
-            },
-            "date_range": {
-                "start": "2023-01-01",
-                "end": "2024-12-31"
-            },
-            "sampling_method": "gaussian_copula"  # naive, sequential, gmm, gaussian_copula
-        }
-    
-    def _load_config(self, config_file: str):
-        """Load configuration from file"""
-        try:
-            with open(config_file, 'r') as f:
-                user_config = json.load(f)
-                self.config.update(user_config)
-        except FileNotFoundError:
-            print(f"Config file {config_file} not found. Using default configuration.")
-        except json.JSONDecodeError as e:
-            print(f"Error parsing config file: {e}. Using default configuration.")
     
     def _load_input_data(self, input_file):
         """Load input data file for training sampling models
@@ -417,8 +358,7 @@ class SyntheticConsignmentDataGenerator:
         if self.input_data is None:
             raise ValueError("No input data loaded. Please provide input_data_file parameter.")
         
-        method = sampling_method or self.config.get("sampling_method", "gaussian_copula")
-        
+        method = sampling_method
         # Define columns to use for sampling
         available_cols = self.input_data.columns.tolist()
         target_cols = [col for col in available_cols if col in [
@@ -455,117 +395,8 @@ class SyntheticConsignmentDataGenerator:
         
         return synthetic_data
     
-    def generate_consignment_record(self):
-        """Generate a single synthetic consignment record using default config
-        
-        :return: Dictionary containing consignment record data
-        """
-        # Basic consignment attributes
-        origin = random.choice(self.config["origins"])
-        port = random.choice(self.config["ports"])
-        pathway = random.choice(self.config["pathways"])
-        
-        # Generate date within specified range
-        start_date = datetime.strptime(self.config["date_range"]["start"], "%Y-%m-%d")
-        end_date = datetime.strptime(self.config["date_range"]["end"], "%Y-%m-%d")
-        random_date = start_date + timedelta(
-            days=random.randint(0, (end_date - start_date).days)
-        )
-        
-        # Determine if this is propagative material or flower commodity
-        is_propagative = random.choice([True, False])
-        
-        if is_propagative:
-            commodity = random.choice(self.config["propagative_materials"])
-            commodity_type = "propagative_material"
-        else:
-            commodity = random.choice(self.config["commodities"])
-            commodity_type = "flower"
-        
-        # Generate quantities
-        num_boxes = random.randint(
-            self.config["quantity_ranges"]["min_boxes"],
-            self.config["quantity_ranges"]["max_boxes"]
-        )
-        
-        items_per_box = random.randint(10, 100)
-        num_items = num_boxes * items_per_box
-        
-        # Generate contamination
-        is_contaminated = random.random() < self.config["contamination"]["probability"]
-        num_contaminated = 0
-        if is_contaminated:
-            max_contaminated = min(
-                num_items,
-                self.config["contamination"]["max_contaminated"]
-            )
-            num_contaminated = random.randint(
-                self.config["contamination"]["min_contaminated"],
-                max_contaminated
-            )
-        
-        # Generate unique consignment ID
-        consignment_id = f"CON-{random_date.strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
-        
-        record = {
-            "consignment_id": consignment_id,
-            "date": random_date.strftime("%Y-%m-%d"),
-            "origin": origin,
-            "port": port,
-            "pathway": pathway,
-            "commodity": commodity,
-            "commodity_type": commodity_type,
-            "num_boxes": num_boxes,
-            "items_per_box": items_per_box,
-            "num_items": num_items,
-            "is_contaminated": is_contaminated,
-            "num_contaminated": num_contaminated,
-            "contamination_rate": num_contaminated / num_items if num_items > 0 else 0
-        }
-        
-        # Add propagative-specific fields
-        if is_propagative:
-            plants_per_item = random.randint(1, 20)
-            record["plants_per_item"] = plants_per_item
-            record["num_plants"] = num_items * plants_per_item
-        
-        return record
-    
-    def generate_dataset(self, num_consignments, use_input_data=True):
-        """Generate a dataset of synthetic consignment records
-        
-        :param num_consignments: Number of consignment records to generate
-        :param use_input_data: Whether to use input data file for advanced sampling
-        :return: DataFrame with synthetic consignment records
-        """
-        if use_input_data and self.input_data is not None:
-            return self.generate_from_input_data(num_consignments)
-        else:
-            # Fallback to config-based generation
-            dataset = []
-            for _ in range(num_consignments):
-                record = self.generate_consignment_record()
-                dataset.append(record)
-            return pd.DataFrame(dataset)
-    
-    def save_to_csv(self, dataset, filename):
-        """Save dataset to CSV file
-        
-        :param dataset: DataFrame to save
-        :param filename: Output CSV filename
-        """
-        dataset.to_csv(filename, index=False)
-        print(f"Saved {len(dataset)} records to {filename}")
-    
-    def save_to_json(self, dataset, filename):
-        """Save dataset to JSON file
-        
-        :param dataset: DataFrame to save
-        :param filename: Output JSON filename
-        """
-        dataset.to_json(filename, orient='records', indent=2)
-        print(f"Saved {len(dataset)} records to {filename}")
-    
+ 
+   
     def calculate_quality_metrics(self, original_df, synthetic_df):
         """Calculate quality metrics comparing original and synthetic data
         
@@ -647,3 +478,22 @@ class SyntheticConsignmentDataGenerator:
             stats[f"{col}_max"] = dataset[col].max()
         
         return stats
+
+
+def save_to_csv(dataset, filename):
+    """Save dataset to CSV file
+    
+    :param dataset: DataFrame to save
+    :param filename: Output CSV filename
+    """
+    dataset.to_csv(filename, index=False)
+    print(f"Saved {len(dataset)} records to {filename}")
+
+def save_to_json(dataset, filename):
+    """Save dataset to JSON file
+    
+    :param dataset: DataFrame to save
+    :param filename: Output JSON filename
+    """
+    dataset.to_json(filename, orient='records', indent=2)
+    print(f"Saved {len(dataset)} records to {filename}")
