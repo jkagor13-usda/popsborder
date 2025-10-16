@@ -58,6 +58,7 @@ import copy
 import math
 import random
 from collections.abc import Mapping
+from collections import defaultdict
 from datetime import datetime
 
 import numpy as np
@@ -66,13 +67,132 @@ from scipy import stats
 from .inputs import update_nested_dict_by_dict
 
 
-###################################################################
-## Updated New Functions for Fitting Distributions with RBS data ##
-###################################################################
+##########################################################################
+## START: Updated New Functions for Fitting Distributions with RBS data ##
+##########################################################################
+
+def calc_N_bar(consignment):
+    """
+    Function to calculate the average number of 'units' (e.g., plants)
+    that are in each 'group' (e.g., inspection unit) for a given consignment.
+
+    INPUTS
+    consignment:  Consignment object
+
+    OUTPUTS
+    N_bar:  Average number of units in a group
+    """
+    return consignment.sample_units_per_inspection_unit*consignment.plants_per_sample_unit
 
 
 
+def add_contaminant_beta_binomial(config):
+    """
+    Vectorized sampler for:
+        p_i ~ Beta(alpha, beta)                          (size I)
+        p_ij | p_i ~ Beta(theta * p_i, theta*(1-p_i))    (size I x J)
+        X_ij | p_ij ~ Binomial(Nbar, p_ij)               (size I x J)
 
+    Special handling:
+        If theta == np.inf at any position, we set p_ij = p_i there.
+
+    Parameters
+    ----------
+    alpha, beta : float
+    theta : float or array-like
+        - scalar (shared for all i,j), may be np.inf
+        - shape (I,), (I,1), (1,J), or (I,J) (broadcastable). Entries may be np.inf.
+    Nbar : int or array-like
+        - scalar or broadcastable to (I,J)
+    I, J : int
+    rng : np.random.Generator or seed or None
+
+    Returns
+    -------
+    X : (I, J) int array
+    p_i : (I,) float array
+    p_ij : (I, J) float array
+    """
+    beta_binomial_config = config["beta_binomial_parameters"]
+    alpha = beta_binomial_config["alpha"]
+    beta = beta_binomial_config["beta"]
+    theta = beta_binomial_config["theta"]
+    N_bar = beta_binomial_config["N_bar"]
+    I = 1
+    J = config['beta_binomial_parameters']['J']
+
+    # Seed random number generator
+    rng = 1
+    rng = np.random.default_rng() if rng is None else np.random.default_rng(rng)
+
+    # 1) p_i ~ Beta(alpha, beta), shape (I,)
+    p_i = rng.beta(alpha, beta, size=I)
+
+    # --- Broadcast theta to (I, J)
+    theta = np.asarray(theta)
+    if theta.ndim == 0:
+        theta_ij = np.full((I, J), theta, dtype=float)
+    elif theta.shape == (I,):
+        theta_ij = np.repeat(theta[:, None], J, axis=1)
+    elif theta.shape == (I, 1) or theta.shape == (1, J) or theta.shape == (I, J):
+        theta_ij = np.broadcast_to(theta, (I, J)).astype(float)
+    else:
+        theta_ij = np.broadcast_to(theta, (I, J)).astype(float)
+
+    # 2) p_ij | p_i
+    # Start with the degenerate case p_ij = p_i for all cells,
+    # then overwrite where theta is finite.
+    p_ij = np.broadcast_to(p_i[:, None], (I, J)).copy()
+
+    finite_mask = np.isfinite(theta_ij)  # True where theta is finite
+    if np.any(finite_mask):
+        # Parameters only where theta is finite
+        a_ij = theta_ij * p_i[:, None]
+        b_ij = theta_ij * (1.0 - p_i[:, None])
+
+        # Draw only for finite cells (masked 1D arrays)
+        a = a_ij[finite_mask]
+        b = b_ij[finite_mask]
+
+        # NOTE: rng.beta accepts array-shaped a,b and returns matching shape
+        p_ij[finite_mask] = rng.beta(a, b)
+
+    # 3) X_ij | p_ij ~ Binomial(N_bar, p_ij)
+    N_bar = np.asarray(N_bar)
+    if N_bar.ndim == 0:
+        N_ij = np.full((I, J), int(N_bar))
+    else:
+        N_ij = np.broadcast_to(N_bar, (I, J)).astype(int)
+
+    X = rng.binomial(N_ij, p_ij)
+    return X
+
+
+
+def contaminate_units_by_group(contaminated_plants, plant_indices):
+    # Step 1: group tuples by 'a' for fast lookup
+    by_inspection_unit = defaultdict(list)
+    for t in plant_indices:
+        a, b, c = t
+        by_inspection_unit[a].append(t)
+
+    # Step 2: iterate over nonzero values and sample
+    sampled = []
+    rng = np.random.default_rng(123)
+    for inspect_unit, count in enumerate(contaminated_plants):
+        if count > 0:
+            group = by_inspection_unit[inspect_unit]
+            if len(group) == 0:
+                continue  # no tuples for this a
+            n = min(count, len(group))
+            sampled_indices = rng.choice(len(group), size=n, replace=False)
+            sampled.extend([group[i] for i in sampled_indices])
+
+    return [i for i, t in enumerate(plant_indices) if t in sampled]
+
+#######################################################################
+## END Updated New Functions for Fitting Distributions with RBS data ##
+#######################################################################
 
 # This function is not used or working, consider updating or removing.
 def add_contaminant_to_random_inspection_unit(config, consignment, contamination_rate=None):
@@ -157,6 +277,20 @@ def get_contamination_rate(config):
     raise RuntimeError(f"Unknown contamination rate distribution: {distribution}")
 
 
+
+def num_units_to_contaminate(config, num_units):
+    """Return number of sample_units to be contaminated
+    Rounds up or down to nearest integer.
+
+    Config is the ``contamination_rate`` dictionary.
+    """
+    if config['distribution'] == "beta-binomial":
+        contaminated_units = add_contaminant_beta_binomial(config)
+    else:
+        contamination_rate = get_contamination_rate(config)
+        contaminated_units = round(num_units * contamination_rate)
+    return contaminated_units
+
 def num_sample_units_to_contaminate(config, num_sample_units):
     """Return number of sample_units to be contaminated
     Rounds up or down to nearest integer.
@@ -192,7 +326,7 @@ def add_contaminant_uniform_random(config, consignment):
         contamination_unit = "sample_unit"
 
     if contamination_unit in ["inspection_unit", "inspection_units"]:
-        contaminated_inspection_units = num_inspection_units_to_contaminate(
+        contaminated_inspection_units = num_units_to_contaminate(
             config["contamination_rate"], consignment.num_inspection_units
         )
         if contaminated_inspection_units == 0.0:
@@ -230,7 +364,7 @@ def add_contaminant_uniform_random(config, consignment):
             math.floor(contaminated_inspection_units),
         )
     elif contamination_unit in ["sample_unit", "sample_units"]:
-        contaminated_sample_units = num_sample_units_to_contaminate(
+        contaminated_sample_units = num_units_to_contaminate(
             config["contamination_rate"], consignment.num_sample_units
         )
         if contaminated_sample_units == 0:
@@ -269,10 +403,24 @@ def add_contaminant_uniform_random(config, consignment):
                     all_plants.append(sample_unit_object.plants)
                     plant_indices.append((inspection_unit_idx, sample_unit_idx, plant_idx))
         num_plants = len(plant_indices)
-        contaminated_plants = num_sample_units_to_contaminate(config["contamination_rate"], num_plants)
-        if contaminated_plants == 0:
-            return
-        plant_indexes = np.random.choice(num_plants, contaminated_plants, replace=False)
+
+        # If using the beta-binomial approach
+        if config["contamination_rate"]['distribution'] == 'beta-binomial':
+            config["contamination_rate"]['beta_binomial_parameters']['N_bar']=calc_N_bar(consignment)
+            config["contamination_rate"]['beta_binomial_parameters']['J']=len(consignment.inspection_units)
+            contaminated_plants = add_contaminant_beta_binomial(config["contamination_rate"])
+            if np.all(contaminated_plants == 0):
+                return
+            # If there are contaminats generate across groups (e.g., inspection units),
+            # randomly determine which units in those groups are contaminated
+            plant_indexes = contaminate_units_by_group(contaminated_plants, plant_indices)
+        else:
+            contaminated_plants = num_units_to_contaminate(config["contamination_rate"], num_plants)
+            if contaminated_plants == 0:
+                return
+            plant_indexes = np.random.choice(num_plants, contaminated_plants, replace=False)
+
+
         for idx in plant_indexes:
             inspection_unit_idx, sample_unit_idx, plant_idx = plant_indices[idx]
             consignment.inspection_units[inspection_unit_idx].sample_unit_objects[sample_unit_idx].plants[plant_idx] = 1
@@ -286,7 +434,10 @@ def add_contaminant_uniform_random(config, consignment):
         total_contaminated = sum(
             (sample_unit_object.plants == 1).sum() for inspection_unit in consignment.inspection_units for sample_unit_object in inspection_unit.sample_unit_objects
         )
-        assert total_contaminated == contaminated_plants
+        if config["contamination_rate"]['distribution'] == 'beta-binomial':
+            assert total_contaminated == sum(contaminated_plants)
+        else:
+            assert total_contaminated == contaminated_plants
     else:
         raise RuntimeError(f"Unknown contamination unit: {contamination_unit}")
 
@@ -816,6 +967,13 @@ def get_contaminant_function(config):
             )
             return add_contaminant_clusters(specific_contamination_config, consignment)
 
+    elif arrangement == "beta_binomial":
+
+        def add_contaminant(consignment):
+            specific_contamination_config = get_contamination_config_for_consignment(
+                config, consignment
+            )
+            return add_contaminant_beta_binomial(specific_contamination_config, consignment)
     else:
         raise RuntimeError(f"Unknown contaminant arrangement: {arrangement}")
     return add_contaminant
