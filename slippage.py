@@ -18,7 +18,7 @@ def main():
     data_dir = Path("slippage_data")
     config_file = data_dir / "config.yml"
     compliance_file = data_dir / "compliance_table.csv"
-    scenario_file = data_dir / "pis_contaminate_scenarios.csv"
+    scenario_file = data_dir / "test_scenario.csv"
     pis_data = data_dir / 'synthetic_pis_data.csv'
     rbs_calc_data = data_dir / 'synthetic_rbs_calc_data.csv'
 
@@ -99,8 +99,9 @@ def main():
     # a list of dictionaries) and replace with the updated fitted
     # contamination parameters
     for scenario in scenarios:
-        scenario["contamination/contamination_rate/distribution"] = "beta"
-        scenario["contamination/contamination_rate/parameters"] = [res["alpha"], res["beta"]]
+        scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = res["alpha"]
+        scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] =  res["beta"]
+        scenario["contamination/contamination_rate/beta_binomial_parameters/theta"] = inputs.theta
         scenario["contamination/contamination_rate/value"] = None
 
     ####################################################################
