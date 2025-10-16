@@ -56,7 +56,7 @@ consignment:
 contamination:
   contamination_unit: sample_unit
   contamination_rate:
-    distribution: beta
+    distribution: beta_binomial
     value: 0.0027
     parameters:
       # stems
@@ -71,6 +71,13 @@ contamination:
       # centered at 0.7%
       - 0.0194628
       - 2.7609372
+    beta_binomial_parameters:
+        alpha: 0.0102
+        beta: 5.3839
+        theta: 10000
+        N_bar: 200
+        I: 1
+        J: None
   arrangement: random
   clustered:
     percentage_plants_contaminated: .9
@@ -81,6 +88,13 @@ contamination:
   random_box:
     probability: 0.2
     ratio: 0.5
+  beta_binomial:
+    alpha: 0.0102
+    beta: 5.3839
+    theta: 10000
+    N_bar: 200
+    I: 100
+    J: 100
 # release_programs:
 #   naive_cfrp:
 #     flowers:
