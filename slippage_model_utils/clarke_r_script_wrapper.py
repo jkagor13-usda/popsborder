@@ -1,5 +1,5 @@
+from __future__ import annotations
 import os
-import re
 import json
 import shutil
 import subprocess
@@ -7,27 +7,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Mapping, Sequence, TypedDict, Literal, Tuple, SupportsFloat
 import numpy as np
 from scipy.optimize import minimize_scalar
-from scipy import stats
-import pandas as pd
-
 
 # === CONFIG ===
-# Beta-Binomial Model
-#R_SCRIPT_PATH_bb_cli = r"/plant-inspection-station-simulation/JoeFiles/clarke_2023_code/clarke_bb_model.R"
-R_SCRIPT_PATH_bb_cli = r"C:\Users\agorjk1\PycharmProjects\plant-inspection-station-simulation\JoeFiles\clarke_2023_code\clarke_bb_model.R"
-
-# Absolute path to conda.exe (adjust for your install if needed)
+R_SCRIPT_PATH_bb_cli = r"C:\Users\agorjk1\PycharmProjects\plant-inspection-station-simulation\slippage_model_utils\clarke_bb_model.R"
 CONDA_EXE_PATH = r"C:\Users\agorjk1\AppData\Local\anaconda3\Scripts\conda.exe"
-
-# If you installed R via Conda, set your env name here (preferred when using Conda):
 CONDA_ENV_NAME: Optional[str] = "rbb"
-
-# Or, if you want to use a specific Rscript.exe:
-#RSCRIPT_ABS_PATH: Optional[str] = r"C:\Users\agorjk1\AppData\Local\anaconda3\envs\rstudio\Scripts\Rscript.exe"
-#RSCRIPT_ABS_PATH: Optional[str] = r"C:\Users\agorjk1\AppData\Local\anaconda3\envs\rbb\Scripts\Rscript.exe"
 RSCRIPT_ABS_PATH: Optional[str] = None
 
-# If both CONDA_ENV_NAME and RSCRIPT_ABS_PATH are None, this will try plain "Rscript" on PATH.
 
 # ---- Nested schema for `optim` ----
 class OptimResult(TypedDict):
@@ -109,45 +95,44 @@ def _pick_rscript_command() -> List[str]:
         "or add Rscript to your system PATH."
     )
 
-def _parse_json_from_r_stdout(stdout: str):
-    # 1) Try last non-empty line that looks like a JSON object
+def _parse_json_from_r_stdout(stdout: str) -> dict[str, Any]:
+    """
+    Extract the final JSON object from mixed R stdout (startup messages, warnings, etc.).
+    Returns a raw dict; use parse_bb_result(...) to validate/narrow to BBResult.
+    """
     lines = [ln.strip() for ln in stdout.splitlines() if ln.strip()]
     for ln in reversed(lines):
         if ln.startswith("{") and ln.endswith("}"):
-            try:
-                return json.loads(ln)
-            except json.JSONDecodeError:
-                pass  # keep looking
+            return json.loads(ln)
 
-    # 2) Fallback: extract the last {...} block from the whole stream
     start = stdout.rfind("{")
     end = stdout.rfind("}")
     if start != -1 and end != -1 and start < end:
-        candidate = stdout[start:end+1]
-        try:
-            return json.loads(candidate)
-        except json.JSONDecodeError:
-            pass
+        return json.loads(stdout[start:end + 1])
 
-    # 3) Nothing worked — raise with context for debugging
-    raise ValueError("Expected JSON from R; got:\n" + stdout)
+    raise ValueError("Expected JSON from R; nothing that looks like a JSON object was found.")
 
 
 def run_clarke_bb_group_model(
-    ty: List[int],
+    ty: Sequence[int],
     b: int,
     B: int,
     Nbar: int,
-    freq: List[int],
+    freq: Sequence[int],
     theta: float,
     R: int,
     startval: Sequence[SupportsFloat],
     se: bool,
+    *,
+    timeout_sec: float = 120.0,
 ) -> BBResult:
     """
     Runs the Clarke BB group model via an R script and returns parsed JSON.
-    Raises FileNotFoundError if the script is missing, or CalledProcessError if R fails.
-    Raises ValueError if stdout is not valid JSON.
+    Raises:
+      - FileNotFoundError if the script is missing
+      - CalledProcessError if the R subprocess fails
+      - TimeoutError if R does not complete in time
+      - ValueError if stdout is not valid JSON in the expected schema
     """
     if not Path(R_SCRIPT_PATH_bb_cli).exists():
         raise FileNotFoundError(f"R script not found: {R_SCRIPT_PATH_bb_cli}")
@@ -169,25 +154,33 @@ def run_clarke_bb_group_model(
         "se": bool(se),
     }
 
-    proc = subprocess.run(
-        cmd + [R_SCRIPT_PATH_bb_cli, json.dumps(payload)],
-        capture_output=True,
-        text=True
-    )
+    try:
+        proc: subprocess.CompletedProcess[str] = subprocess.run(
+            cmd + [str(Path(R_SCRIPT_PATH_bb_cli)), json.dumps(payload)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout_sec,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise TimeoutError(
+            f"R script timed out after {timeout_sec}s. "
+            f"Partial stdout: {e.output!r}, stderr: {e.stderr!r}"
+        ) from e
 
     if proc.returncode != 0:
-        raise RuntimeError(
-            "R script failed.\n"
-            f"Command: {' '.join(cmd)}\n"
-            f"STDERR:\n{proc.stderr}\n"
-            f"STDOUT:\n{proc.stdout}"
+        raise subprocess.CalledProcessError(
+            returncode=proc.returncode,
+            cmd=proc.args,
+            output=proc.stdout,
+            stderr=proc.stderr,
         )
 
     # Parse the final line as JSON (ignore startup messages)
-    out_line = proc.stdout.strip().splitlines()[-1]
     try:
-        #return json.loads(out_line)
-        return _parse_json_from_r_stdout(proc.stdout)
-    except json.JSONDecodeError as e:
-        raise ValueError("Expected JSON from R; got:\n" + proc.stdout) from e
+        return _parse_json_from_r_stdout(proc.stdout)  # must return BBResult
+    except ValueError as e:
+        # fall back to a shorter preview for debugging
+        preview = proc.stdout[:500].replace("\n", "\\n")
+        raise ValueError(f"Expected JSON from R; got (preview): {preview}") from e
 
