@@ -18,7 +18,8 @@ def main():
     data_dir = Path("slippage_data")
     config_file = data_dir / "config.yml"
     compliance_file = data_dir / "compliance_table.csv"
-    scenario_file = data_dir / "test_scenario.csv"
+    #scenario_file = data_dir / "test_scenario.csv"
+    scenario_file = data_dir / "pis_contaminate_scenarios.csv"
     pis_data = data_dir / 'synthetic_pis_data.csv'
     rbs_calc_data = data_dir / 'synthetic_rbs_calc_data.csv'
 
