@@ -4,7 +4,7 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Mapping, Sequence, TypedDict, Literal, Tuple, SupportsFloat
 import numpy as np
 from scipy.optimize import minimize_scalar
 from scipy import stats
@@ -28,6 +28,46 @@ CONDA_ENV_NAME: Optional[str] = "rbb"
 RSCRIPT_ABS_PATH: Optional[str] = None
 
 # If both CONDA_ENV_NAME and RSCRIPT_ABS_PATH are None, this will try plain "Rscript" on PATH.
+
+# ---- Nested schema for `optim` ----
+class OptimResult(TypedDict):
+    value: float
+    par: Tuple[float, float]                       # two parameters
+    counts: Tuple[int, Literal["NA"]]             # R's optim: (fn_evals, "NA")
+    convergence: int                               # 0 means success
+    message: Mapping[str, Any]                     # R often returns an empty list/dict here
+    hessian: Tuple[Tuple[float, float], Tuple[float, float]]  # 2x2 matrix
+
+
+# ---- Top-level result ----
+class BBResult(TypedDict):
+    optim: OptimResult
+
+    # point estimates
+    alpha: float
+    beta: float
+    mu: float
+    rho: float
+    D: float
+
+    # derived quantities / diagnostics
+    E_leak: float
+    prob_leak: float
+    log_prob_leak: float
+    pty0: float
+
+    # standard errors (scalars)
+    se_alpha: float
+    se_beta: float
+    se_mu: float
+    se_rho: float
+    se_D: float
+
+    # standard errors (vector)
+    se_par: Sequence[float]
+
+
+
 
 
 def _pick_rscript_command() -> List[str]:
@@ -101,9 +141,14 @@ def run_clarke_bb_group_model(
     freq: List[int],
     theta: float,
     R: int,
-    startval: List[float],
+    startval: Sequence[SupportsFloat],
     se: bool,
-) -> Dict[str, Any]:
+) -> BBResult:
+    """
+    Runs the Clarke BB group model via an R script and returns parsed JSON.
+    Raises FileNotFoundError if the script is missing, or CalledProcessError if R fails.
+    Raises ValueError if stdout is not valid JSON.
+    """
     if not Path(R_SCRIPT_PATH_bb_cli).exists():
         raise FileNotFoundError(f"R script not found: {R_SCRIPT_PATH_bb_cli}")
 
@@ -111,15 +156,16 @@ def run_clarke_bb_group_model(
 
     theta_json = "Inf" if (isinstance(theta, float) and np.isinf(theta)) else float(theta)
 
-    payload = {
-        "ty": list(map(int, ty)),
+    # Build the payload with explicit conversions
+    payload: Dict[str, Any] = {
+        "ty": [int(x) for x in ty],
         "b": int(b),
         "B": int(B),
         "Nbar": int(Nbar),
-        "freq": list(map(int, freq)),
+        "freq": [int(x) for x in freq],
         "theta": theta_json,
         "R": int(R),
-        "startval": list(map(float, startval)),
+        "startval": [float(x) for x in startval],
         "se": bool(se),
     }
 
