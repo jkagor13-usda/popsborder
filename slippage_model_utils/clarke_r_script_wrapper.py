@@ -7,15 +7,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Mapping, Sequence, TypedDict, Literal, Tuple, SupportsFloat
 import numpy as np
 from scipy.optimize import minimize_scalar
+import platform
+import sys
 
 # === CONFIG ===
-CONDA_EXE_PATH = r"C:\Users\agorjk1\AppData\Local\anaconda3\Scripts\conda.exe"
-CONDA_ENV_NAME: Optional[str] = "rbb"
-RSCRIPT_ABS_PATH: Optional[str] = None
-
-
-
-# ---- Config knobs ----
+CONDA_ENV_NAME: Optional[str] = 'rbb'
 REPO_NAME = "plant-inspection-station-simulation"
 R_SCRIPT_REL = Path("slippage_model_utils") / "clarke_bb_model.R"
 
@@ -46,8 +42,43 @@ def get_r_script_path() -> Path:
 
     # Raise error if the R script was not found
     raise FileNotFoundError(
-        "Could not locate 'clarke_bb_model.R'.\n" + "\n".join(" - " + h for h in hints)
+        "Could not locate 'clarke_bb_model.R'.\n"
     )
+
+
+def _find_conda_exe() -> Optional[Path]:
+    """
+    Auto-locate conda.exe (Windows) or conda (POSIX) via Common Anaconda/Miniconda locations
+    """
+    # Go through all "Common" install paths by OS
+    candidates: list[Path] = []
+
+    if platform.system() == "Windows":
+        local_appdata = os.getenv("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))
+        candidates += [
+            Path(local_appdata) / "anaconda3" / "Scripts" / "conda.exe",
+            Path(local_appdata) / "miniconda3" / "Scripts" / "conda.exe",
+            Path(local_appdata) / "Programs" / "Anaconda3" / "Scripts" / "conda.exe",
+        ]
+        # add standard home locations too
+        candidates += [
+            Path.home() / "anaconda3" / "Scripts" / "conda.exe",
+            Path.home() / "miniconda3" / "Scripts" / "conda.exe",
+        ]
+    else:
+        # macOS / Linux
+        candidates += [
+            Path.home() / "anaconda3" / "bin" / "conda",
+            Path.home() / "miniconda3" / "bin" / "conda",
+            Path("/opt/anaconda3/bin/conda"),
+            Path("/usr/local/anaconda3/bin/conda"),
+        ]
+
+    for c in candidates:
+        if c.exists():
+            return c.resolve()
+
+    return None
 
 
 # ---- Nested schema for `optim` ----
@@ -87,44 +118,27 @@ class BBResult(TypedDict):
     # standard errors (vector)
     se_par: Sequence[float]
 
+def _pick_rscript_command() -> list[str]:
+    """
+    Determine cmd run with auto-discovery for Conda via conda run -n <env> Rscript  (auto-found conda.exe)
+    """
 
-def _pick_rscript_command() -> List[str]:
-    """
-    Decide how to call Rscript:
-      1) conda run -n <env> Rscript (using absolute conda.exe if available)
-      2) absolute path to Rscript.exe
-      3) Rscript from PATH
-    """
-    # Option 1: Conda env
     if CONDA_ENV_NAME:
-        conda_exe = Path(CONDA_EXE_PATH)
-        if conda_exe.exists():
+        conda_exe = _find_conda_exe()
+        if conda_exe:
             return [str(conda_exe), "run", "-n", CONDA_ENV_NAME, "Rscript"]
         else:
-            # fall back to PATH search
-            conda = shutil.which("conda")
-            if conda:
-                return [conda, "run", "-n", CONDA_ENV_NAME, "Rscript"]
-            else:
-                raise RuntimeError(
-                    f"Conda not found. Looked for {CONDA_EXE_PATH} and on PATH. "
-                    "Either install conda, adjust CONDA_EXE_PATH, or unset CONDA_ENV_NAME."
-                )
+            raise RuntimeError(
+                f"Could not locate conda executable automatically. "
+            )
 
-    # Option 2: absolute Rscript.exe
-    if RSCRIPT_ABS_PATH:
-        if not Path(RSCRIPT_ABS_PATH).exists():
-            raise FileNotFoundError(f"Rscript.exe not found at: {RSCRIPT_ABS_PATH}")
-        return [RSCRIPT_ABS_PATH]
 
-    # Option 3: Rscript on PATH
-    r_on_path = shutil.which("Rscript")
-    if r_on_path:
-        return [r_on_path]
+
 
     raise RuntimeError(
-        "Could not find Rscript. Set CONDA_ENV_NAME, or RSCRIPT_ABS_PATH, "
-        "or add Rscript to your system PATH."
+        "Could not find Rscript. Ensure that...\n"
+        f" - CONDA_ENV_NAME is valid conda env with R installed (currently set as {CONDA_ENV_NAME} AND \n"
+        "  - Ensure the conda.exe is located in 'C:/Users/YOUR_USERNAME/AppData/Local/anaconda3/Scripts/conda.exe'\n"
     )
 
 def _parse_json_from_r_stdout(stdout: str) -> dict[str, Any]:
