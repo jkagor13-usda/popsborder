@@ -9,10 +9,45 @@ import numpy as np
 from scipy.optimize import minimize_scalar
 
 # === CONFIG ===
-R_SCRIPT_PATH_bb_cli = r"C:\Users\agorjk1\PycharmProjects\plant-inspection-station-simulation\slippage_model_utils\clarke_bb_model.R"
 CONDA_EXE_PATH = r"C:\Users\agorjk1\AppData\Local\anaconda3\Scripts\conda.exe"
 CONDA_ENV_NAME: Optional[str] = "rbb"
 RSCRIPT_ABS_PATH: Optional[str] = None
+
+
+
+# ---- Config knobs ----
+REPO_NAME = "plant-inspection-station-simulation"
+R_SCRIPT_REL = Path("slippage_model_utils") / "clarke_bb_model.R"
+
+def _find_repo_root() -> Optional[Path]:
+    """
+    Find the repo root by looking for REPO_NAME or '.git'
+    """
+    # 2) Walk up from anchor (or this file) to find REPO_NAME or .git
+    start = Path(__file__).resolve()
+    for parent in [start, *start.parents]:
+        if parent.name == REPO_NAME or (parent / ".git").exists():
+            return parent
+
+    return None
+
+def get_r_script_path() -> Path:
+    """
+    Resolve the path to clarke_bb_model.R via repo root discovery + R_SCRIPT_REL
+    Raises FileNotFoundError if not found.
+    """
+    # Find repo root
+    repo_root = _find_repo_root()
+    # From repo root, return path to R script
+    if repo_root:
+        candidate = (repo_root / R_SCRIPT_REL).resolve()
+        if candidate.exists():
+            return candidate
+
+    # Raise error if the R script was not found
+    raise FileNotFoundError(
+        "Could not locate 'clarke_bb_model.R'.\n" + "\n".join(" - " + h for h in hints)
+    )
 
 
 # ---- Nested schema for `optim` ----
@@ -51,9 +86,6 @@ class BBResult(TypedDict):
 
     # standard errors (vector)
     se_par: Sequence[float]
-
-
-
 
 
 def _pick_rscript_command() -> List[str]:
@@ -134,8 +166,9 @@ def run_clarke_bb_group_model(
       - TimeoutError if R does not complete in time
       - ValueError if stdout is not valid JSON in the expected schema
     """
-    if not Path(R_SCRIPT_PATH_bb_cli).exists():
-        raise FileNotFoundError(f"R script not found: {R_SCRIPT_PATH_bb_cli}")
+    r_script_path_bb_cli = str(get_r_script_path())
+    if not Path(r_script_path_bb_cli).exists():
+        raise FileNotFoundError(f"R script not found: {r_script_path_bb_cli}")
 
     cmd = _pick_rscript_command()
 
@@ -156,7 +189,7 @@ def run_clarke_bb_group_model(
 
     try:
         proc: subprocess.CompletedProcess[str] = subprocess.run(
-            cmd + [str(Path(R_SCRIPT_PATH_bb_cli)), json.dumps(payload)],
+            cmd + [str(Path(r_script_path_bb_cli)), json.dumps(payload)],
             capture_output=True,
             text=True,
             check=False,
