@@ -33,6 +33,7 @@ Modified Functions:
     * Maps old terminology: "box"/"boxes" -> "inspection_unit", "item"/"items" -> "sample_unit"
     * Enhanced to support both inspection_unit and sample_unit level contamination
     * Added plant-level contamination support with pooled contamination methodology
+    * Added functionality to use the beta-binomial model from Clarke et. al. 2023 paper
 
 - add_contaminant_clusters():
     * Updated contamination_unit parameter handling for backward compatibility
