@@ -98,17 +98,26 @@ Note:  If you have one already installed, then skip this step.
 ```powershell
 py -m venv .venv
 ```
+
+You can also create the environment using conda:
+ - Open the Anaconda prompt
+ - Navigate to the directory to where your repo is cloned
+ - Check your python version:  `python --version`
+ - Create the environment: `conda create -n venv python=XXX anaconda` where "XXX" represents the version number
+ - Activate the environment: `conda activate venv`
+
+
 ---
-### 4. Activate your Virtual Environment, Upgrade Pip, Install Requirements
-```powershell
-.\.venv\Scripts\activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt --timeout=10000
-```
+### 5. Activate your Virtual Environment, Upgrade Pip, Install Requirements
+
+- Activate the environment (if not done via conda): `.\.venv\Scripts\activate`
+- Upgrade pip: `python -m pip install --upgrade pip`
+- Install requirements:  `pip install -r requirements.txt --timeout=10000`
+
 
 ---
 
-### 5. Test R and Python Integration
+### 6. Test R and Python Integration
 Verify that Conda and Rscript work together. In **Anaconda Prompt**, run:
 ```powershell
 conda run -n rbb Rscript -e "cat('Rscript is alive\n')"
@@ -131,7 +140,7 @@ in the `plant-inspection-station-simulation` git repository.
 
 ---
 
-## 🧠 Notes for Developers
+## Notes for Developers
 - The wrapper uses `conda run -n rbb` to ensure consistent R environments across systems.
 - JSON payloads are passed as command-line arguments; for large payloads, consider refactoring to use temp files.
 - The R output must end with a valid JSON object.
