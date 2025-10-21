@@ -9,7 +9,7 @@ The setup is designed to work automatically on both **full Anaconda** and **Mini
 
 ---
 
-## ⚙️ System Requirements
+## System Requirements
 - **Windows 10/11**
 - **Git** (git-scm.com)
 - **Python 3.9+**
@@ -17,7 +17,7 @@ The setup is designed to work automatically on both **full Anaconda** and **Mini
 
 ---
 
-## 🚀 Setup Instructions
+## Setup Instructions
 
 ### 1. Install Conda
 #### Option A — Full Anaconda (recommended for developers)
@@ -51,26 +51,56 @@ conda run -n rbb Rscript --version
 ```
 You should see the R version output (e.g., ```Rscript (R) version 4.5.1 (2025-06-13)```)
 
-Additionally, VERIFY that there exists a directory called `C:\Users\%YOUR_USER_NAME%\AppData\Local\anaconda3\envs\rbb`
+Additionally, VERIFY that there exists a directory for the `rbb` environment 
+where you have Anaconda/Miniconda installed 
+(will be different by user based on where you have installed Anaconda). Should be a 
+directory similar to `%YOUR_PATH_TO_ANACONDA%\envs\rbb`.
+Examples include:
+
+Example 1:  `C:\Users\username1\AppData\Local\anaconda3\envs\rbb`
+
+Example 2:  `C:\Users\username2\Anaconda3\envs\rbb`
 
 ---
 
-### 3. Clone the Repository
+### 3. Clone the Repository (skip this step if already done)
+
+First, create a folder directory, where you want to clone the repository.
+
 ```powershell
-cd %LOCATION_FOR_CLONE%
-git clone https://your.git.server/plant-inspection-station-simulation.git
-cd plant-inspection-station-simulation
+Example
+C:\Users\username1\plant-inspection-station-simulation
 ```
+
+Next, retrieve the repository url.
+
+- Navigate to the repository page in your browser.
+- Look for a button or tab labeled “Code”, “Clone”, or “Clone or download.”
+- Click the copy icon next to the HTTPS (or SSH) URL.
+- Open a command line prompt and navigate to the folder/directory created above.
+- Use that copied link to replace `%repository_url%` in the command below (remove the `%` signs)
+
+```powershell
+git clone %REPOSITORY_URL%
+```
+
 Confirm that the R script exists at:
 ```
-slippage_model_utils\clarke_bb_model.R
+plant-inspection-station-simulation\slippage_model_utils\clarke_bb_model.R
 ```
 
 ---
 
 ### 4. Create a Python Virtual Environment and Install Requirements
+
+Note:  If you have one already installed, then skip this step.
+
 ```powershell
 py -m venv .venv
+```
+---
+### 4. Activate your Virtual Environment, Upgrade Pip, Install Requirements
+```powershell
 .\.venv\Scripts\activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt --timeout=10000
