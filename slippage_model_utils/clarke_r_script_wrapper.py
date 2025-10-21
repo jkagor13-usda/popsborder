@@ -9,6 +9,7 @@ import numpy as np
 from scipy.optimize import minimize_scalar
 import platform
 import sys
+from math import isinf
 
 # === CONFIG ===
 CONDA_ENV_NAME: Optional[str] = 'rbb'
@@ -186,7 +187,8 @@ def run_clarke_bb_group_model(
 
     cmd = _pick_rscript_command()
 
-    theta_json = "Inf" if (isinstance(theta, float) and np.isinf(theta)) else float(theta)
+    #theta_json = "Inf" if (isinstance(theta, float) and np.isinf(theta)) else float(theta)
+    theta_json = None if isinf(float(theta)) else float(theta)
 
     # Build the payload with explicit conversions
     payload: Dict[str, Any] = {
@@ -203,7 +205,7 @@ def run_clarke_bb_group_model(
 
     try:
         proc: subprocess.CompletedProcess[str] = subprocess.run(
-            cmd + [str(Path(r_script_path_bb_cli)), json.dumps(payload)],
+            cmd + [str(Path(r_script_path_bb_cli)), json.dumps(payload, allow_nan=False)],
             capture_output=True,
             text=True,
             check=False,

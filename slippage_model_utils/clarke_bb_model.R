@@ -373,7 +373,22 @@ B        <- payload$B
 Nbar     <- payload$Nbar
 freq     <- payload$freq
 theta    <- payload$theta
-if (is.character(theta) && identical(theta, "Inf")) theta <- Inf
+theta <- payload$theta
+if (is.null(theta)) {
+  theta <- Inf
+} else if (is.character(theta)) {
+  if (tolower(theta) %in% c("inf", "+inf", "infinity")) theta <- Inf
+  if (tolower(theta) == "-inf") theta <- -Inf
+}
+
+# (Optional) guard against NA/NaN
+if (!is.finite(theta)) theta <- Inf
+
+
+#if (is.character(theta) && identical(theta, "Inf")) theta <- Inf
+
+
+
 Rrep     <- payload$R
 startval <- if (!is.null(payload$startval)) unlist(payload$startval) else c(0, 0)
 SE       <- isTRUE(payload$se)
