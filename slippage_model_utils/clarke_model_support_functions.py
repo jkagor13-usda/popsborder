@@ -51,7 +51,7 @@ class ClarkeModelInputs:
             lambda_test=1.0,
             R=1000,
             start_val=(0.0, 0.0),
-            se=True,
+            se=False,
         )
 
 
