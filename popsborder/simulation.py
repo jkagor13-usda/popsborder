@@ -209,8 +209,9 @@ def simulation(
             print(f"Stopped simulation early: {e}")
             pass
 
-    filename = r'C:\Users\agorjk1\Box\NHH15 - USDA APHIS EDISON\05 PPQ Engagement\PPQ RBS Data (Folder shared with APHIS)\APL Created Data Related Items\Synthetic_Data'
-    simData.write_synthetic_data_to_csv(filename)
+    # Write out simulated data
+    simData.write_synthetic_data_to_csv()
+
     num_contaminated = num_consignments - success_rates.ok
     if num_contaminated:
         # avoiding float division by zero

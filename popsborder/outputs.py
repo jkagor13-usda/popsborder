@@ -64,8 +64,14 @@ from collections.abc import MutableMapping
 from functools import reduce
 import pandas as pd
 import os
+from pathlib import Path
 
 from .inspections import count_contaminated_boxes
+from slippage_model_utils.clarke_r_script_wrapper import _find_repo_root
+
+# TODO: Update how we save out any output data (currently will save to an "outputs" folder in the repository similar to what is done in slippage.py)
+# Define output directory for the simulated data
+output_dir = _find_repo_root() / "output" / "pops_border_sim_data"
 
 
 def pretty_content(array, config=None):
@@ -773,12 +779,14 @@ class SimData(object):
         self.current_id = 0
 
 
-    def write_synthetic_data_to_csv(self, dir):
-        filepath = os.path.join(dir, 'synthetic_consignment_data.csv')
+    def write_synthetic_data_to_csv(self,output_dir=output_dir):
+        # Create the output directory if it does not exist
+        output_dir.mkdir(exist_ok=True)
+        filepath = os.path.join(output_dir, 'synthetic_consignment_data.csv')
         self.consignments.to_csv(filepath, index = False)
-        filepath = os.path.join(dir, 'synthetic_pis_data.csv')
+        filepath = os.path.join(output_dir, 'synthetic_pis_data.csv')
         self.pis_synthetic_data.to_csv(filepath, index = False)
-        filepath = os.path.join(dir, 'synthetic_rbs_calc_data.csv')
+        filepath = os.path.join(output_dir, 'synthetic_rbs_calc_data.csv')
         self.rbs_calc_synthetic_data.to_csv(filepath, index = False)
 
     def gen_consignment_id(self):
