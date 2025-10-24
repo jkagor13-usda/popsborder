@@ -1,6 +1,6 @@
 # Using Updated Contamination Parameterization via Clarke Model
 
-## 🧩 Overview
+## Overview
 This repository includes a Python wrapper and supporting R script 
 for running the **[Clarke Beta-Binomial Model](https://link.springer.com/article/10.1007/s13253-023-00566-x#Sec8)**.
 The Python function `run_clarke_bb_group_model()` executes the R model 
