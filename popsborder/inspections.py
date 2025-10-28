@@ -27,7 +27,7 @@ JHU/APL Extensions and Modifications:
 Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
 
 New Functions Added:
--------------------  
+-------------------
 - sample_rbs():
     * Implements risk-based sampling methodology using compliance-based detection levels
     * Retrieves country/propagative material specific compliance parameters from lookup table
@@ -43,12 +43,12 @@ New Functions Added:
     * Supports refactored terminology (inspection_units vs boxes)
 
 - count_contaminated_sample_units():
-    * Counts contaminated sample units in consignment  
+    * Counts contaminated sample units in consignment
     * Supports refactored terminology (sample_units vs items)
 
 Modified Functions:
 ----------------
-- get_sample_function(): 
+- get_sample_function():
     * Added RBS structured consignment inspection
     * Enhanced to support compliance table parameter passing
 
@@ -132,7 +132,7 @@ def sample_proportion(config, consignment):
     num_sample_units = consignment.num_sample_units
     num_inspection_units = consignment.num_inspection_units
     # Handle backward compatibility for min inspection units
-    min_inspection_units = config["inspection"].get("min_inspection_units", 
+    min_inspection_units = config["inspection"].get("min_inspection_units",
                                                       config["inspection"].get("min_boxes", 0))
 
     if unit in ["sample_unit", "sample_units", "item", "items"]:
@@ -221,13 +221,13 @@ def sample_n(config, consignment):
     fixed_n = config["inspection"]["fixed_n"]
     unit = config["inspection"]["unit"]
     # Handle backward compatibility for within inspection unit proportion
-    within_inspection_unit_proportion = config["inspection"].get("within_inspection_unit_proportion", 
+    within_inspection_unit_proportion = config["inspection"].get("within_inspection_unit_proportion",
                                                                    config["inspection"].get("within_box_proportion", 1.0))
     sample_units_per_inspection_unit = consignment.sample_units_per_inspection_unit
     num_sample_units = consignment.num_sample_units
     num_inspection_units = consignment.num_inspection_units
     # Handle backward compatibility for min inspection units
-    min_inspection_units = config["inspection"].get("min_inspection_units", 
+    min_inspection_units = config["inspection"].get("min_inspection_units",
                                                       config["inspection"].get("min_boxes", 0))
 
     if unit in ["sample_unit", "sample_units", "item", "items"]:
@@ -286,7 +286,7 @@ def convert_sample_units_to_inspection_units_fixed_proportion(config, consignmen
     """
     sample_units_per_inspection_unit = consignment.sample_units_per_inspection_unit
     # Handle backward compatibility for within inspection unit proportion
-    within_inspection_unit_proportion = config["inspection"].get("within_inspection_unit_proportion", 
+    within_inspection_unit_proportion = config["inspection"].get("within_inspection_unit_proportion",
                                                                    config["inspection"].get("within_box_proportion", 1.0))
     min_inspection_units = config["inspection"]["min_inspection_units"]
     num_inspection_units = consignment.num_inspection_units
@@ -312,10 +312,10 @@ def compute_n_clusters_to_inspect(config, consignment, n_sample_units_to_inspect
     cluster_selection = config["inspection"]["cluster"]["cluster_selection"]
     sample_units_per_inspection_unit = consignment.sample_units_per_inspection_unit
     # Handle backward compatibility for within inspection unit proportion
-    within_inspection_unit_proportion = config["inspection"].get("within_inspection_unit_proportion", 
+    within_inspection_unit_proportion = config["inspection"].get("within_inspection_unit_proportion",
                                                                    config["inspection"].get("within_box_proportion", 1.0))
     # Handle backward compatibility for min inspection units
-    min_inspection_units = config["inspection"].get("min_inspection_units", 
+    min_inspection_units = config["inspection"].get("min_inspection_units",
                                                       config["inspection"].get("min_boxes", 0))
     num_inspection_units = consignment.num_inspection_units
     num_sample_units = consignment.num_sample_units
@@ -467,14 +467,14 @@ def select_cluster_indexes(config, consignment, n_units_to_inspect):
 
 def select_units_to_inspect(config, consignment, n_units_to_inspect):
     """Select units to inspect based on selection strategy.
-    
+
     :param config: Configuration to be used
-    :param consignment: Consignment to be inspected  
+    :param consignment: Consignment to be inspected
     :param n_units_to_inspect: Number of units to inspect
     """
     unit = config["inspection"]["unit"]
     selection_strategy = config["inspection"]["selection_strategy"]
-    
+
     if selection_strategy == "random":
         return select_random_indexes(unit, consignment, n_units_to_inspect)
     elif selection_strategy == "cluster":
@@ -520,6 +520,8 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     # sample_units to detection and completion
     ret = types.SimpleNamespace(
         inspected_sample_unit_indexes=[],
+        insepcted_box_indexes=[],
+        inspected_box_result=[],
         inspection_units_opened_completion=0,
         inspection_units_opened_detection=0,
         sample_units_inspected_completion=0,
@@ -611,9 +613,10 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
             ret.inspection_units_opened_completion = len(set(inspection_units_opened_completion))
             ret.inspection_units_opened_detection = len(set(inspection_units_opened_detection))
     elif unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
+        ret.inspected_box_indexes = indexes_to_inspect
         # Partial inspection_unit inspections allowed to reduce number of sample_units inspected if desired
         # Handle backward compatibility for within inspection unit proportion
-        within_inspection_unit_proportion = config["inspection"].get("within_inspection_unit_proportion", 
+        within_inspection_unit_proportion = config["inspection"].get("within_inspection_unit_proportion",
                                                                        config["inspection"].get("within_box_proportion", 1.0))
         inspect_per_inspection_unit = int(math.ceil(within_inspection_unit_proportion * sample_units_per_inspection_unit))
         detected = False
@@ -643,6 +646,9 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
             # If inspection_unit contained contaminated sample_units, changed detected variable
             if ret.contaminated_sample_units_detection > 0:
                 detected = True
+                ret.inspected_box_result.append(1)
+            else:
+                ret.inspected_box_result.append(0)
 
     ret.consignment_checked_ok = ret.contaminated_sample_units_completion == 0
     return ret

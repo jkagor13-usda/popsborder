@@ -16,7 +16,7 @@
 
 """The main file for executing using python -m"""
 
-from .app import main
+from app import main
 
 if __name__ == "__main__":
     main()

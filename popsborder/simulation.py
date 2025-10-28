@@ -71,6 +71,7 @@ from .outputs import (
     PrintReporter,
     SuccessRates,
     pretty_consignment,
+    SimData,
 )
 from .skipping import get_inspection_needed_function
 from .inputs import load_input_consignment_data
@@ -102,6 +103,8 @@ def simulation(
 
     if seed is not None:
         random_seed(seed)
+
+    simData = SimData()
 
     # allow for an empty disposition code specification
     disposition_codes = config.get("disposition_codes", {})
@@ -141,6 +144,7 @@ def simulation(
         try:
             consignment = consignment_generator.generate_consignment()
             add_contaminant(consignment)
+            simData.add_consignment(consignment)
             if detailed:
                 for inspection_unit in consignment.inspection_units:
                     sample_unit_details.append(inspection_unit.sample_units)
@@ -154,6 +158,7 @@ def simulation(
             if must_inspect:
                 n_units_to_inspect = sample(consignment)
                 ret = inspect(config, consignment, n_units_to_inspect, detailed)
+                simData.add_to_synthetic_data(ret, consignment, n_units_to_inspect)
                 consignment_checked_ok = ret.consignment_checked_ok
                 num_inspections += 1
                 total_num_inspection_units += consignment.num_inspection_units
@@ -203,6 +208,9 @@ def simulation(
         except RuntimeError as e:
             print(f"Stopped simulation early: {e}")
             pass
+
+    # Write out simulated data
+    simData.write_synthetic_data_to_csv()
 
     num_contaminated = num_consignments - success_rates.ok
     if num_contaminated:

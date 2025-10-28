@@ -62,8 +62,16 @@ import types
 import weakref
 from collections.abc import MutableMapping
 from functools import reduce
+import pandas as pd
+import os
+from pathlib import Path
 
-from .inspections import count_contaminated_inspection_units
+from .inspections import count_contaminated_boxes
+from slippage_model_utils.clarke_r_script_wrapper import _find_repo_root
+
+# TODO: Update how we save out any output data (currently will save to an "outputs" folder in the repository similar to what is done in slippage.py)
+# Define output directory for the simulated data
+output_dir = _find_repo_root() / "output" / "pops_border_sim_data"
 
 
 def pretty_content(array, config=None):
@@ -636,3 +644,223 @@ def save_scenario_result_to_pandas(results, config_columns=None, result_columns=
             row.update(vars(result))
         rows.append(row)
     return pd.DataFrame.from_records(rows)
+
+
+class SimData(object):
+
+    def __init__(self):
+        """Initialize output files"""
+        self.pis_synthetic_data = pd.DataFrame(
+            columns=[
+                "comm_ID",
+                "INSPECTION_ID",
+                "REF_COMMODITY_ID",
+                "CERTIFIED_FACILITY_NAME",
+                "CERTIFIED_FACILITY_NUMBER",
+                "COMMODITY_CLASSIFICATION",
+                "COMMODITY_COMMON_NAME",
+                "COMMODITY_DISPLAY_NAME",
+                "COMMODITY_TAXONOMIC_DISPLAY_NAME",
+                "COMMODITY_HOST_TYPE",
+                "COMMODITY_TYPE",
+                "COUNTRY_OF_ORIGIN_NAME",
+                "CONSIGNEE_NAME",
+                "DESTINATION_STATE_NAME",
+                "DISPOSITION_CODE",
+                "GENUS_NAME",
+                "ENTRY_NUMBER",
+                "ENTRY_LINE_NUMBER",
+                "PGA_LINE_NUMBER",
+                "PRODUCER_ID",
+                "PRODUCER_NAME",
+                "PROPAGATIVE_MATERIAL_TYPE",
+                "QUANTITY",
+                "QUANTITY_UNITS_NAME",
+                "WADS_CODE",
+                "SAMPLING_UNITS",
+                "IS_RBS",
+                "RBS_STATUS",
+                "GROWING_MEDIA_PRESENCE",
+                "CREATED_DATETIME",
+                "INSPECTION_DATETIME",
+                "BROKER_NAME",
+                "CATEGORY",
+                "SUBCATEGORY",
+                "IMPORTER_NAME",
+                "INSPECTION_LOCATION_NAME",
+                "INSPECTION_LOCATION_ID",
+                "INSPECTION_NUMBER",
+                "PATHWAY_ID",
+                "PATHWAY",
+                "SHIPPER_NAME",
+                "INSPECTION_LOCATION_STATE_CODE",
+                "DOCUMENT_REVIEW_OVERTIME_ID",
+                "DOCUMENT_REVIEW_OVERTIME_NAME",
+                "INSPECTION_RESULTS_OVERTIME_ID",
+                "INSPECTION_RESULTS_OVERTIME_NAME",
+                "TAXONOMY_ORDER",
+                "TAXONOMY_FAMILY",
+                "TAXONOMY_GENUS",
+                "TAXONOMY_SPECIES",
+                "TAXONOMY_SUBSPECIES",
+                "MODE_OF_TRANSPORT",
+                "inspection",
+                "shipment",
+                "action",
+                "HOST_PROXIMITY_ID",
+                "HOST_PROXIMITY",
+                "year",
+                "month",
+                "TOTAL_SAMPLING_UNITS (rbs calc data)",
+                "REQUIRED_NUMBER_OF_BOXES (rbs calc data)",
+            ]
+        )
+
+        self.rbs_calc_synthetic_data = pd.DataFrame(
+            columns=[
+                "INSPECTION_ID",
+                "INSPECTION_NUMBER",
+                "INSPECTION_LOCATION_ID",
+                "INSPECTION_LOCATION_NAME",
+                "INSPECTION_LOCATION_STATE_CODE",
+                "CATEGORY",
+                "SUBCATEGORY",
+                "PATHWAY_ID",
+                "PATHWAY",
+                "ID",
+                "COUNTRY_OF_ORIGIN_ID",
+                "COUNTRY_OF_ORIGIN_NAME",
+                "PROPAGATIVE_MATERIAL_TYPE_ID",
+                "PROPAGATIVE_MATERIAL_TYPE",
+                "PRODUCER_ID",
+                "PRODUCER_NAME",
+                "TOTAL_SAMPLING_UNITS",
+                "TOTAL_PLANT_QUANTITY",
+                "SUBMITTED_DATETIME",
+                "REMARKS",
+                "CONFIDENCE_LEVEL",
+                "RISK_RATING",
+                "DETECTION_LEVEL",
+                "REQUIRED_NUMBER_OF_BOXES",
+                "PULL_NUMBERS",
+                "IS_CERTIFIED_OFFSHORE_GREENHOUSE",
+                "IS_ACTIVE",
+                "CREATED_BY_USER_ID",
+                "CREATED_BY_USER_FIRST_NAME",
+                "CREATED_BY_USER_MIDDLE_NAME",
+                "CREATED_BY_USER_LAST_NAME",
+                "CREATED_DATETIME",
+                "MODIFIED_BY_USER_ID",
+                "MODIFIED_BY_USER_FIRST_NAME",
+                "MODIFIED_BY_USER_MIDDLE_NAME",
+                "MODIFIED_BY_USER_LAST_NAME",
+                "MODIFIED_DATETIME",
+                "remarks2",
+                "pack_plant"
+            ]
+        )
+
+        self.consignments = pd.DataFrame(
+            columns = [
+                'ID',
+                'Origin',
+                'Pathway',
+                'Port',
+                'Total Number of Sample Units',
+                'Plants Per Sample Unit',
+                'Total Items',
+                'Plants Per Item',
+                'Total Plants',
+                'Total Plants Contaminated',
+                'Total Number of Inspection Units Contaminated',
+                'Total Number Contaminated in Each Inspection Unit',
+            ]
+        )
+        self.current_id = 0
+
+
+    def write_synthetic_data_to_csv(self,output_dir=output_dir):
+        # Create the output directory if it does not exist
+        output_dir.mkdir(parents=True,exist_ok=True)
+        filepath = os.path.join(output_dir, 'synthetic_consignment_data.csv')
+        self.consignments.to_csv(filepath, index = False)
+        filepath = os.path.join(output_dir, 'synthetic_pis_data.csv')
+        self.pis_synthetic_data.to_csv(filepath, index = False)
+        filepath = os.path.join(output_dir, 'synthetic_rbs_calc_data.csv')
+        self.rbs_calc_synthetic_data.to_csv(filepath, index = False)
+
+    def gen_consignment_id(self):
+        self.current_id += 1
+        return str(self.current_id)
+
+    def add_consignment(self,consignment):
+
+        # If contaminated, determine which sample units are contaminated
+        num_contaminats_per_inspection_unit = []
+        num_contaminated_inspection_units = 0
+        if sum(consignment.plants)>0:
+            for inspection_unit in consignment.inspection_units:
+                num_contaminats_per_sample_unit = []
+                for sample_unit in inspection_unit.sample_unit_objects:
+                    num_contaminats_per_sample_unit.append(sum(sample_unit.plants))
+                    if sum(sample_unit.plants)>0:
+                        num_contaminated_inspection_units += 1
+                num_contaminats_per_inspection_unit.append(num_contaminats_per_sample_unit)
+
+
+        # Fill with placeholder values based on column type/meaning
+        default_row_consignment = {col: pd.NA for col in self.consignments.columns}
+
+        # Set column values for consignment data
+        default_row_consignment.update({
+            'ID': consignment.inspection_number,
+            'Origin': consignment.origin,
+            'Pathway': consignment.pathway,
+            'Port': consignment.port,
+            'Total Number of Sample Units': consignment.num_sample_units,
+            'Plants Per Sample Unit': consignment.plants_per_sample_unit,
+            'Total Plants': consignment.num_plants,
+            'Total Plants Contaminated': sum(consignment.plants),
+            'Total Number of Inspection Units Contaminated': num_contaminated_inspection_units ,
+            'Total Number Contaminated in Each Inspection Unit': num_contaminats_per_inspection_unit,
+        })
+
+        # Add rows to synthetic consignment data set
+        self.consignments.loc[len(self.consignments)] = default_row_consignment
+
+
+
+
+    def add_to_synthetic_data(self,ret,consignment, n_units_to_inspect):
+        # Loop through each box that was inspected and add a row to PIS synthetic data the
+        for box in range(len(ret.inspected_box_indexes)):
+            # Fill with placeholder values based on column type/meaning
+            default_row_pis = {col: pd.NA for col in self.pis_synthetic_data.columns}
+            default_row_rbs_calc = {col: pd.NA for col in self.rbs_calc_synthetic_data}
+
+            # Set column values for rbs_calc data
+            default_row_rbs_calc.update({
+                'TOTAL_PLANT_QUANTITY': consignment.num_plants,
+                "TOTAL_SAMPLING_UNITS": consignment.num_sample_units,
+                "REQUIRED_NUMBER_OF_BOXES": n_units_to_inspect,
+                "INSPECTION_ID": self.current_id,
+                "COUNTRY_OF_ORIGIN_NAME": consignment.origin,
+                "PATHWAY": consignment.pathway,
+            })
+
+            # Set column values for pis data
+            default_row_pis.update({
+                'QUANTITY': consignment.num_plants,
+                "INSPECTION_ID": consignment.inspection_number,
+                "COUNTRY_OF_ORIGIN_NAME": consignment.origin,
+                "year": consignment.date.year,
+                "month": consignment.date.month,
+                "PATHWAY": consignment.pathway,
+                "action": ret.inspected_box_result[box],
+                "TOTAL_SAMPLING_UNITS (rbs calc data)": consignment.num_sample_units,
+                "REQUIRED_NUMBER_OF_BOXES (rbs calc data)": n_units_to_inspect,
+            })
+
+            # Add rows to synthetic data sets
+            self.pis_synthetic_data.loc[len(self.pis_synthetic_data)] = default_row_pis
+            self.rbs_calc_synthetic_data.loc[len(self.rbs_calc_synthetic_data)] = default_row_rbs_calc

@@ -8,12 +8,20 @@ from popsborder.inputs import load_configuration, load_scenario_table, load_comp
 from popsborder.outputs import save_scenario_result_to_pandas
 from popsborder.generator import SyntheticConsignmentDataGenerator, save_to_csv
 
+# Import utility functions for contamination module
+from slippage_model_utils.clarke_r_script_wrapper import *
+from slippage_model_utils.clarke_model_support_functions import *
+
+
 def main():
     # Set up data folder and file names
     data_dir = Path("slippage_data")
     config_file = data_dir / "config.yml"
     compliance_file = data_dir / "compliance_table.csv"
+    #scenario_file = data_dir / "test_scenario.csv"
     scenario_file = data_dir / "pis_contaminate_scenarios.csv"
+    pis_data = data_dir / 'synthetic_pis_data.csv'
+    rbs_calc_data = data_dir / 'synthetic_rbs_calc_data.csv'
 
     # Load configuration and compliance table
     config = load_configuration(config_file)
@@ -25,12 +33,86 @@ def main():
 
     config["consignment"]["input_file"]["rbs_file_name"] = str(data_dir / "synth_data.csv")
 
-    # TODO: Contamination data
+    ####################################################################
+    ####################################################################
+    #################    CONTAMINATION MODULE  #########################
+    ####################################################################
+    ####################################################################
+
+    ####################
+    ### Read in Data ###
+    ####################
+
+    #############################################################
+    ##### TODO: Replace this block with the appropriate data ####
+    #############################################################
+    # Load in PIS Data
+    df_pis_data = pd.read_csv(pis_data)
+
+    # Load in RBS Calculator Data
+    df_rbs_calculator = pd.read_csv(rbs_calc_data)
+    #############################################################
+    ##### TODO: Replace this block with the appropriate data ####
+    #############################################################
+
+    ### Generate clarke inputs via input data
+    inputs = gen_clarke_model_inputs(df_pis_data, df_rbs_calculator)
+
+    # Run clarke model
+    res = run_clarke_bb_group_model(inputs.ty,
+                                    inputs.b,
+                                    inputs.B,
+                                    inputs.Nbar,
+                                    inputs.freq,
+                                    inputs.theta,
+                                    inputs.R,
+                                    inputs.start_val,
+                                    inputs.se)
+
+    print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
+    print(f'   Alpha = {res["alpha"]}')
+    print(f'   Beta = {res["beta"]}')
+    print('')
+
+    # Update original parameters of config
+    config['contamination']['contamination_rate']['parameters'][0] = res["alpha"]
+    config['contamination']['contamination_rate']['parameters'][1] = res["beta"]
+
+    ####################################################################
+    ####################################################################
+    ################    END CONTAMINATION MODULE  ######################
+    ####################################################################
+    ####################################################################
+
     compliance_table = load_compliance_lookup_csv(compliance_file)
 
     # Load scenario table
     scenarios = load_scenario_table(scenario_file)
     print(f"Loaded {len(scenarios)} scenarios from {scenario_file}")
+
+    ####################################################################
+    ####################################################################
+    ######## CONTAMINATION MODULE (Scenario Update)  ###################
+    ####################################################################
+    ####################################################################
+
+    # Loop through each of the scenarios stored in "scenarios" (which is
+    # a list of dictionaries) and replace with the updated fitted
+    # contamination parameters
+    for scenario in scenarios:
+        scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = res["alpha"]
+        scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] =  res["beta"]
+        scenario["contamination/contamination_rate/beta_binomial_parameters/theta"] = inputs.theta
+        scenario["contamination/contamination_rate/value"] = None
+
+    ####################################################################
+    ####################################################################
+    ######## END CONTAMINATION MODULE (Scenario Update)  ###############
+    ####################################################################
+    ####################################################################
+
+
+
 
     # Run one scenario analysis simulation
     scenario_results_raw = run_scenarios(
