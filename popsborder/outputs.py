@@ -781,7 +781,7 @@ class SimData(object):
 
     def write_synthetic_data_to_csv(self,output_dir=output_dir):
         # Create the output directory if it does not exist
-        output_dir.mkdir(exist_ok=True)
+        output_dir.mkdir(parents=True,exist_ok=True)
         filepath = os.path.join(output_dir, 'synthetic_consignment_data.csv')
         self.consignments.to_csv(filepath, index = False)
         filepath = os.path.join(output_dir, 'synthetic_pis_data.csv')
