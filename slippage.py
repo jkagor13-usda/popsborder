@@ -139,7 +139,7 @@ def main():
     output_dir.mkdir(exist_ok=True)
 
     # Save results to CSV
-    results_df = save_scenario_result_to_pandas(scenario_results,
+    results_df = save_scenario_result_to_pandas(scenario_results,f
                                                 config_columns=config_columns,
                                                 result_columns=result_columns)
     results_df.to_csv(output_dir / "pis_contamination_scenario_results.csv", index=False)
