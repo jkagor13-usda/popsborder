@@ -52,6 +52,8 @@ import sys
 import types
 from collections.abc import Iterable, Mapping
 from pathlib import Path
+import csv
+from typing import Dict, Tuple
 
 
 def text_to_value(arg):
@@ -681,25 +683,37 @@ def get_validated_effectiveness(config):
     raise ValueError("Effectiveness must be between 0 and 1")
 
 
-def load_compliance_lookup_csv(file_path):
+def load_compliance_lookup_csv(filepath: Path):
+
     """
-    Load compliance table for fast lookup.
-    Returns a dict mapping (Origin, Propagative Material type)
-    to (Detection Level, Confidence Levels).
+    Build comp_table where:
+      key   = N-tuple of values from all columns BEFORE 'Compliance'
+      value = (Detection Level, Confidence Levels)
+    Raises ValueError if required columns are missing.
     """
     comp_table = {}
-    import csv
 
-    with open(file_path, encoding="utf-8") as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            key = (
-                row["Origin Location Country Name"].strip(),
-                row["Propagative Material type"].strip()
-            )
-            detection_level = row["Detection Level"].strip()
-            confidence_levels = row["Confidence Levels"].strip()
-            comp_table[key] = (detection_level, confidence_levels)
+    with open(filepath, newline="", encoding="utf-8-sig") as f:
+        r = csv.reader(f)
+        headers = [h.strip() for h in next(r)]
+        if not headers:
+            raise ValueError("CSV appears to be empty or missing a header row.")
+
+        required = {"Compliance", "Detection Level", "Confidence Levels"}
+        missing = [c for c in required if c not in headers]
+        if missing:
+            raise ValueError(f"Missing required column(s): {', '.join(missing)}")
+
+        comp_idx = headers.index("Compliance")
+        key_cols = headers[:comp_idx]  # all columns BEFORE 'Compliance' (excluded)
+
+        for row in r:
+            # Map row to header names (short rows are padded automatically by zip)
+            row_map = {h: (row[i].strip() if i < len(row) else "") for i, h in enumerate(headers)}
+
+            key = tuple(row_map[col] for col in key_cols)
+            value = (row_map["Detection Level"], row_map["Confidence Levels"])
+            comp_table[key] = value  # last occurrence wins
 
     return comp_table
 
