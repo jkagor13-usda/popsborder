@@ -705,7 +705,8 @@ def load_compliance_lookup_csv(filepath: Path):
             raise ValueError(f"Missing required column(s): {', '.join(missing)}")
 
         comp_idx = headers.index("Compliance")
-        key_cols = headers[:comp_idx]  # all columns BEFORE 'Compliance' (excluded)
+        key_cols = headers[:comp_idx]  # all columns BEFORE 'Compliance' will be excluded
+        comp_table['rbs_variables'] = list(key_cols)
 
         for row in r:
             # Map row to header names (short rows are padded automatically by zip)
