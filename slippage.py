@@ -7,6 +7,9 @@ from popsborder.scenarios import run_scenarios
 from popsborder.inputs import load_configuration, load_scenario_table, load_compliance_lookup_csv
 from popsborder.outputs import save_scenario_result_to_pandas
 from popsborder.generator import SyntheticConsignmentDataGenerator, save_to_csv
+from popsborder.consignments import get_consignment_generator
+
+from popsborder.inspections import normalize_rbs_variables_against_consignment
 
 # Import utility functions for contamination module
 from slippage_model_utils.clarke_r_script_wrapper import *
@@ -17,6 +20,7 @@ def main():
     # Set up data folder and file names
     data_dir = Path("slippage_data")
     config_file = data_dir / "config.yml"
+    #compliance_file = data_dir / "compliance_table_test.csv"
     compliance_file = data_dir / "compliance_table.csv"
     #scenario_file = data_dir / "test_scenario.csv"
     scenario_file = data_dir / "pis_contaminate_scenarios.csv"
@@ -59,24 +63,25 @@ def main():
     inputs = gen_clarke_model_inputs(df_pis_data, df_rbs_calculator)
 
     # Run clarke model
-    res = run_clarke_bb_group_model(inputs.ty,
-                                    inputs.b,
-                                    inputs.B,
-                                    inputs.Nbar,
-                                    inputs.freq,
-                                    inputs.theta,
-                                    inputs.R,
-                                    inputs.start_val,
-                                    inputs.se)
+    #res = run_clarke_bb_group_model(inputs.ty,
+    #                                inputs.b,
+    #                                inputs.B,
+    #                                inputs.Nbar,
+    #                                inputs.freq,
+    #                                inputs.theta,
+    #                                inputs.R,
+    #                                inputs.start_val,
+    #                                inputs.se)
 
-    print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
-    print(f'   Alpha = {res["alpha"]}')
-    print(f'   Beta = {res["beta"]}')
-    print('')
+    #print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
+    #print(f'   Alpha = {res["alpha"]}')
+    #print(f'   Beta = {res["beta"]}')
+    #print('')
 
     # Update original parameters of config
-    config['contamination']['contamination_rate']['parameters'][0] = res["alpha"]
-    config['contamination']['contamination_rate']['parameters'][1] = res["beta"]
+    #config['contamination']['contamination_rate']['parameters'][0] = res["alpha"]
+    #config['contamination']['contamination_rate']['parameters'][1] = res["beta"]
+
 
     ####################################################################
     ####################################################################
@@ -90,7 +95,37 @@ def main():
     #################################################################
     #################################################################
 
+    # Load compliance table
     compliance_table = load_compliance_lookup_csv(compliance_file)
+
+    # Generate a temporary consignment that will be generated during simulation
+    consignment_generator = get_consignment_generator(config)
+    temp_consignment = consignment_generator.generate_consignment()
+
+    # Use temporarily generated consignment to find mappings of compliance table variables to attributes
+    updated, mapping, unmapped= normalize_rbs_variables_against_consignment(
+        compliance_table['rbs_variables'],
+        temp_consignment
+    )
+
+    print(f'\n\nPre-Processed Submitted Compliance Table')
+    print(f'   You have submitted the following variables in your compliance table and '
+          f'they will be mapped to attributes that '
+          f'the slippage model is generating for each consignment.')
+    print("   === Original/Submitted Compliance Table Variables ===", compliance_table['rbs_variables'])
+
+    print("\n   === Mappings Executed ===")
+    for k, v in mapping.items():
+        print(f"   {k!r} -> {v!r}")
+
+    print("\n   === Unmapped Variables ===")
+    for var in unmapped:
+        print(f'      {var}')
+
+    print("\n   === Updated Compliance Table Variables ===", updated)
+
+    # Update the compliance table variable names to be used later in sim to match attributes of consignment object
+    compliance_table['rbs_variables'] = updated
 
     ##################################################################
     ##################################################################
@@ -100,7 +135,7 @@ def main():
 
     # Load scenario table
     scenarios = load_scenario_table(scenario_file)
-    print(f"Loaded {len(scenarios)} scenarios from {scenario_file}")
+    print(f"\nLoaded {len(scenarios)} scenarios from {scenario_file}")
 
     ####################################################################
     ####################################################################
@@ -112,8 +147,10 @@ def main():
     # a list of dictionaries) and replace with the updated fitted
     # contamination parameters
     for scenario in scenarios:
-        scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = res["alpha"]
-        scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] =  res["beta"]
+        #scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = res["alpha"]
+        #scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] =  res["beta"]
+        scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = 0.194628
+        scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] = 4.7609372
         scenario["contamination/contamination_rate/beta_binomial_parameters/theta"] = inputs.theta
         scenario["contamination/contamination_rate/value"] = None
 
@@ -132,7 +169,7 @@ def main():
         scenario_table=scenarios,
         seed=42,
         num_simulations=1,            # Only one simulation
-        num_consignments=5,           # You can change this number if needed
+        num_consignments=3,           # You can change this number if needed
         compliance_table=compliance_table,
         detailed=True
     )
