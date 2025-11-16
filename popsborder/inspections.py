@@ -70,6 +70,9 @@ Modified Functions:
     * Added backward compatibility for within_inspection_unit_proportion
     * Enhanced detailed tracking with sample_unit_in_inspection_unit_to_sample_unit_index()
 
+- get_detection_and_confidence():
+    * Added ability to process beyond just origin and PM Type
+
 Backward Compatibility:
 ----------------------
 - Added aliases: count_contaminated_boxes() -> count_contaminated_inspection_units()
@@ -86,6 +89,10 @@ import types
 import numpy as np
 
 from .inputs import get_validated_effectiveness, load_compliance_lookup_csv
+
+from slippage_model_utils.references import country_of_origin_names, pm_type_names
+import re
+from collections import defaultdict
 
 
 def inspect_first(consignment):
@@ -254,11 +261,7 @@ def sample_rbs(config, consignment, compliance_table_dict):
     unit = config["inspection"]["unit"]
     num_sample_units = consignment.num_sample_units
     num_inspection_units = consignment.num_inspection_units
-    origin_country = consignment.origin
-    pm_type = consignment.material_type
-    detection_level, confidence_level = get_detection_and_confidence(
-        origin_country, pm_type, compliance_table_dict
-    )
+    detection_level, confidence_level = get_detection_and_confidence(consignment, compliance_table_dict)
     if unit in ["sample_unit", "sample_units", "item", "items"]:
         n_units_to_inspect = compute_hypergeometric(
             detection_level, confidence_level, num_sample_units
@@ -706,21 +709,49 @@ def consignment_contamination_rate(consignment):
     return count / consignment.num_sample_units
 
 
-def get_detection_and_confidence(
-        origin_country, pm_type, compliance_table_dict,
-        default_detection=0.01, default_confidence=0.8
+def get_detection_and_confidence(consignment,
+                                 compliance_table_dict,
+                                 default_detection=0.01,
+                                 default_confidence=0.8
     ):
     """
-    Fetch detection and confidence levels for (origin_country, pm_type).
+    Fetch detection and confidence levels for specified rbs variables.
     If not found, defaults to low compliance values.
     Returns a tuple: (detection_level, confidence_level)
     """
-    key = (origin_country, pm_type)
-    result = compliance_table_dict.get(key)
+    rbs_variables = compliance_table_dict['rbs_variables']
+    #key = (origin_country, pm_type)
+    if len(rbs_variables) == 0:
+        # If no variables detected in the compliance table, default to low compliance
+        print(f"\nWARNING: No compliance variables found in submitted compliance table. Using low compliance defaults:")
+        print(f"      Default Detection Level: {default_detection}")
+        print(f"      Default Confidence Level: {default_confidence}")
+        return (default_detection, default_confidence)
+    else:
+        values = {attr: consignment.get(attr) for attr in rbs_variables}
+        if any(v is None for v in values.values()):
+            # If not all variable specified in compliance table not detected in consignment, then default to low compliance
+            none_attrs = [k for k, v in values.items() if v is None]
+            print(
+                f"\nWARNING: Some compliance tables variables not found as attributes of the consignment."
+                f" Namely, {none_attrs}."
+                f" Using low compliance defaults:")
+            print(f"      Default Detection Level: {default_detection}")
+            print(f"      Default Confidence Level: {default_confidence}")
+            return (default_detection, default_confidence)
+        else:
+            # If variables found in consignment, attempt to look up in table
+            key = tuple(values[attr] for attr in rbs_variables)
+            result = compliance_table_dict.get(key)
     if result is not None:
+        # If a reference found, then return the associated detection and confidence levels
         return result
     else:
-        print(f"WARNING: No compliance found for {key}. Using low compliance defaults.")
+        # If no reference found, print warning and use low compliance defaults.
+        print(
+            f"\nWARNING: The variables {key} are not found in compliance table. Using low compliance defaults:")
+        print(f"      Default Detection Level: {default_detection}")
+        print(f"      Default Confidence Level: {default_confidence}")
         return (default_detection, default_confidence)
 
 
@@ -748,3 +779,76 @@ def count_contaminated_boxes(consignment):
 def count_contaminated_items(consignment):
     """Return number of contaminated items (backward compatibility)"""
     return count_contaminated_sample_units(consignment)
+
+def _norm(s: str) -> str:
+    """Normalize for matching: lowercase, strip non-alphanum."""
+    return re.sub(r'[^a-z0-9]+', '', s.lower())
+
+def normalize_rbs_variables_against_consignment(
+    rbs_variables,
+    consignment,
+):
+    """
+    Map free-form field names in rbs_variables to actual attributes on a Consignment
+    instance, using case-insensitive aliasing. Keeps unmapped items unchanged.
+
+    Returns:
+        updated_vars: list[str]  # rbs_variables with matched items replaced by canonical attrs
+        mapping: dict[str, str]  # original string -> canonical attribute
+        unmapped: list[str]      # originals that didn't match anything
+    """
+
+    # 1) Canonical attribute keys from the instance (thanks to UserDict)
+    canonical_attrs = set(consignment.keys())
+
+    # 2) Auto-generate basic aliases from the canonical names
+    #    (e.g., "material_type" -> "material type", "Material Type", etc.)
+    auto_aliases = defaultdict(set)
+    for attr in canonical_attrs:
+        spaced = attr.replace('_', ' ')
+        auto_aliases[attr].update({
+            attr,
+            spaced,
+            spaced.title(),          # "Material Type"
+            attr.title(),            # "Material_Type" (rare, but harmless)
+        })
+
+    # Add any pre-specified aliases (see reference.py file in slippage_model_utils)
+    if 'origin' in canonical_attrs:
+        auto_aliases['origin'].update(country_of_origin_names)
+    if 'material_type' in canonical_attrs:
+        auto_aliases['material_type'].update(pm_type_names)
+
+    # Build a lookup: normalized alias -> canonical attribute
+    alias_index = {}
+    for attr, names in auto_aliases.items():
+        for name in names:
+            alias_index[_norm(name)] = attr
+
+    # Walk the input list, map to canonical attributes when possible
+    updated_vars = []
+    mapping = {}
+    unmapped = []
+
+    for original in rbs_variables:
+        key = _norm(original)
+        if key in alias_index:
+            canonical = alias_index[key]
+            mapping[original] = canonical
+            updated_vars.append(canonical)
+        else:
+            # Heuristic fallback: try to match substrings like "origin" inside long names
+            # (Keeps false positives low by requiring the canonical word to appear)
+            matched = None
+            for attr in canonical_attrs:
+                if re.search(rf'\b{re.escape(attr.replace("_", " "))}\b', original, flags=re.I):
+                    matched = attr
+                    break
+            if matched:
+                mapping[original] = matched
+                updated_vars.append(matched)
+            else:
+                unmapped.append(original)
+                updated_vars.append(original)
+
+    return updated_vars, mapping, unmapped
