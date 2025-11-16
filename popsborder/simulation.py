@@ -141,9 +141,29 @@ def simulation(
     tolerance_level = config["inspection"]["tolerance_level"]
 
     for i in range(num_consignments):
+        print(f'\nSimulating Consignment {i+1} out of {num_consignments} total consignments')
         try:
             consignment = consignment_generator.generate_consignment()
             add_contaminant(consignment)
+            total_contaminated_units = 0
+            total_contaminated_inspection_units = 0
+            total_contaminated_sample_units = 0
+            for inspect_unit in consignment.inspection_units:
+                indicator = 0
+                for samp_unit in inspect_unit.sample_unit_objects:
+                    if sum(samp_unit.plants)> 0:
+                        indicator = 1
+                        total_contaminated_sample_units += 1
+                    total_contaminated_units += sum(samp_unit.plants)
+                if indicator == 1: total_contaminated_inspection_units += 1
+
+            print(f'\n==== CONSIGNMENT {i+1} CONTAMINATED.  SUMMARY INFO BELOW ====')
+            print(f'   Number of Contaminated Plants: {total_contaminated_units}')
+            print(f'   Proportion of Contaminated Plants (total # of plants = {len(consignment.plants)}): {total_contaminated_units/len(consignment.plants)}')
+            print(f'\n   Number of Contaminated Sample Units: {total_contaminated_sample_units}')
+            print(f'   Proportion of Contaminated Sample Units (total # sample units= {len(consignment.sample_units)}): {total_contaminated_sample_units/len(consignment.sample_units)}')
+            print(f'\n   Number of Contaminated Inspection Units: {total_contaminated_inspection_units}')
+            print(f'   Proportion of Contaminated Inspection Units (total # inspection units = {len(consignment.inspection_units)}): {total_contaminated_inspection_units/len(consignment.inspection_units)}')
             simData.add_consignment(consignment)
             if detailed:
                 for inspection_unit in consignment.inspection_units:
@@ -156,6 +176,7 @@ def simulation(
                 consignment, consignment.date
             )
             if must_inspect:
+                print(f'\n\n==== INSPECTION OF CONSIGNMENT {i + 1} NOW BEING EXECUTED ====')
                 n_units_to_inspect = sample(consignment)
                 ret = inspect(config, consignment, n_units_to_inspect, detailed)
                 simData.add_to_synthetic_data(ret, consignment, n_units_to_inspect)
