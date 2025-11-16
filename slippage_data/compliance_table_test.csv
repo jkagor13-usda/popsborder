@@ -1,4 +1,4 @@
-Origin Location Country Name,Propagative Material type,Variable3,Variable4,Compliance,Detection Level,Confidence Levels
+Origin Location Country Name,PM type,Producer,Variable4,Compliance,Detection Level,Confidence Levels
 Netherlands,Budwood/Graftwood (scion),Producer1,234.0434684,Medium Compliance,0.2,0.95
 Mexico,Budwood/Graftwood (scion),Producer2,150.5593622,High Compliance,0.3,0.95
 Israel,Budwood/Graftwood (scion),Producer3,126.5230423,Low Compliance,0.1,0.95
