@@ -208,7 +208,8 @@ def simulation(
                 must_inspect,
                 applied_program,
             )
-            consignment_actually_ok = not is_consignment_contaminated(consignment)
+            #consignment_actually_ok = not is_consignment_contaminated(consignment)
+            consignment_actually_ok = total_contaminated_units == 0
             success_rates.record_success_rate(
                 consignment_checked_ok, consignment_actually_ok, consignment
             )
