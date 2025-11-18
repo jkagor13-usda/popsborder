@@ -95,14 +95,6 @@ contamination:
     N_bar: 200
     I: 100
     J: 100
-# release_programs:
-#   naive_cfrp:
-#     flowers:
-#       - Hyacinthus
-#       - Gerbera
-#       - Rosa
-#       - Actinidia
-#     max_boxes: 10 # do not apply to consignments larger than
 inspection:
   unit: sample_units  # Calculate sample units based on compliance
   tolerance_level: 0.005

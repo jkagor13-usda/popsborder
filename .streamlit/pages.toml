@@ -1,0 +1,29 @@
+[[pages]]
+path = "frontend.py"
+name = "Home"
+icon = ":house:"
+
+[[pages]]
+path = "pages/1_Data_Ingest.py"
+name = "Page 1 - Data Ingest & Synthetic Consignments"
+icon = ":inbox_tray:"
+
+[[pages]]
+path = "pages/2_Scenario_Builder.py"
+name = "Page 2 - User-Defined Consignments"
+icon = ":package:"
+
+[[pages]]
+path = "pages/3_Inspection_Process.py"
+name = "Page 3 - Inspection Process"
+icon = ":mag_right:"
+
+[[pages]]
+path = "pages/4_Scenario_Experiments.py"
+name = "Page 4 - Scenario & Experiment Builder"
+icon = ":test_tube:"
+
+[[pages]]
+path = "pages/5_Run_Simulation.py"
+name = "Page 5 - Run Simulation"
+icon = ":arrow_forward:"

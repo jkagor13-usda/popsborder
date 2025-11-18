@@ -6,7 +6,7 @@ from typing import Optional
 
 import pandas as pd
 
-from lib.slippage_pipeline import (
+from gui.slippage_pipeline import (
     SyntheticOptions,
     create_default_paths,
     load_scenario_dataframe,
@@ -35,12 +35,6 @@ def parse_args() -> argparse.Namespace:
         help="Sampling method for synthetic data generation.",
     )
     parser.add_argument(
-        "--num-consignments",
-        type=int,
-        default=5,
-        help="Number of consignments per scenario when running simulations.",
-    )
-    parser.add_argument(
         "--num-simulations",
         type=int,
         default=1,
@@ -60,7 +54,6 @@ def main(
     data_dir: Optional[Path] = None,
     n_samples: int = 10,
     sampling_method: str = "sequential",
-    num_consignments: int = 5,
     num_simulations: int = 1,
     seed: int = 42,
 ):
@@ -79,7 +72,6 @@ def main(
     print(f"  synthetic output:  {paths.synthetic_output}")
     print(f"  n_samples:         {options.n_samples}")
     print(f"  sampling_method:   {options.sampling_method}")
-    print(f"  num_consignments:  {num_consignments}")
     print(f"  num_simulations:   {num_simulations}")
     print(f"  seed:              {seed}")
 
@@ -89,7 +81,6 @@ def main(
         synthetic_options=options,
         seed=seed,
         num_simulations=num_simulations,
-        num_consignments=num_consignments,
     )
 
     print("\nSynthetic data preview:")
@@ -102,6 +93,7 @@ def main(
 
     print("\nScenario result preview:")
     print(result.scenario_results.head().to_string())
+    print(f"\nConsignments simulated per scenario: {result.num_consignments}")
 
     output_path = paths.output_dir / "pis_contamination_scenario_results.csv"
     print(f"\nFull results saved to {output_path}")
@@ -113,7 +105,6 @@ if __name__ == "__main__":
         data_dir=cli_args.data_dir,
         n_samples=cli_args.n_samples,
         sampling_method=cli_args.sampling_method,
-        num_consignments=cli_args.num_consignments,
         num_simulations=cli_args.num_simulations,
         seed=cli_args.seed,
     )
