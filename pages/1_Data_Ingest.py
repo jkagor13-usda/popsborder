@@ -54,15 +54,15 @@ def _summarize_rbs(df: pd.DataFrame) -> pd.DataFrame:
     return summary.sort_values("records", ascending=False).head(50)
 
 
-st.title("Page 1 - Data Ingest & Synthetic Consignment Generation")
+st.title("Page 1 - Use Historical PIS/RBS Data")
 st.caption(
-    "Upload PoPS Inspection Station (PIS) data and RBS Calculator extracts, "
-    "decide whether you want to use them directly or generate synthetic consignments. "
-    "Once prepared, move to **Page 3 - Contamination Fit** to update contamination parameters."
+    "Upload PoPS Inspection Station (PIS) records and RBS Calculator extracts if you already have curated data. "
+    "From here you can either work directly with those files or generate synthetic consignments from them. "
+    "Once your data is ready, move to **Page 3 - Contamination Fit** for the beta-binomial step."
 )
 st.info(
-    "Use this page when you have curated PIS/RBS data (or seed files derived from historical data). "
-    "If you do not have any data, skip to **Page 2 - Consignment Generation** instead."
+    "Only use this page when you have curated files or seed data derived from historical consignments. "
+    "If you have no data at all, skip directly to **Page 2 - Consignment Generation**."
 )
 
 source_choice = st.radio(
@@ -204,17 +204,16 @@ else:
     fit_cols[1].metric("Beta", f"{fit.beta:.4f}")
     fit_cols[2].metric("Theta", f"{fit.theta:.4f}")
 
-    st.caption(
-        "Beta-binomial parameters are injected into downstream scenarios so the inspection "
-        "process page works with simulated contamination probabilities."
-    )
+st.caption(
+    "Beta-binomial parameters are injected into downstream scenarios so the inspection "
+    "process page works with simulated contamination probabilities."
+)
 
 st.divider()
 nav_cols = st.columns(2)
 with nav_cols[0]:
-    st.page_link("frontend.py", label="⬅️ Back to Home", icon="🏠")
+    if st.button("Back to Home", type="primary", key="nav_home_page1"):
+        st.switch_page("frontend.py")
 with nav_cols[1]:
-    st.page_link(
-        "pages/2_Consignment_Generation.py",
-        label="Continue to Page 2 ➡️",
-    )
+    if st.button("Continue to Page 3", type="primary", key="nav_to_page3_from1"):
+        st.switch_page("pages/3_Contamination_Fit.py")

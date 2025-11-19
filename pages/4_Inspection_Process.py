@@ -244,20 +244,23 @@ else:
         set_scenario_dataframe(scenario_df)
         st.success("Inspection parameters updated for this scenario.")
 
-    st.markdown("#### Current inspection summary across scenarios")
-    inspection_cols = [
-        "name",
-        "inspection/compliance_level",
-        "inspection/sample_strategy",
-        "inspection/proportion/value",
-        "inspection/hypergeometric/detection_level",
-    ]
-    available = [col for col in inspection_cols if col in scenario_df.columns]
-    st.dataframe(scenario_df[available], use_container_width=True)
+st.markdown("#### Current inspection summary across scenarios")
+inspection_cols = [
+    "name",
+    "inspection/compliance_level",
+    "inspection/sample_strategy",
+    "inspection/proportion/value",
+    "inspection/hypergeometric/detection_level",
+]
+available = [col for col in inspection_cols if col in scenario_df.columns]
+st.dataframe(scenario_df[available], use_container_width=True)
 
 st.divider()
 nav_cols = st.columns(2)
 with nav_cols[0]:
-    st.page_link("pages/3_Contamination_Fit.py", label="⬅️ Back to Page 3")
+    if st.button("Back to Page 3", type="primary", key="nav_back_page3"):
+        st.switch_page("pages/3_Contamination_Fit.py")
 with nav_cols[1]:
-    st.page_link("pages/5_Scenario_Experiments.py", label="Continue to Page 5 ➡️")
+    if st.button("Continue to Page 5", type="primary", key="nav_forward_page5"):
+        st.switch_page("pages/5_Scenario_Experiments.py")
+

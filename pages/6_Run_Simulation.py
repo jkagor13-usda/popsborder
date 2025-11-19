@@ -175,6 +175,9 @@ if existing_cols:
 st.divider()
 nav_cols = st.columns(2)
 with nav_cols[0]:
-    st.page_link("pages/5_Scenario_Experiments.py", label="⬅️ Back to Page 5")
+    if st.button("Back to Page 5", type="primary", key="nav_back_page5"):
+        st.switch_page("pages/5_Scenario_Experiments.py")
 with nav_cols[1]:
-    st.page_link("frontend.py", label="Finish & Return Home", icon="🏁")
+    if st.button("Finish and Return Home", type="primary", key="nav_finish"):
+        st.switch_page("frontend.py")
+

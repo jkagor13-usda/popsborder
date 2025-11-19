@@ -105,6 +105,9 @@ st.info(
 st.divider()
 nav_cols = st.columns(2)
 with nav_cols[0]:
-    st.page_link("pages/4_Inspection_Process.py", label="⬅️ Back to Page 4")
+    if st.button("Back to Page 4", type="primary", key="nav_back_page4"):
+        st.switch_page("pages/4_Inspection_Process.py")
 with nav_cols[1]:
-    st.page_link("pages/6_Run_Simulation.py", label="Continue to Page 6 ➡️")
+    if st.button("Continue to Page 6", type="primary", key="nav_forward_page6"):
+        st.switch_page("pages/6_Run_Simulation.py")
+

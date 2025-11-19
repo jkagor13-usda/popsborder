@@ -212,12 +212,8 @@ st.info("After generating consignments, proceed to **Page 3 - Contamination Fit*
 st.divider()
 nav_cols = st.columns(2)
 with nav_cols[0]:
-    st.page_link(
-        "pages/1_Data_Ingest.py",
-        label="⬅️ Back to Page 1",
-    )
+    if st.button("Back to Page 1", type="primary", key="nav_back_page1"):
+        st.switch_page("pages/1_Data_Ingest.py")
 with nav_cols[1]:
-    st.page_link(
-        "pages/3_Contamination_Fit.py",
-        label="Continue to Page 3 ➡️",
-    )
+    if st.button("Continue to Page 3", type="primary", key="nav_forward_pages3"):
+        st.switch_page("pages/3_Contamination_Fit.py")
