@@ -109,7 +109,7 @@ def update_from_pipeline(result: PipelineResult):
     state["last_run"] = datetime.utcnow()
 
 
-def run_pipeline():
+def run_pipeline(*, run_scenarios: bool = True):
     """Execute the pipeline based on session state selections."""
     state = get_slippage_state()
     paths: SlippagePaths = state["paths"]
@@ -122,6 +122,7 @@ def run_pipeline():
             synthetic_options=options,
             seed=engine_options.get("seed", 42),
             num_simulations=engine_options.get("num_simulations", 1),
+            run_scenarios=run_scenarios,
         )
     except Exception as exc:  # pylint: disable=broad-except
         record_pipeline_error(str(exc))

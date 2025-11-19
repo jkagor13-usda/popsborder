@@ -31,7 +31,7 @@ from popsborder.inspections import get_sample_function
 class SlippageSystemTester:
     """Testing utilities for slippage analysis system"""
     
-    def __init__(self, data_dir="slippage_data"):
+    def __init__(self, data_dir="data_input"):
         """Initialize tester with data directory"""
         self.data_dir = Path(data_dir)
         self.config = None

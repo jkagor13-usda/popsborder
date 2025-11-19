@@ -14,6 +14,9 @@ from gui.slippage_ui import (
     set_synthetic_options,
 )
 
+TMP_DIR = Path("tmp")
+TMP_DIR.mkdir(parents=True, exist_ok=True)
+
 
 st.set_page_config(
     page_title="Data Ingest & Synthetic Consignments",
@@ -51,11 +54,15 @@ def _summarize_rbs(df: pd.DataFrame) -> pd.DataFrame:
     return summary.sort_values("records", ascending=False).head(50)
 
 
-st.title("Page 1 - Data Ingest, Synthetic Consignment Generation, Contamination Fit")
+st.title("Page 1 - Data Ingest & Synthetic Consignment Generation")
 st.caption(
     "Upload PoPS Inspection Station (PIS) data and RBS Calculator extracts, "
-    "decide whether you want to use them directly or generate synthetic consignments, "
-    "and fit beta-binomial contamination parameters."
+    "decide whether you want to use them directly or generate synthetic consignments. "
+    "Once prepared, move to **Page 3 - Contamination Fit** to update contamination parameters."
+)
+st.info(
+    "Use this page when you have curated PIS/RBS data (or seed files derived from historical data). "
+    "If you do not have any data, skip to **Page 2 - Consignment Generation** instead."
 )
 
 source_choice = st.radio(
@@ -80,7 +87,7 @@ with st.expander("Upload inspection program data", expanded=True):
         state["pis_preview"] = pis_df.head(10)
         col_pis.success(f"Loaded {len(pis_df):,} PIS records.")
         if col_pis.button("Use uploaded PIS data", key="use_pis"):
-            target = paths.data_dir / "uploaded_pis_data.csv"
+            target = TMP_DIR / "uploaded_pis_data.csv"
             _persist_upload(pis_df, target)
             set_paths(pis_data=target)
             col_pis.success(f"PIS data path set to {target}")
@@ -91,7 +98,7 @@ with st.expander("Upload inspection program data", expanded=True):
         state["rbs_preview"] = rbs_df.head(10)
         col_rbs.success(f"Loaded {len(rbs_df):,} RBS records.")
         if col_rbs.button("Use uploaded RBS calculator data", key="use_rbs"):
-            target = paths.data_dir / "uploaded_rbs_data.csv"
+            target = TMP_DIR / "uploaded_rbs_data.csv"
             _persist_upload(rbs_df, target)
             set_paths(rbs_data=target)
             col_rbs.success(f"RBS calculator path set to {target}")
@@ -160,13 +167,7 @@ st.markdown(
     "distribution (beta-binomial) will also be re-fit."
 )
 
-if st.button("Generate synthetic consignments & fit contamination model", use_container_width=True):
-    with st.spinner("Running generator and fitting contamination model..."):
-        try:
-            run_pipeline()
-            st.success("Synthetic data regenerated and contamination parameters updated.")
-        except Exception as exc:  # pylint: disable=broad-except
-            st.error(f"Pipeline failed: {exc}")
+st.info("After preparing data, go to **Page 3 - Contamination Fit** to fit beta-binomial parameters.")
 
 st.divider()
 st.subheader("Synthetic consignments & contamination fit")
@@ -206,4 +207,14 @@ else:
     st.caption(
         "Beta-binomial parameters are injected into downstream scenarios so the inspection "
         "process page works with simulated contamination probabilities."
+    )
+
+st.divider()
+nav_cols = st.columns(2)
+with nav_cols[0]:
+    st.page_link("frontend.py", label="⬅️ Back to Home", icon="🏠")
+with nav_cols[1]:
+    st.page_link(
+        "pages/2_Consignment_Generation.py",
+        label="Continue to Page 2 ➡️",
     )

@@ -19,7 +19,7 @@ class Scenario:
 
 @dataclass
 class Inspection:
-    method: str = "Simple random"  # Simple random / Systematic / Stratified / Targeted
+    method: str = "random"  # random / convenience / cluster
     sample_units: int = 60
     sample_items_per_unit: int = 10
     acceptance_number: int = 0

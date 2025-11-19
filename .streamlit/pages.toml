@@ -9,21 +9,26 @@ name = "Page 1 - Data Ingest & Synthetic Consignments"
 icon = ":inbox_tray:"
 
 [[pages]]
-path = "pages/2_Scenario_Builder.py"
-name = "Page 2 - User-Defined Consignments"
+path = "pages/2_Consignment_Generation.py"
+name = "Page 2 - Consignment Generation"
 icon = ":package:"
 
 [[pages]]
-path = "pages/3_Inspection_Process.py"
-name = "Page 3 - Inspection Process"
-icon = ":mag_right:"
-
-[[pages]]
-path = "pages/4_Scenario_Experiments.py"
-name = "Page 4 - Scenario & Experiment Builder"
+path = "pages/3_Contamination_Fit.py"
+name = "Page 3 - Contamination Fit"
 icon = ":test_tube:"
 
 [[pages]]
-path = "pages/5_Run_Simulation.py"
-name = "Page 5 - Run Simulation"
+path = "pages/4_Inspection_Process.py"
+name = "Page 4 - Inspection Process"
+icon = ":mag_right:"
+
+[[pages]]
+path = "pages/5_Scenario_Experiments.py"
+name = "Page 5 - Scenario & Experiment Builder"
+icon = ":test_tube:"
+
+[[pages]]
+path = "pages/6_Run_Simulation.py"
+name = "Page 6 - Run Simulation"
 icon = ":arrow_forward:"

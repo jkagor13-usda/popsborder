@@ -18,7 +18,7 @@ render_sidebar_navigation()
 scenario_df = state["scenario_df"]
 engine_options = state["engine_options"]
 
-st.title("Page 4 - Scenario & Experiment Builder")
+st.title("Page 5 - Scenario & Experiment Builder")
 st.caption(
     "Summarize configured scenarios and decide on the experiment setup "
     "(number of simulations, random seed, and expected time). Consignments per run "
@@ -101,3 +101,10 @@ st.info(
     f"{consignments_per_run or 'unknown'} consignments per run (derived from synthetic data), "
     f"expect approximately {estimated_minutes:.1f} minutes of compute time per full run (heuristic)."
 )
+
+st.divider()
+nav_cols = st.columns(2)
+with nav_cols[0]:
+    st.page_link("pages/4_Inspection_Process.py", label="⬅️ Back to Page 4")
+with nav_cols[1]:
+    st.page_link("pages/6_Run_Simulation.py", label="Continue to Page 6 ➡️")

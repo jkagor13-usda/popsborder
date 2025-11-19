@@ -20,7 +20,7 @@ def parse_args() -> argparse.Namespace:
         "--data-dir",
         type=Path,
         default=None,
-        help="Base directory containing config, scenario, and lookup files (defaults to slippage_data/).",
+        help="Base directory containing config, scenario, and lookup files (defaults to data_input/).",
     )
     parser.add_argument(
         "--n-samples",
@@ -57,7 +57,7 @@ def main(
     num_simulations: int = 1,
     seed: int = 42,
 ):
-    paths = create_default_paths(data_dir or Path("slippage_data"))
+    paths = create_default_paths(data_dir or Path("data_input"))
     scenario_df = load_scenario_dataframe(paths.scenario_table, dtype="object")
     options = SyntheticOptions(n_samples=n_samples, sampling_method=sampling_method)
 

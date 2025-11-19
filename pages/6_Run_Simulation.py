@@ -17,7 +17,7 @@ state = get_slippage_state()
 render_sidebar_navigation()
 engine_options = state["engine_options"]
 
-st.title("Page 5 - Run Simulation")
+st.title("Page 6 - Run Simulation")
 st.caption("Execute the slippage pipeline and compare policies based on slippage metrics.")
 
 with st.sidebar:
@@ -171,3 +171,10 @@ config_cols = [
 existing_cols = [col for col in config_cols if col in scenario_df.columns]
 if existing_cols:
     st.dataframe(scenario_df[existing_cols], use_container_width=True)
+
+st.divider()
+nav_cols = st.columns(2)
+with nav_cols[0]:
+    st.page_link("pages/5_Scenario_Experiments.py", label="⬅️ Back to Page 5")
+with nav_cols[1]:
+    st.page_link("frontend.py", label="Finish & Return Home", icon="🏁")

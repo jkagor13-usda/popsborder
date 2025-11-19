@@ -31,6 +31,6 @@ These files were copied from `hierarchal sampling/data` and are essential for:
 
 ## Notes:
 
-- The default data directory is now `slippage_data` instead of `hierarchal sampling/data`
+- The default data directory is now `data_input` instead of `hierarchal sampling/data`
 - All file paths in the main script have been updated accordingly
 - This consolidation makes the analysis system more portable and organized

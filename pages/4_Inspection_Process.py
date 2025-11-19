@@ -9,6 +9,16 @@ from gui.navigation import render_sidebar_navigation
 from gui.slippage_ui import get_slippage_state, set_paths, set_scenario_dataframe
 
 
+METHOD_OPTIONS = [
+    ("Random search", "random"),
+    ("Convenience search", "convenience"),
+    ("Cluster search", "cluster"),
+]
+
+SAMPLE_STRATEGIES = ["proportion", "hypergeometric", "fixed_n", "all", "rbs"]
+SELECTION_STRATEGIES = ["random", "convenience", "cluster"]
+
+
 st.set_page_config(
     page_title="Inspection Process",
     page_icon=":mag_right:",
@@ -40,7 +50,7 @@ def _compliance_level_counts(series: pd.Series):
     }
 
 
-st.title("Page 3 - Inspection Process")
+st.title("Page 4 - Inspection Process")
 st.caption(
     "Ingest the compliance lookup table, configure low/medium/high types, "
     "review RBS parameters, and assign inspection strategies to each scenario."
@@ -48,11 +58,16 @@ st.caption(
 
 with st.form("inspection_form"):
     cols = st.columns([1.2, 1, 1, 1])
-    method = cols[0].selectbox(
-        "Sampling method",
-        ["Simple random", "Systematic", "Stratified", "Targeted"],
-        index=["Simple random", "Systematic", "Stratified", "Targeted"].index(st.session_state.inspection.method),
+    current_method_label = next(
+        (label for label, value in METHOD_OPTIONS if value == st.session_state.inspection.method),
+        METHOD_OPTIONS[0][0],
     )
+    method_label = cols[0].selectbox(
+        "Sampling method (descriptive)",
+        [label for label, _ in METHOD_OPTIONS],
+        index=[label for label, _ in METHOD_OPTIONS].index(current_method_label),
+    )
+    method = dict(METHOD_OPTIONS)[method_label]
     sample_units = cols[1].number_input(
         "Sampled units",
         1,
@@ -154,13 +169,23 @@ else:
             if current.get("inspection/compliance_level") in ["Low", "Medium", "High"]
             else 1,
         )
-        sample_strategy = st.text_input(
+        current_sample_strategy = str(current.get("inspection/sample_strategy", "") or "").strip().lower()
+        sample_options = SAMPLE_STRATEGIES.copy()
+        if current_sample_strategy and current_sample_strategy not in sample_options:
+            sample_options.insert(0, current_sample_strategy)
+        sample_strategy = st.selectbox(
             "Sample strategy",
-            value=str(current.get("inspection/sample_strategy", "")),
+            sample_options,
+            index=sample_options.index(current_sample_strategy) if current_sample_strategy in sample_options else 0,
         )
-        selection_strategy = st.text_input(
+        current_selection_strategy = str(current.get("inspection/selection_strategy", "") or "").strip().lower()
+        selection_options = SELECTION_STRATEGIES.copy()
+        if current_selection_strategy and current_selection_strategy not in selection_options:
+            selection_options.insert(0, current_selection_strategy)
+        selection_strategy = st.selectbox(
             "Selection strategy",
-            value=str(current.get("inspection/selection_strategy", "")),
+            selection_options,
+            index=selection_options.index(current_selection_strategy) if current_selection_strategy in selection_options else 0,
         )
         within_box = st.number_input(
             "Within-box proportion",
@@ -229,3 +254,10 @@ else:
     ]
     available = [col for col in inspection_cols if col in scenario_df.columns]
     st.dataframe(scenario_df[available], use_container_width=True)
+
+st.divider()
+nav_cols = st.columns(2)
+with nav_cols[0]:
+    st.page_link("pages/3_Contamination_Fit.py", label="⬅️ Back to Page 3")
+with nav_cols[1]:
+    st.page_link("pages/5_Scenario_Experiments.py", label="Continue to Page 5 ➡️")

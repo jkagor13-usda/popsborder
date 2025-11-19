@@ -21,7 +21,7 @@ from slippage_model_utils.clarke_model_support_functions import gen_clarke_model
 from slippage_model_utils.clarke_r_script_wrapper import run_clarke_bb_group_model
 
 
-DEFAULT_DATA_DIR = Path("slippage_data")
+DEFAULT_DATA_DIR = Path("data_input")
 RESULT_COLUMNS = [
     "num_inspections",
     "intercepted",
@@ -61,10 +61,10 @@ class SlippagePaths:
     config: Path = DEFAULT_DATA_DIR / "config.yml"
     scenario_table: Path = DEFAULT_DATA_DIR / "pis_contaminate_scenarios.csv"
     compliance_lookup: Path = DEFAULT_DATA_DIR / "compliance_table.csv"
-    pis_data: Path = DEFAULT_DATA_DIR / "synthetic_pis_data.csv"
+    pis_data: Path = DEFAULT_DATA_DIR / "fake_pis_data.csv"
     rbs_data: Path = DEFAULT_DATA_DIR / "synthetic_rbs_calc_data.csv"
     synthetic_seed: Path = DEFAULT_DATA_DIR / "fake_pis_data.csv"
-    synthetic_output: Path = DEFAULT_DATA_DIR / "synth_data.csv"
+    synthetic_output: Path = Path("tmp") / "synthetic_consignment_data.csv"
     output_dir: Path = Path("output")
 
 
@@ -193,6 +193,8 @@ def fit_contamination_distribution(
 ) -> Tuple[ClarkeFit, pd.DataFrame, pd.DataFrame]:
     """Fit contamination parameters using the Clarke beta-binomial model."""
     pis_df = pd.read_csv(pis_data_path)
+    if "action" not in pis_df.columns:
+        pis_df["action"] = 0
     rbs_df = pd.read_csv(rbs_data_path)
     inputs = gen_clarke_model_inputs(pis_df, rbs_df)
     result = run_clarke_bb_group_model(
@@ -240,6 +242,7 @@ def run_slippage_pipeline(
     synthetic_options: SyntheticOptions = SyntheticOptions(),
     seed: int = 42,
     num_simulations: int = 1,
+    run_scenarios: bool = True,
 ) -> PipelineResult:
     """Execute the full slippage pipeline and return artifacts for UI consumption."""
     scenario_df = scenario_df if scenario_df is not None else load_scenario_dataframe(paths.scenario_table)
@@ -258,25 +261,27 @@ def run_slippage_pipeline(
     fit, pis_df, rbs_df = fit_contamination_distribution(paths.pis_data, paths.rbs_data)
     config, scenarios = apply_contamination_parameters(config, scenarios, fit)
 
-    scenario_results_raw = run_scenarios(
-        config=config,
-        scenario_table=scenarios,
-        seed=seed,
-        num_simulations=num_simulations,
-        num_consignments=num_consignments,
-        compliance_table=compliance_table,
-        detailed=True,
-    )
-    scenario_results = [(result, cfg) for _details, result, cfg in scenario_results_raw]
-
-    paths.output_dir.mkdir(parents=True, exist_ok=True)
-    results_df = save_scenario_result_to_pandas(
-        scenario_results,
-        config_columns=CONFIG_COLUMNS,
-        result_columns=RESULT_COLUMNS,
-    )
-    results_path = paths.output_dir / "pis_contamination_scenario_results.csv"
-    results_df.to_csv(results_path, index=False)
+    if run_scenarios:
+        scenario_results_raw = run_scenarios(
+            config=config,
+            scenario_table=scenarios,
+            seed=seed,
+            num_simulations=num_simulations,
+            num_consignments=num_consignments,
+            compliance_table=compliance_table,
+            detailed=True,
+        )
+        scenario_results = [(result, cfg) for _details, result, cfg in scenario_results_raw]
+        paths.output_dir.mkdir(parents=True, exist_ok=True)
+        results_df = save_scenario_result_to_pandas(
+            scenario_results,
+            config_columns=CONFIG_COLUMNS,
+            result_columns=RESULT_COLUMNS,
+        )
+        results_path = paths.output_dir / "pis_contamination_scenario_results.csv"
+        results_df.to_csv(results_path, index=False)
+    else:
+        results_df = pd.DataFrame()
 
     return PipelineResult(
         synthetic_data=synthetic_df,
