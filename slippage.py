@@ -22,8 +22,8 @@ def main():
     config_file = data_dir / "config.yml"
     #compliance_file = data_dir / "compliance_table_test.csv"
     compliance_file = data_dir / "compliance_table.csv"
-    #scenario_file = data_dir / "test_scenario.csv"
-    scenario_file = data_dir / "pis_contaminate_scenarios.csv"
+    scenario_file = data_dir / "test_scenario.csv"
+    #scenario_file = data_dir / "pis_contaminate_scenarios.csv"
     pis_data = data_dir / 'synthetic_pis_data.csv'
     rbs_calc_data = data_dir / 'synthetic_rbs_calc_data.csv'
 
@@ -164,6 +164,7 @@ def main():
 
 
     # Run one scenario analysis simulation
+    detailed_bool = True
     scenario_results_raw = run_scenarios(
         config=config,
         scenario_table=scenarios,
@@ -171,17 +172,21 @@ def main():
         num_simulations=1,            # Only one simulation
         num_consignments=3,           # You can change this number if needed
         compliance_table=compliance_table,
-        detailed=True
+        detailed=detailed_bool
     )
 
     # Prepare results for saving
-    scenario_results = [(result, config) for details, result, config in scenario_results_raw]
+    if detailed_bool:
+        scenario_results = [(result, config) for details, result, config in scenario_results_raw]
+    else:
+        scenario_results = [(result, config) for  result, config in scenario_results_raw]
     config_columns = ['contamination/contamination_unit', 'contamination/contamination_rate/distribution',
                       'contamination/contamination_rate/value', 'contamination/arrangement',
                       'inspection/sample_strategy', 'inspection/proportion/value', 'inspection/tolerance_level', 'name']
-    result_columns = ['num_inspections', 'intercepted', 'false_neg', 'missing', 'true_contamination_rate',
-                      'avg_missed_contamination_rate', 'max_missed_contamination_rate',
-                      'total_missed_contaminants', 'total_intercepted_contaminants']
+    #result_columns = ['num_inspections', 'intercepted', 'false_neg', 'missing', 'true_contamination_rate',
+    #                  'avg_missed_contamination_rate', 'max_missed_contamination_rate',
+    #                  'total_missed_contaminants', 'total_intercepted_contaminants']
+    result_columns = list(vars(scenario_results[0][0]).keys())
 
     # Create output folder if not there already
     output_dir = Path("output")
