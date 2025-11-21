@@ -63,24 +63,26 @@ def main():
     inputs = gen_clarke_model_inputs(df_pis_data, df_rbs_calculator)
 
     # Run clarke model
-    #res = run_clarke_bb_group_model(inputs.ty,
-    #                                inputs.b,
-    #                                inputs.B,
-    #                                inputs.Nbar,
-    #                                inputs.freq,
-    #                                inputs.theta,
-    #                                inputs.R,
-    #                                inputs.start_val,
-    #                                inputs.se)
+    res = run_clarke_bb_group_model(inputs.ty,
+                                    inputs.b,
+                                    inputs.B,
+                                    inputs.Nbar,
+                                    inputs.freq,
+                                    inputs.theta,
+                                    inputs.R,
+                                    inputs.start_val,
+                                    inputs.se)
 
-    #print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
-    #print(f'   Alpha = {res["alpha"]}')
-    #print(f'   Beta = {res["beta"]}')
-    #print('')
+    print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
+    print(f'   Alpha = {res["alpha"]}')
+    print(f'   Beta = {res["beta"]}')
+    print('')
 
     # Update original parameters of config
-    #config['contamination']['contamination_rate']['parameters'][0] = res["alpha"]
-    #config['contamination']['contamination_rate']['parameters'][1] = res["beta"]
+    config['contamination']['contamination_rate']['parameters'][0] = res["alpha"]
+    config['contamination']['contamination_rate']['parameters'][1] = res["beta"]
+    config['contamination']['contamination_rate']['parameters'][0] = 0.194628
+    config['contamination']['contamination_rate']['parameters'][1] = 4.7609372
 
 
     ####################################################################
