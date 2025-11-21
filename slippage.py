@@ -183,9 +183,6 @@ def main():
     config_columns = ['contamination/contamination_unit', 'contamination/contamination_rate/distribution',
                       'contamination/contamination_rate/value', 'contamination/arrangement',
                       'inspection/sample_strategy', 'inspection/proportion/value', 'inspection/tolerance_level', 'name']
-    #result_columns = ['num_inspections', 'intercepted', 'false_neg', 'missing', 'true_contamination_rate',
-    #                  'avg_missed_contamination_rate', 'max_missed_contamination_rate',
-    #                  'total_missed_contaminants', 'total_intercepted_contaminants']
     result_columns = list(vars(scenario_results[0][0]).keys())
 
     # Create output folder if not there already
