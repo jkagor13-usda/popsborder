@@ -57,6 +57,7 @@ import types
 
 import numpy as np
 
+from . import consignments
 from .consignments import get_consignment_generator
 from .contamination import get_contaminant_function
 from .inspections import (
@@ -139,6 +140,10 @@ def simulation(
     is_inspection_needed = get_inspection_needed_function(config)
     sample = get_sample_function(config, compliance_table)
     tolerance_level = config["inspection"]["tolerance_level"]
+
+
+    # Dictionary to capture additional metrics per consignment
+    rbs_additional_metrics = {}
 
     for i in range(num_consignments):
         print(f'\nSimulating Consignment {i+1} out of {num_consignments} total consignments')
@@ -249,7 +254,13 @@ def simulation(
                     )
                     total_intercepted_contaminants += consignment.count_contaminated()
 
-            print('')
+
+            # Add tracking of addition rbs metrics
+            rbs_additional_metrics[i] = {
+                'number_missed_units': ret.number_units_missed,
+                'number_missed_sample_units': ret.number_sample_units_missed,
+                'total_plants_on_consignment': len(consignment.plants),
+            }
         except RuntimeError as e:
             print(f"Stopped simulation early: {e}")
             pass
@@ -296,6 +307,26 @@ def simulation(
         avg_intercepted_contamination_rate = 0
         pct_contaminant_unreported_if_detection = 0
 
+
+    # Additional RBS metrics
+    total_slipped_units = 0
+    total_plants = 0
+    total_slipped_sample_units = 0
+    avg_slipped_units_per_consignment = 0
+    avg_slipped_sample_units_per_consignment= 0
+    for consignment in rbs_additional_metrics.keys():
+        # Contributing to "Average Total Slippage"
+        total_slipped_units += rbs_additional_metrics[consignment]['number_missed_units']
+        total_slipped_sample_units  += rbs_additional_metrics[consignment]['number_missed_sample_units']
+        avg_slipped_units_per_consignment += rbs_additional_metrics[consignment]['number_missed_units']/rbs_additional_metrics[consignment]['total_plants_on_consignment']
+        avg_slipped_sample_units_per_consignment += rbs_additional_metrics[consignment]['number_missed_sample_units']/rbs_additional_metrics[consignment]['total_plants_on_consignment']
+
+    avg_slipped_units_per_consignment /= num_consignments
+    avg_slipped_sample_units_per_consignment /= num_consignments
+
+
+
+
     simulation_results = types.SimpleNamespace(
         missing=missing,
         false_neg=false_neg,
@@ -333,6 +364,10 @@ def simulation(
         true_positive_present=true_positive_present,
         total_intercepted_contaminants=total_intercepted_contaminants,
         total_missed_contaminants=total_missed_contaminants,
+        total_slipped_units=total_slipped_units,
+        total_slipped_sample_units = total_slipped_sample_units,
+        avg_slipped_units_per_consignment = avg_slipped_units_per_consignment,
+        avg_slipped_sample_units_per_consignment = avg_slipped_sample_units_per_consignment
     )
     if detailed:
         simulation_results.details = [sample_unit_details, inspected_sample_unit_details]
@@ -387,6 +422,11 @@ def run_simulation(
         true_positive_present=0,
         total_intercepted_contaminants=0,
         total_missed_contaminants=0,
+        total_slipped_units=0,
+        total_unit_slippage_rate=0,
+        total_slipped_sample_units=0,
+        avg_slipped_units_per_consignment=0,
+        avg_slipped_sample_units_per_consignment=0
     )
 
     for i in range(num_simulations):
@@ -436,6 +476,15 @@ def run_simulation(
         totals.true_positive_present += result.true_positive_present
         totals.total_intercepted_contaminants += result.total_intercepted_contaminants
         totals.total_missed_contaminants += result.total_missed_contaminants
+
+        # Additional rbs metrics
+        totals.total_slipped_units += result.total_slipped_units
+        totals.total_unit_slippage_rate += (result.total_slipped_units/result.total_num_plants)
+        totals.total_slipped_sample_units += result.total_slipped_sample_units
+        totals.avg_slipped_units_per_consignment += result.avg_slipped_units_per_consignment
+        totals.avg_slipped_sample_units_per_consignment += result.avg_slipped_sample_units_per_consignment
+
+
     # make these relative (reusing the variables)
     totals.missing /= float(num_simulations)
     totals.false_neg /= float(num_simulations)
@@ -473,6 +522,13 @@ def run_simulation(
         totals.avg_intercepted_contamination_rate = None
     totals.total_intercepted_contaminants /= float(num_simulations)
     totals.total_missed_contaminants /= float(num_simulations)
+
+    # Additional rbs metrics
+    totals.total_slipped_units /= float(num_simulations)
+    totals.total_unit_slippage_rate /= float(num_simulations)
+    totals.total_slipped_sample_units /= float(num_simulations)
+    totals.avg_slipped_units_per_consignment /= float(num_simulations)
+    totals.avg_slipped_sample_units_per_consignment /= float(num_simulations)
 
     if detailed:
         # details are items and inspected item from first simulation run only
