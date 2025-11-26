@@ -17,51 +17,29 @@ with hero_cols[0]:
 with hero_cols[1]:
     st.empty()
 
-choice = st.radio(
-    "Do you have PIS + RBS data ready to ingest?",
-    [
-        "Yes, I already have curated data or seed files.",
-        "No, I need to build consignments from scratch.",
-    ],
+st.success(
+    "Start with **Consignment Generation** to upload curated PIS/RBS files and generate synthetic consignments "
+    "or define consignments from scratch."
 )
-
-if choice.startswith("Yes"):
-    st.success(
-        "Continue to **Page 1 - Data Ingest & Synthetic Consignments** to upload curated PIS/RBS files or "
-        "generate synthetic consignments from those historical seeds."
-    )
-    if st.button(
-        "Go to Page 1 - Data Ingest",
-        type="primary",
-        help="Upload curated data or generate synthetic consignments",
-    ):
-        st.switch_page("pages/1_Data_Ingest.py")
-else:
-    st.info(
-        "**Skip Page 1.** Go directly to **Page 2 - Consignment Generation** to define consignments using "
-        "user-provided parameters (no historical data required)."
-    )
-    if st.button(
-        "Go to Page 2 - Consignment Generation",
-        type="primary",
-        help="Define consignments without any historical data",
-    ):
-        st.switch_page("pages/2_Consignment_Generation.py")
+if st.button(
+    "Open Consignment Generation",
+    type="primary",
+    help="Upload PIS/RBS data, create synthetic consignments, or define consignments manually",
+):
+    st.switch_page("pages/2_Consignment_Generation.py")
 st.markdown(
     """
 **Workflow overview**
 
-- **Page 1 – Data Ingest & Synthetic Consignments**
-  Upload PIS/RBS data, inspect summaries, and configure synthetic generation when historical data is available.
-- **Page 2 – Consignment Generation**
-  Define consignments, structure, and baseline contamination to produce PIS/RBS seed files when no data exists.
-- **Page 3 – Contamination Fit**
+- **Page 1 - Consignment Generation**
+  Upload PIS/RBS data, inspect summaries, generate synthetic consignments, or define consignments when no data exists.
+- **Page 2 - Contamination Fit**
   Run the Clarke beta-binomial fitting using the current PIS/RBS inputs to update contamination parameters.
-- **Page 4 – Inspection Process**
+- **Page 3 - Inspection Process**
   Ingest the compliance table, classify Low/Medium/High profiles, and configure inspection strategies.
-- **Page 5 – Scenario & Experiment Builder**
+- **Page 4 - Scenario & Experiment Builder**
   Summarize scenarios and set simulation controls (number of simulations, seed).
-- **Page 6 – Run Simulation**
+- **Page 5 - Run Simulation**
   Execute the pipeline, review slippage metrics, and compare inspection policies.
 """
 )
@@ -73,7 +51,7 @@ st.warning(
     "expectation and understanding that you will comply with and not violate privacy information policies. "
     "This is a private system and is only to be used by authorized users. By continuing, the user is stating "
     "that they are the indicated user.\n\n"
-    "NO WARRANTY\n"
+    "NO WARRANTY\n\n"
     'THE JOHNS HOPKINS UNIVERSITY APPLIED PHYSICS LABORATORY (JHU/APL) PROVIDES THIS ESSENCE SOFTWARE "AS IS" '
     "WITHOUT WARRANTY OF ANY KIND. JHU/APL DOES NOT WARRANT THAT (i) THE SOFTWARE WILL BE UNINTERRUPTED OR ERROR "
     "FREE, OR (ii) THE DATA PRODUCED BY THE SOFTWARE WILL BE ERROR FREE. JHU/APL DISCLAIMS ALL WARRANTIES, WHETHER "

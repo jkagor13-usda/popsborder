@@ -61,9 +61,9 @@ class SlippagePaths:
     config: Path = DEFAULT_DATA_DIR / "config.yml"
     scenario_table: Path = DEFAULT_DATA_DIR / "pis_contaminate_scenarios.csv"
     compliance_lookup: Path = DEFAULT_DATA_DIR / "compliance_table.csv"
-    pis_data: Path = DEFAULT_DATA_DIR / "fake_pis_data.csv"
-    rbs_data: Path = DEFAULT_DATA_DIR / "synthetic_rbs_calc_data.csv"
-    synthetic_seed: Path = DEFAULT_DATA_DIR / "fake_pis_data.csv"
+    pis_data: Path = DEFAULT_DATA_DIR / "synthetic_pis_data.csv"
+    rbs_data: Path = DEFAULT_DATA_DIR / "synthetic_rbs_calc_data_enriched.csv"
+    synthetic_seed: Path = DEFAULT_DATA_DIR / "synthetic_pis_data.csv"
     synthetic_output: Path = Path("tmp") / "synthetic_consignment_data.csv"
     output_dir: Path = Path("output")
 

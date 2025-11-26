@@ -17,7 +17,7 @@ state = get_slippage_state()
 render_sidebar_navigation()
 engine_options = state["engine_options"]
 
-st.title("Page 6 - Run Simulation")
+st.title("Page 5 - Run Simulation")
 st.caption("Execute the slippage pipeline and compare policies based on slippage metrics.")
 
 with st.sidebar:

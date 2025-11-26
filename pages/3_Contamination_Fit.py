@@ -1,6 +1,9 @@
 from pathlib import Path
 from typing import Optional
+import math
 
+import altair as alt
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -17,6 +20,33 @@ def _load_preview(path: Path, rows: int = 50) -> Optional[pd.DataFrame]:
         return pd.read_csv(path).head(rows)
     except Exception:  # pylint: disable=broad-except
         return None
+
+
+def _beta_pdf(alpha: float, beta: float, num_points: int = 200) -> pd.DataFrame:
+    """Compute a beta PDF from alpha/beta without relying on SciPy.
+
+    The curve is area-normalized so the integral from 0 to 1 equals 1.
+    """
+    eps = 1e-6
+    xs = np.linspace(eps, 1 - eps, num_points)
+    log_norm = math.lgamma(alpha + beta) - math.lgamma(alpha) - math.lgamma(beta)
+    ys = np.exp(log_norm + (alpha - 1) * np.log(xs) + (beta - 1) * np.log(1 - xs))
+    area = np.trapz(ys, xs)
+    if area > 0:
+        ys = ys / area
+    return pd.DataFrame({"prevalence": xs, "density": ys})
+
+
+def _beta_chart(alpha: float, beta: float, title: str) -> alt.Chart:
+    pdf = _beta_pdf(alpha, beta)
+    y_max = float(pdf["density"].max() * 1.05) if not pdf.empty else 1.0
+    base = alt.Chart(pdf).encode(
+        x=alt.X("prevalence:Q", title="Contamination prevalence"),
+        y=alt.Y("density:Q", title="Density", scale=alt.Scale(domain=[0, y_max])),
+    )
+    area = base.mark_area(opacity=0.3, color="#1f77b4")
+    line = base.mark_line(color="#1f77b4", strokeWidth=2)
+    return (area + line).properties(height=200, title=title)
 
 
 st.set_page_config(page_title="Contamination Fitting", layout="wide")
@@ -85,6 +115,10 @@ else:
     metrics[0].metric("Alpha", f"{fit.alpha:.6f}")
     metrics[1].metric("Beta", f"{fit.beta:.6f}")
     metrics[2].metric("Theta", f"{fit.theta:.6f}")
+    st.altair_chart(
+        _beta_chart(float(fit.alpha), float(fit.beta), "Latest contamination beta PDF"),
+        use_container_width=True,
+    )
 
 st.caption(
     "These parameters are injected into the PoPS Border configuration and scenarios so that downstream "

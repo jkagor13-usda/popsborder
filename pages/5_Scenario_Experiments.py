@@ -18,7 +18,7 @@ render_sidebar_navigation()
 scenario_df = state["scenario_df"]
 engine_options = state["engine_options"]
 
-st.title("Page 5 - Scenario & Experiment Builder")
+st.title("Page 4 - Scenario & Experiment Builder")
 st.caption(
     "Summarize configured scenarios and decide on the experiment setup "
     "(number of simulations, random seed, and expected time). Consignments per run "
@@ -26,7 +26,7 @@ st.caption(
 )
 
 if scenario_df.empty:
-    st.warning("The scenario table is empty. Build consignments on Page 2 first.")
+    st.warning("The scenario table is empty. Build consignments on Page 1 first.")
 else:
     st.subheader("Scenario overview")
     overview_cols = st.columns(4)
