@@ -6,6 +6,7 @@ import streamlit as st
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
+from gui.slippage_pipeline import ClarkeFit
 from gui.slippage_ui import get_slippage_state, run_pipeline
 
 
@@ -25,43 +26,59 @@ state = get_slippage_state()
 render_sidebar_navigation()
 paths = state["paths"]
 
-st.title("Page 3 - Contamination Fitting")
+st.title("Page 2 - Contamination Fitting")
 st.caption(
     "Review the current PIS and RBS inputs and fit the beta-binomial contamination parameters before "
     "configuring inspection policies."
 )
 
-col1, col2 = st.columns(2)
-col1.metric("PIS data path", str(paths.pis_data))
-col2.metric("RBS calculator path", str(paths.rbs_data))
+fit_tab, assign_tab = st.tabs(["Fit contamination", "Assign contamination"])
 
-pis_preview = _load_preview(paths.pis_data)
-rbs_preview = _load_preview(paths.rbs_data)
+with fit_tab:
+    pis_preview = _load_preview(paths.pis_data)
+    rbs_preview = _load_preview(paths.rbs_data)
 
-st.subheader("PIS dataset preview")
-if pis_preview is not None:
-    st.dataframe(pis_preview, use_container_width=True)
-else:
-    st.info("Load or generate PIS data on Page 1 or Page 2.")
+    with st.expander("PIS/RBS previews", expanded=True):
+        prev_cols = st.columns(2)
+        with prev_cols[0]:
+            st.subheader("PIS dataset preview")
+            if pis_preview is not None:
+                st.dataframe(pis_preview, use_container_width=True)
+            else:
+                st.info("Load or generate PIS data on Page 1.")
+        with prev_cols[1]:
+            st.subheader("RBS calculator preview")
+            if rbs_preview is not None:
+                st.dataframe(rbs_preview, use_container_width=True)
+            else:
+                st.info("Load or generate an RBS calculator file on Page 1.")
 
-st.subheader("RBS calculator preview")
-if rbs_preview is not None:
-    st.dataframe(rbs_preview, use_container_width=True)
-else:
-    st.info("Load or generate an RBS calculator file on Page 1 or Page 2.")
+    st.divider()
+    if st.button("Fit contamination parameters", type="secondary", use_container_width=True):
+        with st.spinner("Running Clarke beta-binomial fit..."):
+            try:
+                run_pipeline(run_scenarios=False)
+                st.success("Contamination parameters updated. Continue to Page 4 for inspection policies.")
+            except Exception as exc:  # pylint: disable=broad-except
+                st.error(f"Fitting failed: {exc}")
 
-st.divider()
-if st.button("Fit contamination parameters", use_container_width=True):
-    with st.spinner("Running Clarke beta-binomial fit..."):
-        try:
-            run_pipeline(run_scenarios=False)
-            st.success("Contamination parameters updated. Continue to Page 4 for inspection policies.")
-        except Exception as exc:  # pylint: disable=broad-except
-            st.error(f"Fitting failed: {exc}")
+with assign_tab:
+    st.subheader("Assign contamination parameters manually")
+    fit_current = state.get("fit")
+    alpha_default = float(fit_current.alpha) if fit_current else 0.01
+    beta_default = float(fit_current.beta) if fit_current else 5.0
+    theta_default = float(fit_current.theta) if fit_current else 0.5
+    col_a, col_b, col_t = st.columns(3)
+    alpha_val = col_a.number_input("Alpha", min_value=0.0, value=alpha_default, step=0.001, format="%.6f")
+    beta_val = col_b.number_input("Beta", min_value=0.0, value=beta_default, step=0.001, format="%.6f")
+    theta_val = col_t.number_input("Theta", min_value=0.0, max_value=1.0, value=theta_default, step=0.01)
+    if st.button("Save assigned contamination parameters", type="secondary", use_container_width=True):
+        state["fit"] = ClarkeFit(alpha=float(alpha_val), beta=float(beta_val), theta=float(theta_val), raw_result={})
+        st.success("Contamination parameters assigned. Downstream steps will use these values until refit.")
 
 fit = state.get("fit")
 if fit is None:
-    st.info("No contamination fit available yet. Run the fitting process above.")
+    st.info("No contamination fit available yet. Fit or assign parameters above.")
 else:
     st.subheader("Latest contamination parameters")
     metrics = st.columns(3)
