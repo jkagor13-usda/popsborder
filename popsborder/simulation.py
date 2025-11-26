@@ -148,14 +148,28 @@ def simulation(
             total_contaminated_units = 0
             total_contaminated_inspection_units = 0
             total_contaminated_sample_units = 0
+
+            inspection_unit_counter = 0
+            inspection_units_contaminated = {}
             for inspect_unit in consignment.inspection_units:
                 indicator = 0
+                sample_unit_counter = 0
+                sample_units_contaminated = {}
                 for samp_unit in inspect_unit.sample_unit_objects:
                     if sum(samp_unit.plants)> 0:
+                        plants_contaminated = []
+                        for plant_unit in range(len(samp_unit.plants)):
+                            if samp_unit.plants[plant_unit] == 1:
+                                plants_contaminated.append(plant_unit)
+                        sample_units_contaminated[sample_unit_counter] = plants_contaminated
                         indicator = 1
                         total_contaminated_sample_units += 1
                     total_contaminated_units += sum(samp_unit.plants)
-                if indicator == 1: total_contaminated_inspection_units += 1
+                    sample_unit_counter += 1
+                if indicator == 1:
+                    inspection_units_contaminated[inspection_unit_counter] = sample_units_contaminated
+                    total_contaminated_inspection_units += 1
+                inspection_unit_counter+=1
 
             print(f'\n==== CONSIGNMENT {i+1} CONTAMINATED.  SUMMARY INFO BELOW ====')
             print(f'   Number of Contaminated Plants: {total_contaminated_units}')
@@ -164,6 +178,13 @@ def simulation(
             print(f'   Proportion of Contaminated Sample Units (total # sample units= {len(consignment.sample_units)}): {total_contaminated_sample_units/len(consignment.sample_units)}')
             print(f'\n   Number of Contaminated Inspection Units: {total_contaminated_inspection_units}')
             print(f'   Proportion of Contaminated Inspection Units (total # inspection units = {len(consignment.inspection_units)}): {total_contaminated_inspection_units/len(consignment.inspection_units)}')
+
+            for inspection_unit in inspection_units_contaminated.keys():
+                print(f'\n==== INSPECTION UNIT CONTAMINATED {inspection_unit} BELOW ====')
+                for sample_unit in inspection_units_contaminated[inspection_unit].keys():
+                    print(f'   Sample Unit {sample_unit} contaminated and plants contaminated are: {inspection_units_contaminated[inspection_unit][sample_unit]}')
+
+
             #simData.add_consignment(consignment)
             if detailed:
                 for inspection_unit in consignment.inspection_units:
@@ -227,6 +248,8 @@ def simulation(
                         consignment_contamination_rate(consignment)
                     )
                     total_intercepted_contaminants += consignment.count_contaminated()
+
+            print('')
         except RuntimeError as e:
             print(f"Stopped simulation early: {e}")
             pass
