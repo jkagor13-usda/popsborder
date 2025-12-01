@@ -60,27 +60,27 @@ def main():
     #############################################################
 
     ### Generate clarke inputs via input data
-    inputs = gen_clarke_model_inputs(df_pis_data, df_rbs_calculator)
+    #inputs = gen_clarke_model_inputs(df_pis_data, df_rbs_calculator)
 
     # Run clarke model
-    res = run_clarke_bb_group_model(inputs.ty,
-                                    inputs.b,
-                                    inputs.B,
-                                    inputs.Nbar,
-                                    inputs.freq,
-                                    inputs.theta,
-                                    inputs.R,
-                                    inputs.start_val,
-                                    inputs.se)
+    #res = run_clarke_bb_group_model(inputs.ty,
+    #                                inputs.b,
+    #                                inputs.B,
+    #                                inputs.Nbar,
+    #                                inputs.freq,
+    #                                inputs.theta,
+    #                                inputs.R,
+    #                                inputs.start_val,
+    #                                inputs.se)
 
-    print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
-    print(f'   Alpha = {res["alpha"]}')
-    print(f'   Beta = {res["beta"]}')
+    #print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
+    #print(f'   Alpha = {res["alpha"]}')
+    #print(f'   Beta = {res["beta"]}')
     print('')
 
     # Update original parameters of config
-    config['contamination']['contamination_rate']['parameters'][0] = res["alpha"]
-    config['contamination']['contamination_rate']['parameters'][1] = res["beta"]
+    #config['contamination']['contamination_rate']['parameters'][0] = res["alpha"]
+    #config['contamination']['contamination_rate']['parameters'][1] = res["beta"]
     config['contamination']['contamination_rate']['parameters'][0] = 0.194628
     config['contamination']['contamination_rate']['parameters'][1] = 4.7609372
 
@@ -152,8 +152,8 @@ def main():
         #scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = res["alpha"]
         #scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] =  res["beta"]
         scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = 0.194628
-        scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] = 4.7609372
-        scenario["contamination/contamination_rate/beta_binomial_parameters/theta"] = inputs.theta
+        scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] = 20.12345
+        #scenario["contamination/contamination_rate/beta_binomial_parameters/theta"] = inputs.theta
         scenario["contamination/contamination_rate/value"] = None
 
     ####################################################################
