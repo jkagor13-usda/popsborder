@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Optional
 import math
+import shutil
 
 import altair as alt
 import numpy as np
@@ -9,7 +10,7 @@ import streamlit as st
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
-from gui.slippage_pipeline import ClarkeFit
+from gui.slippage_pipeline import ClarkeFit, create_default_paths
 from gui.slippage_ui import get_slippage_state, run_pipeline
 
 
@@ -55,16 +56,41 @@ init_state()
 state = get_slippage_state()
 render_sidebar_navigation()
 paths = state["paths"]
+TMP_DIR = Path("tmp")
+TMP_DIR.mkdir(exist_ok=True)
 
 st.title("Page 2 - Contamination Fitting")
 st.caption(
-    "Review the current PIS and RBS inputs and fit the beta-binomial contamination parameters before "
+    "Upload or confirm PIS action and RBS inputs, then fit the beta-binomial contamination parameters before "
     "configuring inspection policies."
 )
 
 fit_tab, assign_tab = st.tabs(["Fit contamination", "Assign contamination"])
 
 with fit_tab:
+    st.subheader("Upload/confirm inputs")
+    upload_cols = st.columns(2)
+    pis_upload = upload_cols[0].file_uploader("PIS action data CSV", type=["csv"], key="fit_pis_upload")
+    rbs_upload = upload_cols[1].file_uploader("RBS calculator CSV", type=["csv"], key="fit_rbs_upload")
+    if pis_upload is not None:
+        try:
+            pis_path = TMP_DIR / "fit_pis_data.csv"
+            pis_path.parent.mkdir(parents=True, exist_ok=True)
+            pis_path.write_bytes(pis_upload.getbuffer())
+            set_paths(pis_data=pis_path, synthetic_seed=pis_path)
+            st.success(f"PIS action data saved to {pis_path}")
+        except Exception as exc:  # pylint: disable=broad-except
+            st.error(f"Unable to save PIS action data: {exc}")
+    if rbs_upload is not None:
+        try:
+            rbs_path = TMP_DIR / "fit_rbs_data.csv"
+            rbs_path.parent.mkdir(parents=True, exist_ok=True)
+            rbs_path.write_bytes(rbs_upload.getbuffer())
+            set_paths(rbs_data=rbs_path)
+            st.success(f"RBS data saved to {rbs_path}")
+        except Exception as exc:  # pylint: disable=broad-except
+            st.error(f"Unable to save RBS data: {exc}")
+
     pis_preview = _load_preview(paths.pis_data)
     rbs_preview = _load_preview(paths.rbs_data)
 
@@ -126,11 +152,27 @@ st.caption(
 )
 
 st.divider()
-nav_cols = st.columns(2)
+nav_cols = st.columns(3)
 with nav_cols[0]:
-    if st.button("Back to Page 2", type="primary", key="nav_back_page2"):
-        st.switch_page("pages/2_Consignment_Generation.py")
+    if st.button(
+        "Reset and Return Home",
+        type="secondary",
+        key="nav_reset_page3",
+        help="Delete temporary files and restart from the home page",
+    ):
+        try:
+            if TMP_DIR.exists():
+                shutil.rmtree(TMP_DIR)
+            TMP_DIR.mkdir(parents=True, exist_ok=True)
+            state["paths"] = create_default_paths()
+            state["fit"] = None
+            st.switch_page("frontend.py")
+        except Exception as exc:  # pylint: disable=broad-except
+            st.error(f"Unable to reset temporary files: {exc}")
 with nav_cols[1]:
-    if st.button("Continue to Page 4", type="primary", key="nav_forward_page4"):
+    if st.button("Previous Page", type="primary", key="nav_back_page2"):
+        st.switch_page("pages/1_Consignment_Generation.py")
+with nav_cols[2]:
+    if st.button("Next Page", type="primary", key="nav_forward_page4"):
         st.switch_page("pages/4_Inspection_Process.py")
 

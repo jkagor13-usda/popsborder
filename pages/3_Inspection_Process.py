@@ -1,12 +1,13 @@
 from pathlib import Path
 from typing import Optional
+import shutil
 
 import pandas as pd
 import streamlit as st
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
-from gui.slippage_ui import get_slippage_state, set_paths
+from gui.slippage_ui import get_slippage_state, set_paths, create_default_paths
 
 
 st.set_page_config(
@@ -19,6 +20,8 @@ init_state()
 state = get_slippage_state()
 render_sidebar_navigation()
 paths = state["paths"]
+TMP_DIR = Path("tmp")
+TMP_DIR.mkdir(exist_ok=True)
 
 
 def _load_compliance_table(path: Path) -> Optional[pd.DataFrame]:
@@ -94,14 +97,29 @@ else:
     level_cols[1].metric("Medium type rows", counts["Medium"])
     level_cols[2].metric("High type rows", counts["High"])
 
-st.info("Inspection scenarios are managed on the experiment setup page.")
-
 st.divider()
-nav_cols = st.columns(2)
+nav_cols = st.columns(3)
 with nav_cols[0]:
-    if st.button("Back to Page 3", type="primary", key="nav_back_page3"):
-        st.switch_page("pages/3_Contamination_Fit.py")
+    if st.button(
+        "Reset and Return Home",
+        type="secondary",
+        key="nav_reset_page4",
+        help="Delete temporary files and restart from the home page",
+    ):
+        try:
+            if TMP_DIR.exists():
+                shutil.rmtree(TMP_DIR)
+            TMP_DIR.mkdir(parents=True, exist_ok=True)
+            state["paths"] = create_default_paths()
+            st.switch_page("frontend.py")
+        except Exception as exc:  # pylint: disable=broad-except
+            st.error(f"Unable to reset temporary files: {exc}")
 with nav_cols[1]:
-    if st.button("Continue to Page 5", type="primary", key="nav_forward_page5"):
-        st.switch_page("pages/5_Scenario_Experiments.py")
+    if st.button("Previous Page", type="primary", key="nav_back_page3_proc"):
+        st.switch_page("pages/2_Contamination_Fit.py")
+with nav_cols[2]:
+    if st.button("Next Page", type="primary", key="nav_forward_page5_proc"):
+        st.switch_page("pages/4_Scenario_Experiments.py")
+
+st.info("Inspection scenarios are managed on the experiment setup page.")
 

@@ -26,15 +26,15 @@ if st.button(
     type="primary",
     help="Upload PIS/RBS data, create synthetic consignments, or define consignments manually",
 ):
-    st.switch_page("pages/2_Consignment_Generation.py")
+    st.switch_page("pages/1_Consignment_Generation.py")
 st.markdown(
     """
 **Workflow overview**
 
 - **Page 1 - Consignment Generation**
-  Upload PIS/RBS data, inspect summaries, generate synthetic consignments, or define consignments when no data exists.
+  Generate consignments, optionally attach an RBS calculator, or define consignments when no data exists.
 - **Page 2 - Contamination Fit**
-  Run the Clarke beta-binomial fitting using the current PIS/RBS inputs to update contamination parameters.
+  Upload PIS action data (and RBS if needed) and run the Clarke beta-binomial fitting to update contamination parameters.
 - **Page 3 - Inspection Process**
   Ingest the compliance table, classify Low/Medium/High profiles, and configure inspection strategies.
 - **Page 4 - Scenario & Experiment Builder**

@@ -23,6 +23,6 @@ st.info(
 )
 
 if st.button("Open Page 1 - Consignment Generation", type="primary", use_container_width=True):
-    st.switch_page("pages/2_Consignment_Generation.py")
+    st.switch_page("pages/1_Consignment_Generation.py")
 
 st.button("Back to Home", key="nav_home_from_legacy", on_click=lambda: st.switch_page("frontend.py"))

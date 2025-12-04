@@ -5,12 +5,14 @@ import shutil
 import yaml
 from typing import List, Optional
 
+import altair as alt
+import numpy as np
 import pandas as pd
 import streamlit as st
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
-from gui.slippage_pipeline import SyntheticOptions, generate_synthetic_data, create_default_paths
+from gui.slippage_pipeline import SyntheticOptions, create_default_paths
 from gui.slippage_ui import (
     get_slippage_state,
     set_paths,
@@ -69,13 +71,11 @@ def _consignment_dir() -> Path:
 
 def _consignment_paths() -> dict[str, Path]:
     base = _consignment_dir()
-    base_name = state.get("consignment_base_name") or "consignment"
+    base_name = st.session_state.get("consignment_base_name", "consignment") or "consignment"
     return {
-        "uploaded_pis": base / f"{base_name}_uploaded_pis_data.csv",
         "uploaded_rbs": base / f"{base_name}_uploaded_rbs_data.csv",
         "manual_pis": base / f"{base_name}_user_defined_pis_data.csv",
         "manual_rbs": base / f"{base_name}_user_defined_rbs_data.csv",
-        "synthetic_output": base / f"{base_name}_synthetic_consignment_data.csv",
     }
 
 
@@ -165,50 +165,116 @@ config = yaml.safe_load(Path("config.yml").read_text())
 config_origins = config.get("consignment", {}).get("parameter_based", {}).get("origins", [])
 config_ports = config.get("consignment", {}).get("parameter_based", {}).get("ports", [])
 config_materials = config.get("consignment", {}).get("parameter_based", {}).get("flowers", [])
-set_paths(synthetic_output=_consignment_paths()["synthetic_output"])
 
 st.title("Page 1 - Consignment Generation")
 st.caption(
-    "Ingest curated PIS action data or define consignments from scratch. Both paths create the inputs needed for "
+    "Ingest curated RBS Calculator Data or define consignments from scratch. Both paths create the inputs needed for "
     "contamination fitting and simulation."
 )
 st.info(
-    "Choose your workflow below: upload existing datasets and optionally generate synthetic consignments, "
-    "or manually build consignments when no historical data exists. RBS uploads happen on Page 2."
+    "Choose your workflow below: generate synthetic consignments or build them manually when no historical data "
+    "exists. PIS action uploads are handled on **Page 2 - Contamination Fit**; you can optionally attach an RBS calculator below."
 )
 
 ingest_tab, manual_tab = st.tabs(
-    ["Upload or ingest PIS action data", "Define consignments manually"]
+    ["RBS Calculator Data (ingest/generate)", "Define consignments manually"]
 )
 
 with ingest_tab:
     st.subheader("Consignment Parameters")
 
-    st.info("Upload PIS action data and RBS on **Page 2 - Contamination Fit**. Use this page to generate or define consignments.")
+    st.info(
+        "Generate consignments or use historical data directly"
+    )
 
     pis_df: Optional[pd.DataFrame] = state.get("pis_data")
     rbs_df: Optional[pd.DataFrame] = state.get("rbs_data")
 
     preview_cols = st.columns(2)
     with preview_cols[0]:
-        if pis_df is not None and not pis_df.empty:
-            st.subheader("PIS action data - inspection overview")
-            st.metric("Total observations", f"{len(pis_df):,}")
-            cat_cols = ["COUNTRY_OF_ORIGIN_NAME", "INSPECTION_LOCATION_NAME", "PROPAGATIVE_MATERIAL_TYPE"]
-            action_col = "action" if "action" in pis_df.columns else None
-            vis_cols = st.columns(3)
-            for idx, col in enumerate(cat_cols):
-                if col in pis_df.columns and action_col:
-                    agg = pis_df.groupby(col)[action_col].sum().sort_values(ascending=False)
-                    vis_cols[idx].bar_chart(agg.rename("Actions"))
-            with st.expander("Preview PIS data"):
-                st.dataframe(pis_df.head(25), use_container_width=True, height=250)
+        st.subheader("Upload RBS calculator")
+        rbs_upload = st.file_uploader("RBS calculator CSV", type=["csv"], key="rbs_upload_ingest")
+        if rbs_upload is not None:
+            rbs_df = pd.read_csv(rbs_upload)
+            state["rbs_data"] = rbs_df
+            state["rbs_preview"] = rbs_df.head(10)
+            target = _consignment_paths()["uploaded_rbs"]
+            _persist_upload(rbs_df, target)
+            set_paths(rbs_data=target)
+            st.success(f"Loaded {len(rbs_df):,} RBS records. Saved to {target}")
+        if rbs_df is not None and not rbs_df.empty:
+            with st.expander("Uploaded RBS preview", expanded=True):
+                st.dataframe(rbs_df.head(25), use_container_width=True, height=250)
         else:
-            st.info("Upload PIS data to view summary statistics.")
+            st.info("Upload RBS calculator data here or on **Page 2 - Contamination Fit**.")
 
     with preview_cols[1]:
-        st.subheader("RBS calculator data")
-        st.info("RBS uploads are now handled on Page 2 - Contamination Fit.")
+        st.subheader("Summary statistics")
+        if rbs_df is not None and not rbs_df.empty:
+            cols = st.columns(3)
+            if "COUNTRY_OF_ORIGIN_NAME" in rbs_df.columns:
+                cols[0].markdown("**Top origins**")
+                cols[0].bar_chart(
+                    rbs_df["COUNTRY_OF_ORIGIN_NAME"].value_counts().head(10).rename("Count")
+                )
+            if "INSPECTION_LOCATION_NAME" in rbs_df.columns:
+                cols[1].markdown("**Top inspection locations**")
+                cols[1].bar_chart(
+                    rbs_df["INSPECTION_LOCATION_NAME"].value_counts().head(10).rename("Count")
+                )
+            if "PROPAGATIVE_MATERIAL_TYPE" in rbs_df.columns:
+                cols[2].markdown("**Top material types**")
+                cols[2].bar_chart(
+                    rbs_df["PROPAGATIVE_MATERIAL_TYPE"].value_counts().head(10).rename("Count")
+                )
+            if "TOTAL_PLANT_QUANTITY" in rbs_df.columns:
+                st.markdown("**Plant units vs sampling units (frequency)**")
+                quantities = rbs_df["TOTAL_PLANT_QUANTITY"].dropna().to_numpy()
+                if "TOTAL_SAMPLING_UNITS" in rbs_df.columns:
+                    sampling_units = rbs_df["TOTAL_SAMPLING_UNITS"].dropna().to_numpy()
+                else:
+                    sampling_units = np.array([])
+
+                if quantities.size > 0 and sampling_units.size == quantities.size and sampling_units.size > 0:
+                    q_min, q_max = float(quantities.min()), float(quantities.max())
+                    s_min, s_max = float(sampling_units.min()), float(sampling_units.max())
+                    q_bins = np.linspace(q_min, q_max, num=21) if q_min != q_max else np.array([q_min, q_max + 1])
+                    s_bins = np.linspace(s_min, s_max, num=11) if s_min != s_max else np.array([s_min, s_max + 1])
+                    heat, q_edges, s_edges = np.histogram2d(quantities, sampling_units, bins=[q_bins, s_bins])
+                    heat_df = pd.DataFrame(
+                        {
+                            "plant_bin_start": np.repeat(q_edges[:-1], len(s_edges) - 1),
+                            "plant_bin_end": np.repeat(q_edges[1:], len(s_edges) - 1),
+                            "sample_bin_start": np.tile(s_edges[:-1], len(q_edges) - 1),
+                            "sample_bin_end": np.tile(s_edges[1:], len(q_edges) - 1),
+                            "frequency": heat.flatten(),
+                        }
+                    )
+                    chart = (
+                        alt.Chart(heat_df)
+                        .mark_rect()
+                        .encode(
+                            x=alt.X(
+                                "plant_bin_start:Q",
+                                bin=alt.Bin(binned=True, step=float(q_bins[1] - q_bins[0])),
+                                title="Plant units (bin start)",
+                            ),
+                            x2="plant_bin_end:Q",
+                            y=alt.Y(
+                                "sample_bin_start:Q",
+                                bin=alt.Bin(binned=True, step=float(s_bins[1] - s_bins[0])),
+                                title="Sampling units (bin start)",
+                            ),
+                            y2="sample_bin_end:Q",
+                            color=alt.Color("frequency:Q", title="Frequency", scale=alt.Scale(scheme="blues")),
+                        )
+                    )
+                    st.altair_chart(chart, use_container_width=True)
+                else:
+                    st.info("Need both TOTAL_PLANT_QUANTITY and TOTAL_SAMPLING_UNITS to render the heat map.")
+        else:
+            st.info("Upload RBS calculator data to view summary statistics.")
+
 
     source_choice = st.radio(
         "Consignment source for downstream analysis",
@@ -224,73 +290,12 @@ with ingest_tab:
     if state["consignment_source"] == "historical" and (
         (pis_df is None or pis_df.empty) or (rbs_df is None or rbs_df.empty)
     ):
-        st.warning("Upload both PIS and RBS data to rely on historical consignments.")
+        st.warning("Upload both PIS action and RBS data on **Page 2 - Contamination Fit** to rely on historical consignments.")
 
     current_pis_path = paths.pis_data
     current_rbs_path = paths.rbs_data
     pis_ready = current_pis_path is not None and Path(current_pis_path).exists()
     rbs_ready = current_rbs_path is not None and Path(current_rbs_path).exists()
-
-    if state["consignment_source"] == "synthetic":
-        st.divider()
-        st.subheader("Synthetic consignment controls")
-        col_syn = st.columns(2)
-        syn_samples = col_syn[0].number_input(
-            "Synthetic consignments",
-            min_value=1,
-            max_value=50000,
-            value=max(1, int(synthetic_options.n_samples)),
-            step=50,
-        )
-        syn_method = col_syn[1].selectbox(
-            "Sampling method",
-            ["naive", "sequential", "gmm", "gaussian_copula"],
-            index=["naive", "sequential", "gmm", "gaussian_copula"].index(synthetic_options.sampling_method),
-        )
-
-        if syn_samples != synthetic_options.n_samples or syn_method != synthetic_options.sampling_method:
-            set_synthetic_options(SyntheticOptions(n_samples=int(syn_samples), sampling_method=syn_method))
-            st.caption("Synthetic generation options updated.")
-
-        st.markdown(
-            "Generate synthetic consignments for experimentation or rely on uploaded historical consignments. "
-            "Synthetic generation will also re-fit the contamination distribution (beta-binomial)."
-        )
-
-        st.divider()
-        if st.button("Generate synthetic PIS consignments", type="secondary", use_container_width=True):
-            with st.spinner("Generating synthetic PIS consignments..."):
-                try:
-                    synthetic_df = generate_synthetic_data(
-                        paths.synthetic_seed,
-                        _consignment_paths()["synthetic_output"],
-                        synthetic_options,
-                    )
-                    state["synthetic_data"] = synthetic_df
-                    state["synthetic_preview"] = synthetic_df.head(10)
-                    synthetic_path = _consignment_paths()["synthetic_output"]
-                    st.success(f"Saved {len(synthetic_df):,} synthetic PIS records to {synthetic_path}.")
-                    set_paths(pis_data=synthetic_path, synthetic_output=synthetic_path)
-                except Exception as exc:  # pylint: disable=broad-except
-                    st.error(f"Generation failed: {exc}")
-
-        current_pis_path = _consignment_paths()["synthetic_output"]
-        pis_ready = current_pis_path is not None and Path(current_pis_path).exists()
-
-        syn_paths = state["paths"]
-        syn_pis_preview = _load_preview(syn_paths.pis_data)
-        syn_rbs_preview = _load_preview(syn_paths.rbs_data)
-        with st.expander("Synthetic PIS/RBS previews", expanded=False):
-            syn_cols = st.columns(2)
-            if syn_pis_preview is not None:
-                with syn_cols[0]:
-                    st.subheader("Synthetic PIS preview")
-                    st.dataframe(syn_pis_preview, use_container_width=True)
-            if syn_rbs_preview is not None:
-                with syn_cols[1]:
-                    st.subheader("Synthetic RBS preview")
-                    st.dataframe(syn_rbs_preview, use_container_width=True)
-        st.caption("Synthetic generation produces PIS data. RBS must come from uploads or manual creation.")
 
     current_pis = current_pis_path
     current_rbs = current_rbs_path
@@ -412,10 +417,8 @@ with manual_tab:
         combined_rbs.to_csv(paths_map["manual_rbs"], index=False)
 
         set_paths(
-            synthetic_seed=paths_map["manual_pis"],
             pis_data=paths_map["manual_pis"],
             rbs_data=paths_map["manual_rbs"],
-            synthetic_output=paths_map["synthetic_output"],
         )
         set_synthetic_options(SyntheticOptions(n_samples=int(len(combined_seed)), sampling_method="sequential"))
         state["manual_seed_preview"] = combined_seed.head(200)
@@ -433,34 +436,19 @@ with manual_tab:
         ]
         st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
 
-    preview = state.get("manual_seed_preview")
     rbs_preview = state.get("manual_rbs_preview")
-    with st.expander("PIS/RBS previews", expanded=False):
-        cols_prev = st.columns(2)
-        if preview is not None:
-            with cols_prev[0]:
-                st.subheader("PIS action seed dataset preview")
-                st.dataframe(preview, use_container_width=True)
-                st.download_button(
-                    "Download PIS action dataset",
-                    data=preview.to_csv(index=False).encode("utf-8"),
-                    file_name="user_defined_pis_action_data.csv",
-                    use_container_width=True,
-                )
+    with st.expander("Synthetic RBS preview", expanded=False):
         if rbs_preview is not None:
-            with cols_prev[1]:
-                st.subheader("RBS calculator preview")
-                st.dataframe(rbs_preview, use_container_width=True)
-                st.download_button(
-                    "Download RBS dataset",
-                    data=rbs_preview.to_csv(index=False).encode("utf-8"),
-                    file_name="user_defined_rbs_data.csv",
-                    use_container_width=True,
-                )
-        if preview is None and rbs_preview is None:
-            st.info("Create a seed dataset to preview and download the generated files.")
+            st.dataframe(rbs_preview, use_container_width=True)
+            st.download_button(
+                "Download RBS dataset",
+                data=rbs_preview.to_csv(index=False).encode("utf-8"),
+                file_name="user_defined_rbs_data.csv",
+                use_container_width=True,
+            )
+        else:
+            st.info("Create a seed dataset to preview and download the generated RBS file.")
 
-current_pis = state["paths"].pis_data
 current_rbs = state["paths"].rbs_data
 
 st.text_input(
@@ -469,33 +457,24 @@ st.text_input(
     key="consignment_base_name",
     help="Used to name PIS/RBS/synthetic files in tmp/consignments (e.g., <name>_uploaded_pis_data.csv).",
 )
-# refresh paths to use current base name
-set_paths(synthetic_output=_consignment_paths()["synthetic_output"])
-
-# refresh current paths after any base-name change
-current_pis = state["paths"].pis_data
-current_rbs = state["paths"].rbs_data
-
 if st.button("Generate consignment files with this name", type="secondary", use_container_width=True):
     paths_map = _consignment_paths()
-    if current_pis is None or current_rbs is None:
-        st.warning("No PIS/RBS data available. Upload or create consignments first.")
+    base_name = st.session_state.get("consignment_base_name", "consignment") or "consignment"
+    if current_rbs is None:
+        st.warning("No RBS data available. Upload a calculator file first.")
     else:
         try:
-            dest_pis = paths_map["uploaded_pis"]
             dest_rbs = paths_map["uploaded_rbs"]
-            dest_pis.parent.mkdir(parents=True, exist_ok=True)
-            if Path(current_pis).resolve() != dest_pis.resolve():
-                shutil.copy(current_pis, dest_pis)
+            dest_rbs.parent.mkdir(parents=True, exist_ok=True)
             if Path(current_rbs).resolve() != dest_rbs.resolve():
                 shutil.copy(current_rbs, dest_rbs)
-            set_paths(pis_data=dest_pis, rbs_data=dest_rbs, synthetic_seed=dest_pis)
+            set_paths(rbs_data=dest_rbs)
             st.success(
-                f"Saved consignment files with base '{state['consignment_base_name']}' to tmp/consignments."
+                f"Saved RBS file with base '{base_name}' to tmp/consignments."
             )
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Unable to save consignment files: {exc}")
-    st.caption("Current files point to: PIS -> {state['paths'].pis_data}, RBS -> {state['paths'].rbs_data}")
+    st.caption(f"Current files point to: PIS -> {state['paths'].pis_data}, RBS -> {state['paths'].rbs_data}")
 
 st.info("After preparing consignments, go to **Page 2 - Contamination Fit** to update beta-binomial parameters.")
 
@@ -533,11 +512,9 @@ with nav_cols[2]:
         "Confirm upload and continue to next page",
         type="primary",
         key="nav_forward_page2",
-        disabled=not (current_pis and current_rbs),
+        disabled=not current_rbs,
     ):
         set_paths(
-            pis_data=current_pis,
             rbs_data=current_rbs,
-            synthetic_seed=paths.synthetic_seed or current_pis,
         )
-        st.switch_page("pages/3_Contamination_Fit.py")
+        st.switch_page("pages/2_Contamination_Fit.py")
