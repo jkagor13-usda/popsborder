@@ -60,22 +60,22 @@ def main():
     #############################################################
 
     ### Generate clarke inputs via input data
-    #inputs = gen_clarke_model_inputs(df_pis_data, df_rbs_calculator)
+    inputs = gen_clarke_model_inputs(df_pis_data, df_rbs_calculator)
 
     # Run clarke model
-    #res = run_clarke_bb_group_model(inputs.ty,
-    #                                inputs.b,
-    #                                inputs.B,
-    #                                inputs.Nbar,
-    #                                inputs.freq,
-    #                                inputs.theta,
-    #                                inputs.R,
-    #                                inputs.start_val,
-    #                                inputs.se)
+    res = run_clarke_bb_group_model(inputs.ty,
+                                    inputs.b,
+                                    inputs.B,
+                                    inputs.Nbar,
+                                    inputs.freq,
+                                    inputs.theta,
+                                    inputs.R,
+                                    inputs.start_val,
+                                    inputs.se)
 
-    #print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
-    #print(f'   Alpha = {res["alpha"]}')
-    #print(f'   Beta = {res["beta"]}')
+    print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
+    print(f'   Alpha = {res["alpha"]}')
+    print(f'   Beta = {res["beta"]}')
     print('')
 
     # Update original parameters of config
