@@ -186,11 +186,6 @@ def simulation(
             print(f'\n   Number of Contaminated Inspection Units: {total_contaminated_inspection_units}')
             print(f'   Proportion of Contaminated Inspection Units (total # inspection units = {len(consignment.inspection_units)}): {total_contaminated_inspection_units/len(consignment.inspection_units)}')
 
-            for inspection_unit in inspection_units_contaminated.keys():
-                print(f'\n==== INSPECTION UNIT CONTAMINATED {inspection_unit} BELOW ====')
-                for sample_unit in inspection_units_contaminated[inspection_unit].keys():
-                    print(f'   Sample Unit {sample_unit} contaminated and plants contaminated are: {inspection_units_contaminated[inspection_unit][sample_unit]}')
-
 
             #simData.add_consignment(consignment)
             if detailed:
