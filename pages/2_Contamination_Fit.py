@@ -11,7 +11,7 @@ import streamlit as st
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
 from gui.slippage_pipeline import ClarkeFit, create_default_paths
-from gui.slippage_ui import get_slippage_state, run_pipeline
+from gui.slippage_ui import get_slippage_state, run_pipeline, set_paths
 
 
 def _load_preview(path: Path, rows: int = 50) -> Optional[pd.DataFrame]:
@@ -57,57 +57,102 @@ state = get_slippage_state()
 render_sidebar_navigation()
 paths = state["paths"]
 TMP_DIR = Path("tmp")
-TMP_DIR.mkdir(exist_ok=True)
+TMP_CONTAM = TMP_DIR / "contamination"
+TMP_CONTAM.mkdir(parents=True, exist_ok=True)
 
 st.title("Page 2 - Contamination Fitting")
 st.caption(
-    "Upload or confirm PIS action and RBS inputs, then fit the beta-binomial contamination parameters before "
-    "configuring inspection policies."
+    "Upload or confirm PIS action data, then fit the beta-binomial contamination parameters."
 )
 
 fit_tab, assign_tab = st.tabs(["Fit contamination", "Assign contamination"])
 
 with fit_tab:
-    st.subheader("Upload/confirm inputs")
     upload_cols = st.columns(2)
-    pis_upload = upload_cols[0].file_uploader("PIS action data CSV", type=["csv"], key="fit_pis_upload")
-    rbs_upload = upload_cols[1].file_uploader("RBS calculator CSV", type=["csv"], key="fit_rbs_upload")
-    if pis_upload is not None:
-        try:
-            pis_path = TMP_DIR / "fit_pis_data.csv"
-            pis_path.parent.mkdir(parents=True, exist_ok=True)
-            pis_path.write_bytes(pis_upload.getbuffer())
-            set_paths(pis_data=pis_path, synthetic_seed=pis_path)
-            st.success(f"PIS action data saved to {pis_path}")
-        except Exception as exc:  # pylint: disable=broad-except
-            st.error(f"Unable to save PIS action data: {exc}")
-    if rbs_upload is not None:
-        try:
-            rbs_path = TMP_DIR / "fit_rbs_data.csv"
-            rbs_path.parent.mkdir(parents=True, exist_ok=True)
-            rbs_path.write_bytes(rbs_upload.getbuffer())
-            set_paths(rbs_data=rbs_path)
-            st.success(f"RBS data saved to {rbs_path}")
-        except Exception as exc:  # pylint: disable=broad-except
-            st.error(f"Unable to save RBS data: {exc}")
+    with upload_cols[0]:
+        st.subheader("Upload PIS action data")
+        pis_upload = st.file_uploader("PIS action data CSV", type=["csv"], key="fit_pis_upload")
+        if pis_upload is not None:
+            try:
+                pis_path = TMP_CONTAM / "fit_pis_data.csv"
+                pis_path.parent.mkdir(parents=True, exist_ok=True)
+                pis_path.write_bytes(pis_upload.getbuffer())
+                set_paths(pis_data=pis_path, synthetic_seed=pis_path)
+                st.success(f"PIS action data saved to {pis_path}")
+                paths = state["paths"]
+            except Exception as exc:  # pylint: disable=broad-except
+                st.error(f"Unable to save PIS action data: {exc}")
 
-    pis_preview = _load_preview(paths.pis_data)
-    rbs_preview = _load_preview(paths.rbs_data)
+        pis_preview = _load_preview(paths.pis_data)
+        if pis_preview is not None:
+            with st.expander("Uploaded PIS preview", expanded=True):
+                st.dataframe(pis_preview.head(25), use_container_width=True, height=300)
+        else:
+            st.info("Upload PIS action data here.")
 
-    with st.expander("PIS/RBS previews", expanded=True):
-        prev_cols = st.columns(2)
-        with prev_cols[0]:
-            st.subheader("PIS dataset preview")
-            if pis_preview is not None:
-                st.dataframe(pis_preview, use_container_width=True)
-            else:
-                st.info("Load or generate PIS data on Page 1.")
-        with prev_cols[1]:
-            st.subheader("RBS calculator preview")
-            if rbs_preview is not None:
-                st.dataframe(rbs_preview, use_container_width=True)
-            else:
-                st.info("Load or generate an RBS calculator file on Page 1.")
+    with upload_cols[1]:
+        st.subheader("Summary statistics")
+        if pis_preview is not None and not pis_preview.empty:
+            cols = st.columns(3)
+            if "COUNTRY_OF_ORIGIN_NAME" in pis_preview.columns:
+                cols[0].markdown("**Top origins**")
+                cols[0].bar_chart(
+                    pis_preview["COUNTRY_OF_ORIGIN_NAME"].value_counts().head(10).rename("Count")
+                )
+            if "INSPECTION_LOCATION_NAME" in pis_preview.columns:
+                cols[1].markdown("**Top inspection locations**")
+                cols[1].bar_chart(
+                    pis_preview["INSPECTION_LOCATION_NAME"].value_counts().head(10).rename("Count")
+                )
+            if "PROPAGATIVE_MATERIAL_TYPE" in pis_preview.columns:
+                cols[2].markdown("**Top material types**")
+                cols[2].bar_chart(
+                    pis_preview["PROPAGATIVE_MATERIAL_TYPE"].value_counts().head(10).rename("Count")
+                )
+            if "TOTAL_PLANT_QUANTITY" in pis_preview.columns:
+                st.markdown("**Plant units vs sampling units (frequency)**")
+                quantities = pis_preview["TOTAL_PLANT_QUANTITY"].dropna().to_numpy()
+                if "TOTAL_SAMPLING_UNITS" in pis_preview.columns:
+                    sampling_units = pis_preview["TOTAL_SAMPLING_UNITS"].dropna().to_numpy()
+                else:
+                    sampling_units = np.array([])
+                if quantities.size > 0 and sampling_units.size == quantities.size and sampling_units.size > 0:
+                    q_min, q_max = float(quantities.min()), float(quantities.max())
+                    s_min, s_max = float(sampling_units.min()), float(sampling_units.max())
+                    q_bins = np.linspace(q_min, q_max, num=21) if q_min != q_max else np.array([q_min, q_max + 1])
+                    s_bins = np.linspace(s_min, s_max, num=11) if s_min != s_max else np.array([s_min, s_max + 1])
+                    heat, q_edges, s_edges = np.histogram2d(quantities, sampling_units, bins=[q_bins, s_bins])
+                    heat_df = pd.DataFrame(
+                        {
+                            "plant_bin_start": np.repeat(q_edges[:-1], len(s_edges) - 1),
+                            "plant_bin_end": np.repeat(q_edges[1:], len(s_edges) - 1),
+                            "sample_bin_start": np.tile(s_edges[:-1], len(q_edges) - 1),
+                            "sample_bin_end": np.tile(s_edges[1:], len(q_edges) - 1),
+                            "frequency": heat.flatten(),
+                        }
+                    )
+                    chart = (
+                        alt.Chart(heat_df)
+                        .mark_rect()
+                        .encode(
+                            x=alt.X(
+                                "plant_bin_start:Q",
+                                bin=alt.Bin(binned=True, step=float(q_bins[1] - q_bins[0])),
+                                title="Plant units (bin start)",
+                            ),
+                            x2="plant_bin_end:Q",
+                            y=alt.Y(
+                                "sample_bin_start:Q",
+                                bin=alt.Bin(binned=True, step=float(s_bins[1] - s_bins[0])),
+                                title="Sampling units (bin start)",
+                            ),
+                            y2="sample_bin_end:Q",
+                            color=alt.Color("frequency:Q", title="Frequency", scale=alt.Scale(scheme="blues")),
+                        )
+                    )
+                    st.altair_chart(chart, use_container_width=True)
+        else:
+            st.info("Summary statistics will appear after uploading PIS action data.")
 
     st.divider()
     if st.button("Fit contamination parameters", type="secondary", use_container_width=True):
@@ -123,7 +168,9 @@ with assign_tab:
     fit_current = state.get("fit")
     alpha_default = float(fit_current.alpha) if fit_current else 0.01
     beta_default = float(fit_current.beta) if fit_current else 5.0
-    theta_default = float(fit_current.theta) if fit_current else 0.5
+    raw_theta = float(fit_current.theta) if fit_current else 0.5
+    # Clamp theta into [0,1] to satisfy number_input bounds
+    theta_default = min(max(raw_theta, 0.0), 1.0)
     col_a, col_b, col_t = st.columns(3)
     alpha_val = col_a.number_input("Alpha", min_value=0.0, value=alpha_default, step=0.001, format="%.6f")
     beta_val = col_b.number_input("Beta", min_value=0.0, value=beta_default, step=0.001, format="%.6f")
@@ -174,5 +221,4 @@ with nav_cols[1]:
         st.switch_page("pages/1_Consignment_Generation.py")
 with nav_cols[2]:
     if st.button("Next Page", type="primary", key="nav_forward_page4"):
-        st.switch_page("pages/4_Inspection_Process.py")
-
+        st.switch_page("pages/3_Inspection_Process.py")

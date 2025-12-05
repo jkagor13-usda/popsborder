@@ -16,7 +16,7 @@ from popsborder.inputs import (
     text_to_value,
 )
 from popsborder.outputs import save_scenario_result_to_pandas
-from popsborder.scenarios import run_scenarios
+from popsborder.scenarios import run_scenarios as run_scenarios_fn
 from slippage_model_utils.clarke_model_support_functions import gen_clarke_model_inputs
 from slippage_model_utils.clarke_r_script_wrapper import run_clarke_bb_group_model
 
@@ -61,9 +61,9 @@ class SlippagePaths:
     config: Path = DEFAULT_DATA_DIR / "config.yml"
     scenario_table: Path = DEFAULT_DATA_DIR / "pis_contaminate_scenarios.csv"
     compliance_lookup: Path = DEFAULT_DATA_DIR / "compliance_table.csv"
-    pis_data: Path = DEFAULT_DATA_DIR / "synthetic_pis_data.csv"
-    rbs_data: Path = DEFAULT_DATA_DIR / "synthetic_rbs_calc_data_enriched.csv"
-    synthetic_seed: Path = DEFAULT_DATA_DIR / "synthetic_pis_data.csv"
+    pis_data: Optional[Path] = None
+    rbs_data: Optional[Path] = None
+    synthetic_seed: Optional[Path] = None
     synthetic_output: Path = Path("tmp") / "synthetic_consignment_data.csv"
     output_dir: Path = Path("output")
 
@@ -95,7 +95,17 @@ class PipelineResult:
 
 def create_default_paths(base_dir: Path = DEFAULT_DATA_DIR) -> SlippagePaths:
     """Return default data locations using ``base_dir``."""
-    return SlippagePaths(data_dir=base_dir)
+    pis_path = base_dir / "synthetic_pis_data.csv"
+    rbs_enriched = base_dir / "synthetic_rbs_calc_data_enriched.csv"
+    rbs_plain = base_dir / "synthetic_rbs_calc_data.csv"
+    rbs_path = rbs_enriched if rbs_enriched.exists() else (rbs_plain if rbs_plain.exists() else None)
+    synthetic_seed = rbs_path if rbs_path and rbs_path.exists() else None
+    return SlippagePaths(
+        data_dir=base_dir,
+        pis_data=pis_path if pis_path.exists() else None,
+        rbs_data=rbs_path,
+        synthetic_seed=synthetic_seed,
+    )
 
 
 def load_scenario_dataframe(path: Path, *, dtype: str = "object") -> pd.DataFrame:
@@ -140,7 +150,7 @@ def generate_synthetic_data(
     options: SyntheticOptions,
 ) -> pd.DataFrame:
     """Generate synthetic consignment data and persist it."""
-    if not seed_path.exists():
+    if seed_path is None or not Path(seed_path).exists():
         raise FileNotFoundError(f"Seed data not found at {seed_path}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     generator = SyntheticConsignmentDataGenerator(seed_path)
@@ -192,6 +202,10 @@ def fit_contamination_distribution(
     rbs_data_path: Path,
 ) -> Tuple[ClarkeFit, pd.DataFrame, pd.DataFrame]:
     """Fit contamination parameters using the Clarke beta-binomial model."""
+    if pis_data_path is None or not Path(pis_data_path).exists():
+        raise FileNotFoundError("PIS action data not provided. Upload on Page 2 - Contamination Fit.")
+    if rbs_data_path is None or not Path(rbs_data_path).exists():
+        raise FileNotFoundError("RBS calculator data not provided. Upload on Page 1 or Page 2.")
     pis_df = pd.read_csv(pis_data_path)
     if "action" not in pis_df.columns:
         pis_df["action"] = 0
@@ -208,7 +222,12 @@ def fit_contamination_distribution(
         inputs.start_val,
         inputs.se,
     )
-    fit = ClarkeFit(alpha=result["alpha"], beta=result["beta"], theta=inputs.theta, raw_result=result)
+    alpha_val = float(result.get("alpha", 0) or 0)
+    beta_val = float(result.get("beta", 0) or 0)
+    # Ensure parameters are positive to avoid downstream beta sampling failures.
+    alpha_val = max(alpha_val, 1e-3)
+    beta_val = max(beta_val, 1e-3)
+    fit = ClarkeFit(alpha=alpha_val, beta=beta_val, theta=inputs.theta, raw_result=result)
     return fit, pis_df, rbs_df
 
 
@@ -242,16 +261,37 @@ def run_slippage_pipeline(
     synthetic_options: SyntheticOptions = SyntheticOptions(),
     seed: int = 42,
     num_simulations: int = 1,
-    run_scenarios: bool = True,
+    run_scenarios_flag: bool = True,
 ) -> PipelineResult:
     """Execute the full slippage pipeline and return artifacts for UI consumption."""
     scenario_df = scenario_df if scenario_df is not None else load_scenario_dataframe(paths.scenario_table)
 
-    synthetic_df = generate_synthetic_data(
-        paths.synthetic_seed,
-        paths.synthetic_output,
-        synthetic_options,
-    )
+    seed_path = None
+    if paths.rbs_data and Path(paths.rbs_data).exists():
+        seed_path = paths.rbs_data
+    elif paths.synthetic_seed and Path(paths.synthetic_seed).exists():
+        seed_path = paths.synthetic_seed
+    if seed_path is None:
+        raise FileNotFoundError(
+            "No consignment seed data found. Upload RBS calculator data on Page 1/2 or generate consignments manually."
+        )
+    try:
+        synthetic_df = generate_synthetic_data(
+            seed_path,
+            paths.synthetic_output,
+            synthetic_options,
+        )
+    except StopIteration as exc:
+        raise ValueError(
+            "Synthetic generation failed: seed data appears empty or lacks required columns. "
+            "Upload a non-empty RBS calculator (with TOTAL_SAMPLING_UNITS and TOTAL_PLANT_QUANTITY) "
+            "or reduce missing values, then try again. "
+            f"(Seed file: {seed_path})"
+        ) from exc
+    if synthetic_df is None or synthetic_df.empty:
+        raise ValueError(
+            "Synthetic generation produced no rows. Check the RBS seed data and retry with a valid file."
+        )
     config = load_configuration(paths.config)
     config["consignment"]["input_file"]["rbs_file_name"] = str(paths.synthetic_output)
     num_consignments = _infer_num_consignments(paths, config, synthetic_df)
@@ -261,16 +301,24 @@ def run_slippage_pipeline(
     fit, pis_df, rbs_df = fit_contamination_distribution(paths.pis_data, paths.rbs_data)
     config, scenarios = apply_contamination_parameters(config, scenarios, fit)
 
-    if run_scenarios:
-        scenario_results_raw = run_scenarios(
-            config=config,
-            scenario_table=scenarios,
-            seed=seed,
-            num_simulations=num_simulations,
-            num_consignments=num_consignments,
-            compliance_table=compliance_table,
-            detailed=True,
-        )
+    if run_scenarios_flag:
+        try:
+            scenario_results_raw = run_scenarios_fn(
+                config=config,
+                scenario_table=scenarios,
+                seed=seed,
+                num_simulations=num_simulations,
+                num_consignments=num_consignments,
+                compliance_table=compliance_table,
+                detailed=True,
+            )
+        except StopIteration as exc:
+            raise ValueError(
+                "Scenario execution failed: no valid synthetic consignments were generated. "
+                "Ensure the RBS seed file has non-empty TOTAL_SAMPLING_UNITS and TOTAL_PLANT_QUANTITY columns. "
+                f"(Synthetic input: {paths.synthetic_output})"
+            ) from exc
+
         scenario_results = [(result, cfg) for _details, result, cfg in scenario_results_raw]
         paths.output_dir.mkdir(parents=True, exist_ok=True)
         results_df = save_scenario_result_to_pandas(

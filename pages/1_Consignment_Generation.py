@@ -74,7 +74,6 @@ def _consignment_paths() -> dict[str, Path]:
     base_name = st.session_state.get("consignment_base_name", "consignment") or "consignment"
     return {
         "uploaded_rbs": base / f"{base_name}_uploaded_rbs_data.csv",
-        "manual_pis": base / f"{base_name}_user_defined_pis_data.csv",
         "manual_rbs": base / f"{base_name}_user_defined_rbs_data.csv",
     }
 
@@ -204,9 +203,21 @@ with ingest_tab:
             st.success(f"Loaded {len(rbs_df):,} RBS records. Saved to {target}")
         if rbs_df is not None and not rbs_df.empty:
             with st.expander("Uploaded RBS preview", expanded=True):
-                st.dataframe(rbs_df.head(25), use_container_width=True, height=250)
+                st.dataframe(rbs_df.head(25), use_container_width=True, height=400)
+                # Text summary beneath the preview
+                summary_parts = []
+                if "INSPECTION_NUMBER" in rbs_df.columns:
+                    summary_parts.append(f"Consignments (unique INSPECTION_NUMBER): {rbs_df['INSPECTION_NUMBER'].nunique():,}")
+                if "PATHWAY" in rbs_df.columns:
+                    summary_parts.append(f"Pathways: {rbs_df['PATHWAY'].nunique():,}")
+                if "INSPECTION_LOCATION_NAME" in rbs_df.columns:
+                    summary_parts.append(f"Inspection locations: {rbs_df['INSPECTION_LOCATION_NAME'].nunique():,}")
+                if "COUNTRY_OF_ORIGIN_NAME" in rbs_df.columns:
+                    summary_parts.append(f"Countries of origin: {rbs_df['COUNTRY_OF_ORIGIN_NAME'].nunique():,}")
+                if summary_parts:
+                    st.markdown("  \n".join(summary_parts))
         else:
-            st.info("Upload RBS calculator data here or on **Page 2 - Contamination Fit**.")
+            st.info("Upload RBS calculator data here.")
 
     with preview_cols[1]:
         st.subheader("Summary statistics")
@@ -275,7 +286,6 @@ with ingest_tab:
         else:
             st.info("Upload RBS calculator data to view summary statistics.")
 
-
     source_choice = st.radio(
         "Consignment source for downstream analysis",
         [
@@ -291,6 +301,25 @@ with ingest_tab:
         (pis_df is None or pis_df.empty) or (rbs_df is None or rbs_df.empty)
     ):
         st.warning("Upload both PIS action and RBS data on **Page 2 - Contamination Fit** to rely on historical consignments.")
+
+    if state["consignment_source"] == "synthetic":
+        st.markdown("### Synthetic consignment generation")
+        if rbs_df is None or rbs_df.empty:
+            st.info("Upload RBS calculator data first to enable synthetic generation.")
+        else:
+            gen_cols = st.columns(2)
+            n_samples = gen_cols[0].number_input("Number of consignments to generate", min_value=1, max_value=10000, value=200, step=10)
+            method = gen_cols[1].selectbox(
+                "Sampling method",
+                options=["naive", "sequential", "gmm", "gaussian_copula"],
+                index=1,
+            )
+            if st.button("Apply synthetic generation settings", type="secondary", use_container_width=True):
+                set_synthetic_options(SyntheticOptions(n_samples=int(n_samples), sampling_method=method))
+                # Use the uploaded RBS as the seed for synthetic generation
+                set_paths(synthetic_seed=_consignment_paths()["uploaded_rbs"])
+                st.success(f"Set synthetic generation to {n_samples} consignments via '{method}'.")
+
 
     current_pis_path = paths.pis_data
     current_rbs_path = paths.rbs_data
@@ -409,23 +438,13 @@ with manual_tab:
         )
         state["manual_units"] = []
 
-        combined_seed = pd.concat([c["seed"] for c in state["manual_consignments"]], ignore_index=True)
         combined_rbs = pd.concat([c["rbs"] for c in state["manual_consignments"]], ignore_index=True)
 
-        paths_map = _consignment_paths()
-        combined_seed.to_csv(paths_map["manual_pis"], index=False)
-        combined_rbs.to_csv(paths_map["manual_rbs"], index=False)
-
-        set_paths(
-            pis_data=paths_map["manual_pis"],
-            rbs_data=paths_map["manual_rbs"],
-        )
-        set_synthetic_options(SyntheticOptions(n_samples=int(len(combined_seed)), sampling_method="sequential"))
-        state["manual_seed_preview"] = combined_seed.head(200)
         state["manual_rbs_preview"] = combined_rbs.head(200)
+        state["pending_manual_rbs"] = combined_rbs
         st.success(
             f"Saved consignment '{consignment_uid}' with {len(rows)} inspection units. "
-            f"Files stored in tmp/consignments with base name '{state['consignment_base_name']}' have been updated."
+            "Use the generation button below to write the RBS file to tmp."
         )
 
     if state.get("manual_consignments"):
@@ -450,9 +469,10 @@ with manual_tab:
             st.info("Create a seed dataset to preview and download the generated RBS file.")
 
 current_rbs = state["paths"].rbs_data
+pending_manual_rbs = state.get("pending_manual_rbs")
 
 st.text_input(
-    "Consignment file base name",
+    "Consignment input file base name",
     value=state["consignment_base_name"],
     key="consignment_base_name",
     help="Used to name PIS/RBS/synthetic files in tmp/consignments (e.g., <name>_uploaded_pis_data.csv).",
@@ -460,14 +480,17 @@ st.text_input(
 if st.button("Generate consignment files with this name", type="secondary", use_container_width=True):
     paths_map = _consignment_paths()
     base_name = st.session_state.get("consignment_base_name", "consignment") or "consignment"
-    if current_rbs is None:
-        st.warning("No RBS data available. Upload a calculator file first.")
+    if current_rbs is None and pending_manual_rbs is None:
+        st.warning("No RBS data available. Upload a calculator file or create consignments manually first.")
     else:
         try:
             dest_rbs = paths_map["uploaded_rbs"]
             dest_rbs.parent.mkdir(parents=True, exist_ok=True)
-            if Path(current_rbs).resolve() != dest_rbs.resolve():
-                shutil.copy(current_rbs, dest_rbs)
+            if pending_manual_rbs is not None:
+                pending_manual_rbs.to_csv(dest_rbs, index=False)
+            elif current_rbs is not None and Path(current_rbs).exists():
+                if Path(current_rbs).resolve() != dest_rbs.resolve():
+                    shutil.copy(current_rbs, dest_rbs)
             set_paths(rbs_data=dest_rbs)
             st.success(
                 f"Saved RBS file with base '{base_name}' to tmp/consignments."
@@ -491,6 +514,11 @@ with nav_cols[0]:
             if TMP_DIR.exists():
                 shutil.rmtree(TMP_DIR)
             TMP_DIR.mkdir(parents=True, exist_ok=True)
+            # Initialize a fresh copy of config.yml into tmp for downstream use
+            src_cfg = Path("data_input/config.yml")
+            if src_cfg.exists():
+                dst_cfg = TMP_DIR / "config.yml"
+                shutil.copy(src_cfg, dst_cfg)
             state["paths"] = create_default_paths()
             state["pis_data"] = None
             state["pis_preview"] = None

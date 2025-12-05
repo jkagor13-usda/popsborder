@@ -1,9 +1,13 @@
+from pathlib import Path
+
 import pandas as pd
+import altair as alt
 import streamlit as st
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
 from gui.slippage_ui import get_slippage_state, run_pipeline, set_engine_options
+from gui.slippage_pipeline import create_default_paths
 
 
 st.set_page_config(
@@ -16,6 +20,33 @@ init_state()
 state = get_slippage_state()
 render_sidebar_navigation()
 engine_options = state["engine_options"]
+run_error = state.get("run_error")
+paths = state["paths"]
+
+
+def _rbs_ready() -> tuple[bool, str]:
+    """Check that the RBS input exists and has key columns before running."""
+    # Use defaults if state is missing paths
+    default_paths = create_default_paths()
+    if paths.rbs_data is None and default_paths.rbs_data:
+        state["paths"] = paths.__class__(**{**paths.__dict__, "rbs_data": default_paths.rbs_data})
+    current_paths = state["paths"]
+    try:
+        if current_paths.rbs_data is None:
+            return False, "No RBS calculator file selected. Upload on Page 1."
+        rbs_path = Path(current_paths.rbs_data)
+        if not rbs_path.exists():
+            return False, f"RBS calculator file not found at {rbs_path}."
+        df = pd.read_csv(rbs_path, nrows=200)
+        required = {"TOTAL_SAMPLING_UNITS", "TOTAL_PLANT_QUANTITY"}
+        missing = required - set(df.columns)
+        if missing:
+            return False, f"RBS calculator file is missing required columns: {', '.join(sorted(missing))}"
+        if df[["TOTAL_SAMPLING_UNITS", "TOTAL_PLANT_QUANTITY"]].dropna().empty:
+            return False, "RBS calculator file has no non-empty sampling/plant quantity rows."
+        return True, ""
+    except Exception as exc:  # pylint: disable=broad-except
+        return False, f"Unable to validate RBS calculator file: {exc}"
 
 st.title("Page 5 - Run Simulation")
 st.caption("Execute the slippage pipeline and compare policies based on slippage metrics.")
@@ -46,14 +77,23 @@ with st.sidebar:
     )
 
     st.divider()
-    run_now = st.button("Run pipeline", use_container_width=True)
+    rbs_ok, rbs_msg = _rbs_ready()
+    if not rbs_ok:
+        st.warning(rbs_msg)
+    run_now = st.button("Run pipeline", use_container_width=True, disabled=not rbs_ok)
     if run_now:
         with st.spinner("Running slippage pipeline..."):
             try:
                 run_pipeline()
                 st.success("Pipeline finished.")
             except Exception as exc:  # pylint: disable=broad-except
-                st.error(f"Pipeline failed: {exc}")
+                st.error(f"Pipeline failed: {exc!r}")
+
+if run_error:
+    st.error(f"Last pipeline error: {run_error}")
+    st.caption(
+        "Verify that Page 1 has RBS data (or synthetic seed) and Page 2 has PIS action data uploaded before running."
+    )
 
 results_df = state.get("results")
 
@@ -61,7 +101,7 @@ if results_df is None or results_df.empty:
     st.info("Run the pipeline to generate scenario results.")
     st.stop()
 
-st.markdown("### Scenario summary")
+st.markdown("### Overall summary")
 summary = (
     results_df.groupby("name")[
         [
@@ -95,55 +135,29 @@ overall_slippage = (
     / max(1, summary["total_intercepted_contaminants"].sum() + summary["total_missed_contaminants"].sum())
 )
 kpi_cols[4].metric("Overall slippage rate", f"{100 * overall_slippage:.1f}%")
+st.markdown("### Slippage and detection by scenario")
 
 st.bar_chart(
     summary[["name", "total_intercepted_contaminants", "total_missed_contaminants"]].set_index("name"),
     use_container_width=True,
 )
 
-st.markdown("### Policy comparison")
-scenario_df = state["scenario_df"]
-scenario_meta_cols = ["inspection/sample_strategy", "inspection/compliance_level"]
-if not scenario_df.empty and "name" in scenario_df.columns:
-    available_meta_cols = ["name"] + [col for col in scenario_meta_cols if col in scenario_df.columns]
-    scenario_meta = scenario_df[available_meta_cols].drop_duplicates("name")
-else:
-    scenario_meta = pd.DataFrame(columns=["name"])
-enriched = results_df.merge(scenario_meta, on="name", how="left")
-
-if "inspection/sample_strategy" in enriched.columns and enriched["inspection/sample_strategy"].notna().any():
-    strategy_chart = (
-        enriched.groupby("inspection/sample_strategy")
-        .agg(
-            inspections=("num_inspections", "sum"),
-            missed=("total_missed_contaminants", "sum"),
-            intercepted=("total_intercepted_contaminants", "sum"),
-        )
-        .reset_index()
+rate_chart = (
+    alt.Chart(summary)
+    .transform_calculate(slippage_pct="1 - datum.detection_rate")
+    .mark_bar()
+    .encode(
+        x=alt.X("name:N", title="Scenario"),
+        y=alt.Y("slippage_pct:Q", title="Slippage rate"),
+        tooltip=[
+            alt.Tooltip("detection_rate:Q", format=".2%", title="Detection rate"),
+            alt.Tooltip("slippage_pct:Q", format=".2%", title="Slippage rate"),
+            alt.Tooltip("num_inspections:Q", title="Inspections"),
+        ],
+        color=alt.Color("slippage_pct:Q", scale=alt.Scale(scheme="reds")),
     )
-    strategy_chart["detection_rate"] = strategy_chart["intercepted"] / (
-        strategy_chart["intercepted"] + strategy_chart["missed"]
-    )
-    strategy_chart = strategy_chart.fillna(0)
-    st.write("Detection rate by inspection policy")
-    st.bar_chart(strategy_chart.set_index("inspection/sample_strategy")[["detection_rate"]], use_container_width=True)
-else:
-    st.info("Add inspection sample strategies on Page 3 to compare policies.")
-
-if "inspection/compliance_level" in enriched.columns and enriched["inspection/compliance_level"].notna().any():
-    compliance_chart = (
-        enriched.groupby("inspection/compliance_level")
-        .agg(
-            slippage=("total_missed_contaminants", "sum"),
-            inspections=("num_inspections", "sum"),
-        )
-        .reset_index()
-    )
-    compliance_chart = compliance_chart.fillna(0)
-    st.write("Total slippage by compliance type")
-    st.bar_chart(compliance_chart.set_index("inspection/compliance_level")[["slippage"]], use_container_width=True)
-else:
-    st.info("Assign compliance levels on Page 3 to view this comparison.")
+)
+st.altair_chart(rate_chart, use_container_width=True)
 
 st.markdown("### Slippage vs inspected units")
 scatter_source = summary[["name", "num_inspections", "slippage_rate"]].rename(
@@ -151,7 +165,7 @@ scatter_source = summary[["name", "num_inspections", "slippage_rate"]].rename(
 )
 st.scatter_chart(scatter_source, x="Inspected Units", y="Slippage Rate", size=None, color="name")
 
-st.markdown("### Detailed results")
+st.markdown("### Scenario Results Output")
 st.dataframe(results_df, use_container_width=True)
 st.download_button(
     "Download scenario results (CSV)",
@@ -160,17 +174,17 @@ st.download_button(
     use_container_width=True,
 )
 
-st.markdown("### Raw configuration columns")
-config_cols = [
-    "contamination/contamination_unit",
-    "contamination/contamination_rate/distribution",
-    "contamination/arrangement",
-    "inspection/sample_strategy",
-    "inspection/proportion/value",
-]
-existing_cols = [col for col in config_cols if col in scenario_df.columns]
-if existing_cols:
-    st.dataframe(scenario_df[existing_cols], use_container_width=True)
+st.markdown("### Raw configuration output")
+# config_cols = [
+#     "contamination/contamination_unit",
+#     "contamination/contamination_rate/distribution",
+#     "contamination/arrangement",
+#     "inspection/sample_strategy",
+#     "inspection/proportion/value",
+# ]
+# existing_cols = [col for col in config_cols if col in scenario_df.columns]
+# if existing_cols:
+#     st.dataframe(scenario_df[existing_cols], use_container_width=True)
 
 st.divider()
 nav_cols = st.columns(2)

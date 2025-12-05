@@ -162,9 +162,9 @@ else:
 st.divider()
 nav_cols = st.columns(2)
 with nav_cols[0]:
-    if st.button("Back to Page 4", type="primary", key="nav_back_page4"):
-        st.switch_page("pages/4_Inspection_Process.py")
+    if st.button("Back to Page 3", type="primary", key="nav_back_page3"):
+        st.switch_page("pages/3_Inspection_Process.py")
 with nav_cols[1]:
-    if st.button("Continue to Page 6", type="primary", key="nav_forward_page6"):
-        st.switch_page("pages/6_Run_Simulation.py")
+    if st.button("Continue to Page 5", type="primary", key="nav_forward_page5"):
+        st.switch_page("pages/5_Run_Simulation.py")
 
