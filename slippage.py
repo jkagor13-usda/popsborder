@@ -203,11 +203,4 @@ def main():
     print("Results saved to output/pis_contamination_scenario_results.csv")
 
 if __name__ == "__main__":
-    cli_args = parse_args()
-    main(
-        data_dir=cli_args.data_dir,
-        n_samples=cli_args.n_samples,
-        sampling_method=cli_args.sampling_method,
-        num_simulations=cli_args.num_simulations,
-        seed=cli_args.seed,
-    )
+    main()
