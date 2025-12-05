@@ -56,6 +56,8 @@ import random
 import types
 
 import numpy as np
+import pandas as pd
+import math
 
 from . import consignments
 from .consignments import get_consignment_generator
@@ -307,10 +309,10 @@ def simulation(
         avg_intercepted_contamination_rate = 0
         pct_contaminant_unreported_if_detection = 0
 
-
-    # Additional RBS metrics
+    ##############################
+    ### Additional rbs metrics ###
+    ##############################
     total_slipped_units = 0
-    total_plants = 0
     total_slipped_sample_units = 0
     avg_slipped_units_per_consignment = 0
     avg_slipped_sample_units_per_consignment= 0
@@ -426,8 +428,22 @@ def run_simulation(
         total_unit_slippage_rate=0,
         total_slipped_sample_units=0,
         avg_slipped_units_per_consignment=0,
-        avg_slipped_sample_units_per_consignment=0
+        avg_slipped_sample_units_per_consignment=0,
+        min_slipped_units=0,
+        max_slipped_units=0,
+        percentile_90_slipped_units=0,
+        min_max_spread_slipped_units=0,
+        median_slipped_units=0,
+        std_slipped_units=0,
+        lower_95_ci_total_slipped_units=0,
+        upper_95_ci_total_slipped_units=0,
     )
+
+    ##############################
+    ### Additional rbs metrics ###
+    ##############################
+    # Define a dictionary to store each replication output
+    sim_rep_outputs = {}
 
     for i in range(num_simulations):
         result = simulation(
@@ -440,6 +456,11 @@ def run_simulation(
             pretty=pretty,
             detailed=detailed,
         )
+
+        ##############################
+        ### Additional rbs metrics ###
+        ##############################
+
         if detailed and i == 0:
             # details are from first run of simulation only
             details = result.details
@@ -477,13 +498,25 @@ def run_simulation(
         totals.total_intercepted_contaminants += result.total_intercepted_contaminants
         totals.total_missed_contaminants += result.total_missed_contaminants
 
-        # Additional rbs metrics
+        ##############################
+        ### Additional rbs metrics ###
+        ##############################
         totals.total_slipped_units += result.total_slipped_units
         totals.total_unit_slippage_rate += (result.total_slipped_units/result.total_num_plants)
         totals.total_slipped_sample_units += result.total_slipped_sample_units
         totals.avg_slipped_units_per_consignment += result.avg_slipped_units_per_consignment
         totals.avg_slipped_sample_units_per_consignment += result.avg_slipped_sample_units_per_consignment
 
+        sim_rep_outputs[f'Rep_{i}'] = {}
+        sim_rep_outputs[f'Rep_{i}']['total_slipped_units'] = result.total_slipped_units
+        sim_rep_outputs[f'Rep_{i}']['total_unit_slippage_rate'] = (result.total_slipped_units/result.total_num_plants)
+        sim_rep_outputs[f'Rep_{i}']['total_slipped_sample_units'] = result.total_slipped_sample_units
+        sim_rep_outputs[f'Rep_{i}']['avg_slipped_units_per_consignment'] = result.avg_slipped_units_per_consignment
+        sim_rep_outputs[f'Rep_{i}']['avg_slipped_sample_units_per_consignment'] = result.avg_slipped_sample_units_per_consignment
+
+
+    # Convert the sim replication metric storage to a dataframe for analysis
+    df_rep_outputs = pd.DataFrame.from_dict(sim_rep_outputs, orient='index')
 
     # make these relative (reusing the variables)
     totals.missing /= float(num_simulations)
@@ -523,12 +556,35 @@ def run_simulation(
     totals.total_intercepted_contaminants /= float(num_simulations)
     totals.total_missed_contaminants /= float(num_simulations)
 
-    # Additional rbs metrics
+    ##############################
+    ### Additional rbs metrics ###
+    ##############################
     totals.total_slipped_units /= float(num_simulations)
     totals.total_unit_slippage_rate /= float(num_simulations)
     totals.total_slipped_sample_units /= float(num_simulations)
     totals.avg_slipped_units_per_consignment /= float(num_simulations)
     totals.avg_slipped_sample_units_per_consignment /= float(num_simulations)
+
+    min_slipped_units = 0,
+    max_slipped_units = 0,
+    percentile_90_slipped_units = 0,
+    min_max_spread_slipped_units = 0,
+    median_slipped_units = 0,
+    std_slipped_units = 0,
+    lower_95_ci_avg = 0,
+    upper_95_ci_avg = 0,
+
+    totals.max_slipped_units = df_rep_outputs['total_slipped_units'].min()
+    totals.max_slipped_units = df_rep_outputs['total_slipped_units'].max()
+    totals.percentile_90_slipped_units = df_rep_outputs['total_slipped_units'].quantile(0.9)
+    totals.min_max_spread_slipped_units = df_rep_outputs['total_slipped_units'].max() - df_rep_outputs['total_slipped_units'].min()
+
+    totals.median_slipped_units = df_rep_outputs['total_slipped_units'].median()
+    totals.std_slipped_units = df_rep_outputs['total_slipped_units'].std()
+
+    se = totals.std_slipped_units / math.sqrt(float(num_simulations))  # standard error
+    totals.lower_95_ci_total_slipped_units  = totals.total_slipped_units - 1.96 * se
+    totals.upper_95_ci_total_slipped_units = totals.total_slipped_units + 1.96 * se
 
     if detailed:
         # details are items and inspected item from first simulation run only
