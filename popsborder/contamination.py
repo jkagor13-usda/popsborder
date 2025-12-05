@@ -166,6 +166,7 @@ def add_contaminant_beta_binomial(config):
         N_ij = np.broadcast_to(N_bar, (I, J)).astype(int)
 
     X = rng.binomial(N_ij, p_ij)
+    if len(X)>0: X = X[0]
     return X
 
 

@@ -70,6 +70,9 @@ Modified Functions:
     * Added backward compatibility for within_inspection_unit_proportion
     * Enhanced detailed tracking with sample_unit_in_inspection_unit_to_sample_unit_index()
 
+- get_detection_and_confidence():
+    * Added ability to process beyond just origin and PM Type
+
 Backward Compatibility:
 ----------------------
 - Added aliases: count_contaminated_boxes() -> count_contaminated_inspection_units()
@@ -86,6 +89,10 @@ import types
 import numpy as np
 
 from .inputs import get_validated_effectiveness, load_compliance_lookup_csv
+
+from slippage_model_utils.references import country_of_origin_names, pm_type_names
+import re
+from collections import defaultdict
 
 
 def inspect_first(consignment):
@@ -254,11 +261,7 @@ def sample_rbs(config, consignment, compliance_table_dict):
     unit = config["inspection"]["unit"]
     num_sample_units = consignment.num_sample_units
     num_inspection_units = consignment.num_inspection_units
-    origin_country = consignment.origin
-    pm_type = consignment.material_type
-    detection_level, confidence_level = get_detection_and_confidence(
-        origin_country, pm_type, compliance_table_dict
-    )
+    detection_level, confidence_level = get_detection_and_confidence(consignment, compliance_table_dict)
     if unit in ["sample_unit", "sample_units", "item", "items"]:
         n_units_to_inspect = compute_hypergeometric(
             detection_level, confidence_level, num_sample_units
@@ -417,6 +420,40 @@ def select_random_indexes(unit, consignment, n_units_to_inspect):
     return indexes_to_inspect
 
 
+def select_random_indexes_rbs(unit, consignment, n_units_to_inspect):
+    """Select units (indexes) from consignment based on sample size and
+    random selection strategy.
+
+    :param unit: Unit to be used for inspection (inspection_unit or sample_unit)
+    :param consignment: Consignment to be inspected
+    :param n_units_to_inspect: Number of units to inspect defined in sample functions.
+    """
+    indexes_to_inspect = []
+    if unit in ["sample_unit", "sample_units", "item", "items"]:
+        current_idx = 0
+        inspection_unit_counter = 0
+        inspection_units_to_inspect = {}
+        for inspection_unit in consignment.inspection_units:
+            indexes_to_inspect_temp = random.sample(
+                list(range(len(inspection_unit.sample_unit_objects))), n_units_to_inspect
+            )
+            inspection_units_to_inspect[inspection_unit_counter] = indexes_to_inspect_temp
+            print(f'   Inspecting {len(inspection_unit.sample_unit_objects)} sampling units of '
+                  f'inspection unit {inspection_unit_counter}.  Inspecting the following sampling unit indices.')
+            print(f'      {indexes_to_inspect_temp}\n')
+            indexes_to_inspect_temp = [x+ current_idx for x in indexes_to_inspect_temp]
+            current_idx += len(inspection_unit.sample_unit_objects)
+            indexes_to_inspect = indexes_to_inspect + indexes_to_inspect_temp
+            inspection_unit_counter += 1
+            print('')
+    else:
+        raise RuntimeError(f"Inspection process unit specified in config is: {unit}.  "
+                           f"For Sampling Strategy = RBS, only supports that parameter being = sampling_units")
+    indexes_to_inspect.sort()
+    return indexes_to_inspect, inspection_units_to_inspect
+
+
+
 def select_cluster_indexes(config, consignment, n_units_to_inspect):
     """Select units (indexes) from consignment based on sample size and
     cluster selection strategy.
@@ -474,16 +511,28 @@ def select_units_to_inspect(config, consignment, n_units_to_inspect):
     """
     unit = config["inspection"]["unit"]
     selection_strategy = config["inspection"]["selection_strategy"]
+    sample_strategy = config["inspection"]["sample_strategy"]
 
-    if selection_strategy == "random":
-        return select_random_indexes(unit, consignment, n_units_to_inspect)
-    elif selection_strategy == "cluster":
-        return select_cluster_indexes(config, consignment, n_units_to_inspect)
-    elif selection_strategy == "convenience":
-        # Convenience sampling - just select the first n units
-        return list(range(min(n_units_to_inspect, consignment.num_sample_units if unit in ["sample_unit", "sample_units", "item", "items"] else consignment.num_inspection_units)))
+    if sample_strategy == "rbs":
+        if selection_strategy == "random":
+            return select_random_indexes_rbs(unit, consignment, n_units_to_inspect)
+        elif selection_strategy == "cluster":
+            return select_cluster_indexes(config, consignment, n_units_to_inspect)
+        elif selection_strategy == "convenience":
+            # Convenience sampling - just select the first n units
+            return list(range(min(n_units_to_inspect, consignment.num_sample_units if unit in ["sample_unit", "sample_units", "item", "items"] else consignment.num_inspection_units)))
+        else:
+            raise RuntimeError(f"Unknown selection strategy: {selection_strategy}")
     else:
-        raise RuntimeError(f"Unknown selection strategy: {selection_strategy}")
+        if selection_strategy == "random":
+            return select_random_indexes(unit, consignment, n_units_to_inspect)
+        elif selection_strategy == "cluster":
+            return select_cluster_indexes(config, consignment, n_units_to_inspect)
+        elif selection_strategy == "convenience":
+            # Convenience sampling - just select the first n units
+            return list(range(min(n_units_to_inspect, consignment.num_sample_units if unit in ["sample_unit", "sample_units", "item", "items"] else consignment.num_inspection_units)))
+        else:
+            raise RuntimeError(f"Unknown selection strategy: {selection_strategy}")
 
 
 def inspect_sample_unit(sample_unit, effectiveness):
@@ -508,11 +557,17 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
 
     unit = config["inspection"]["unit"]
     selection_strategy = config["inspection"]["selection_strategy"]
+    sample_strategy = config["inspection"]["sample_strategy"]
     sample_units_per_inspection_unit = consignment.sample_units_per_inspection_unit
 
-    indexes_to_inspect = select_units_to_inspect(
-        config, consignment, n_units_to_inspect
-    )
+    if sample_strategy == "rbs":
+        indexes_to_inspect, inspection_units_to_inspect = select_units_to_inspect(
+            config, consignment, n_units_to_inspect
+        )
+    else:
+        indexes_to_inspect = select_units_to_inspect(
+            config, consignment, n_units_to_inspect
+        )
 
     effectiveness = get_validated_effectiveness(config)
 
@@ -528,127 +583,199 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
         sample_units_inspected_detection=0,
         contaminated_sample_units_completion=0,
         contaminated_sample_units_detection=0,
+        number_sample_units_missed=0,
+        number_units_missed=0
     )
 
-    if unit in ["sample_unit", "sample_units", "item", "items"]:
-        detected = False
-        if selection_strategy == "cluster":
-            # Compute num sample_units to inspect per inspection_unit to achieve sample size
-            # based on within inspection_unit proportion.
-            inspect_per_inspection_unit = (
-                compute_n_clusters_to_inspect(config, consignment, n_units_to_inspect)
-            )[1]
-            ret.inspection_units_opened_completion = len(indexes_to_inspect)
-            sample_units_inspected = 0
-            # Loop through selected inspection_unit indexes (random or interval selection)
+    if sample_strategy == "rbs":
+        if unit in ["sample_unit", "sample_units", "item", "items"]:
+            detected = False
+            if selection_strategy == "cluster":
+                raise RuntimeError(f"Selection strategy = '{selection_strategy}' is not supported for"
+                                   f" sampling_strategy = {sample_strategy}")
+            else:  # All other sample_unit selection strategies inspected the same way
+                # Empty lists to hold opened inspection_units indexes, will be duplicates bc inspection_unit index
+                # computed per inspected sample_unit
+                inspection_units_opened_completion = []
+                inspection_units_opened_detection = []
+                # Loop through sample_units in sorted index list (sorted in index functions)
+                # Inspection progresses through indexes in ascending order
+                for sample_unit_index in indexes_to_inspect:
+                    if detailed:
+                        ret.inspected_sample_unit_indexes.append(sample_unit_index)
+                    ret.sample_units_inspected_completion += 1
+                    # Compute inspection_unit index number
+                    inspection_units_opened_completion.append(
+                        math.floor(sample_unit_index / sample_units_per_inspection_unit))
+                    if not detected:
+                        ret.sample_units_inspected_detection += 1
+                        # Compute inspection_unit index number
+                        inspection_units_opened_detection.append(
+                            math.floor(sample_unit_index / sample_units_per_inspection_unit)
+                        )
+                    if inspect_sample_unit(consignment.sample_units[sample_unit_index], effectiveness):
+                        # Count every contaminated sample_unit in sample
+                        ret.contaminated_sample_units_completion += 1
+                        if not detected:
+                            ret.contaminated_sample_units_detection += 1
+                            detected = True
+                    # Should be only 1 contaminated sample_unit if to detection
+                    if detected:
+                        assert ret.contaminated_sample_units_detection == 1
+                # Number of inspection_units opened is number of unique inspection_units indexes in inspection_units
+                # opened lists
+                ret.inspection_units_opened_completion = len(set(inspection_units_opened_completion))
+                ret.inspection_units_opened_detection = len(set(inspection_units_opened_detection))
+
+                inspection_unit_counter = 0
+                for inspect_unit in consignment.inspection_units:
+                    contaminant_found =False
+                    inspection_unit_contaminated = False
+                    sample_unit_counter = 0
+                    total_contaminated_sample_units = 0
+                    total_contaminated_units = 0
+                    for samp_unit in inspect_unit.sample_unit_objects:
+                        if sum(samp_unit.plants) > 0:
+                            inspection_unit_contaminated = True
+                            total_contaminated_sample_units+=1
+                            total_contaminated_units+=sum(samp_unit.plants)
+                            if sample_unit_counter in inspection_units_to_inspect[inspection_unit_counter]:
+                                contaminant_found = True
+                        sample_unit_counter += 1
+                    if inspection_unit_contaminated and not contaminant_found:
+                        ret.number_sample_units_missed += total_contaminated_sample_units
+                        ret.number_units_missed += total_contaminated_units
+                    inspection_unit_counter += 1
+
+        elif unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
+            raise RuntimeError(f"Selection unit = '{unit}' within the inspect method of the"
+                               f" inspections.py module is not supported for"
+                               f" sampling_strategy = {sample_strategy}")
+    else:
+        if unit in ["sample_unit", "sample_units", "item", "items"]:
+            detected = False
+            if selection_strategy == "cluster":
+                # Compute num sample_units to inspect per inspection_unit to achieve sample size
+                # based on within inspection_unit proportion.
+                inspect_per_inspection_unit = (
+                    compute_n_clusters_to_inspect(config, consignment, n_units_to_inspect)
+                )[1]
+                ret.inspection_units_opened_completion = len(indexes_to_inspect)
+                sample_units_inspected = 0
+                # Loop through selected inspection_unit indexes (random or interval selection)
+                for inspection_unit_index in indexes_to_inspect:
+                    if not detected:
+                        ret.inspection_units_opened_detection += 1
+                    # Number of sample_units to inspect is based on either config within inspection_unit
+                    # proportion or required number of sample_units to inspect per inspection_unit
+                    # to achieve sample size.
+                    sample_remainder = n_units_to_inspect - sample_units_inspected
+                    # If sample_remainder is less than inspect_per_inspection_unit, set inspect_per_inspection_unit
+                    # to sample_remainder to avoid inspecting more sample_units than computed
+                    # sample size.
+                    if sample_remainder < inspect_per_inspection_unit:
+                        inspect_per_inspection_unit = sample_remainder
+                    # In each inspection_unit, loop through first n sample_units (n = inspect_per_inspection_unit)
+                    for sample_unit_in_inspection_unit_index, sample_unit in enumerate(
+                            (consignment.inspection_units[inspection_unit_index]).sample_units[
+                                0:inspect_per_inspection_unit]
+                    ):
+                        if detailed:
+                            sample_unit_index = consignment.sample_unit_in_inspection_unit_to_sample_unit_index(
+                                inspection_unit_index, sample_unit_in_inspection_unit_index
+                            )
+                            ret.inspected_sample_unit_indexes.append(sample_unit_index)
+                        ret.sample_units_inspected_completion += 1
+                        if not detected:
+                            ret.sample_units_inspected_detection += 1
+                        if inspect_sample_unit(sample_unit, effectiveness):
+                            # Count all contaminated sample_units in sample, regardless of
+                            # detected variable
+                            ret.contaminated_sample_units_completion += 1
+                            if not detected:
+                                # Count contaminated sample_units in inspection_unit if not yet detected
+                                ret.contaminated_sample_units_detection += 1
+                    if ret.contaminated_sample_units_detection > 0:
+                        # Update detected variable if contaminated sample_units found in inspection_unit
+                        detected = True
+                    sample_units_inspected += inspect_per_inspection_unit
+                # assert (
+                #     ret.sample_units_inspected_completion == n_units_to_inspect
+                # ), """Check if number of sample_units is evenly divisible by sample_units per inspection_unit.
+                # Partial inspection_units not supported when using cluster selection."""
+            else:  # All other sample_unit selection strategies inspected the same way
+                # Empty lists to hold opened inspection_units indexes, will be duplicates bc inspection_unit index
+                # computed per inspected sample_unit
+                inspection_units_opened_completion = []
+                inspection_units_opened_detection = []
+                # Loop through sample_units in sorted index list (sorted in index functions)
+                # Inspection progresses through indexes in ascending order
+                for sample_unit_index in indexes_to_inspect:
+                    if detailed:
+                        ret.inspected_sample_unit_indexes.append(sample_unit_index)
+                    ret.sample_units_inspected_completion += 1
+                    # Compute inspection_unit index number
+                    inspection_units_opened_completion.append(
+                        math.floor(sample_unit_index / sample_units_per_inspection_unit))
+                    if not detected:
+                        ret.sample_units_inspected_detection += 1
+                        # Compute inspection_unit index number
+                        inspection_units_opened_detection.append(
+                            math.floor(sample_unit_index / sample_units_per_inspection_unit)
+                        )
+                    if inspect_sample_unit(consignment.sample_units[sample_unit_index], effectiveness):
+                        # Count every contaminated sample_unit in sample
+                        ret.contaminated_sample_units_completion += 1
+                        if not detected:
+                            ret.contaminated_sample_units_detection += 1
+                            detected = True
+                    # Should be only 1 contaminated sample_unit if to detection
+                    if detected:
+                        assert ret.contaminated_sample_units_detection == 1
+                # Number of inspection_units opened is number of unique inspection_units indexes in inspection_units
+                # opened lists
+                ret.inspection_units_opened_completion = len(set(inspection_units_opened_completion))
+                ret.inspection_units_opened_detection = len(set(inspection_units_opened_detection))
+        elif unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
+            ret.inspected_box_indexes = indexes_to_inspect
+            # Partial inspection_unit inspections allowed to reduce number of sample_units inspected if desired
+            # Handle backward compatibility for within inspection unit proportion
+            within_inspection_unit_proportion = config["inspection"].get("within_inspection_unit_proportion",
+                                                                         config["inspection"].get(
+                                                                             "within_box_proportion", 1.0))
+            inspect_per_inspection_unit = int(
+                math.ceil(within_inspection_unit_proportion * sample_units_per_inspection_unit))
+            detected = False
+            ret.inspection_units_opened_completion = n_units_to_inspect
+            ret.sample_units_inspected_completion = n_units_to_inspect * inspect_per_inspection_unit
             for inspection_unit_index in indexes_to_inspect:
                 if not detected:
                     ret.inspection_units_opened_detection += 1
-                # Number of sample_units to inspect is based on either config within inspection_unit
-                # proportion or required number of sample_units to inspect per inspection_unit
-                # to achieve sample size.
-                sample_remainder = n_units_to_inspect - sample_units_inspected
-                # If sample_remainder is less than inspect_per_inspection_unit, set inspect_per_inspection_unit
-                # to sample_remainder to avoid inspecting more sample_units than computed
-                # sample size.
-                if sample_remainder < inspect_per_inspection_unit:
-                    inspect_per_inspection_unit = sample_remainder
                 # In each inspection_unit, loop through first n sample_units (n = inspect_per_inspection_unit)
                 for sample_unit_in_inspection_unit_index, sample_unit in enumerate(
-                    (consignment.inspection_units[inspection_unit_index]).sample_units[0:inspect_per_inspection_unit]
+                        (consignment.inspection_units[inspection_unit_index]).sample_units[
+                            0:inspect_per_inspection_unit]
                 ):
                     if detailed:
                         sample_unit_index = consignment.sample_unit_in_inspection_unit_to_sample_unit_index(
                             inspection_unit_index, sample_unit_in_inspection_unit_index
                         )
                         ret.inspected_sample_unit_indexes.append(sample_unit_index)
-                    ret.sample_units_inspected_completion += 1
                     if not detected:
                         ret.sample_units_inspected_detection += 1
                     if inspect_sample_unit(sample_unit, effectiveness):
-                        # Count all contaminated sample_units in sample, regardless of
-                        # detected variable
+                        # Count every contaminated sample_unit in sample
                         ret.contaminated_sample_units_completion += 1
+                        # If first contaminated inspection_unit inspected,
+                        # count contaminated sample_units in inspection_unit
                         if not detected:
-                            # Count contaminated sample_units in inspection_unit if not yet detected
                             ret.contaminated_sample_units_detection += 1
+                # If inspection_unit contained contaminated sample_units, changed detected variable
                 if ret.contaminated_sample_units_detection > 0:
-                    # Update detected variable if contaminated sample_units found in inspection_unit
                     detected = True
-                sample_units_inspected += inspect_per_inspection_unit
-            # assert (
-            #     ret.sample_units_inspected_completion == n_units_to_inspect
-            # ), """Check if number of sample_units is evenly divisible by sample_units per inspection_unit.
-            # Partial inspection_units not supported when using cluster selection."""
-        else:  # All other sample_unit selection strategies inspected the same way
-            # Empty lists to hold opened inspection_units indexes, will be duplicates bc inspection_unit index
-            # computed per inspected sample_unit
-            inspection_units_opened_completion = []
-            inspection_units_opened_detection = []
-            # Loop through sample_units in sorted index list (sorted in index functions)
-            # Inspection progresses through indexes in ascending order
-            for sample_unit_index in indexes_to_inspect:
-                if detailed:
-                    ret.inspected_sample_unit_indexes.append(sample_unit_index)
-                ret.sample_units_inspected_completion += 1
-                # Compute inspection_unit index number
-                inspection_units_opened_completion.append(math.floor(sample_unit_index / sample_units_per_inspection_unit))
-                if not detected:
-                    ret.sample_units_inspected_detection += 1
-                    # Compute inspection_unit index number
-                    inspection_units_opened_detection.append(
-                        math.floor(sample_unit_index / sample_units_per_inspection_unit)
-                    )
-                if inspect_sample_unit(consignment.sample_units[sample_unit_index], effectiveness):
-                    # Count every contaminated sample_unit in sample
-                    ret.contaminated_sample_units_completion += 1
-                    if not detected:
-                        ret.contaminated_sample_units_detection += 1
-                        detected = True
-                # Should be only 1 contaminated sample_unit if to detection
-                if detected:
-                    assert ret.contaminated_sample_units_detection == 1
-            # Number of inspection_units opened is number of unique inspection_units indexes in inspection_units
-            # opened lists
-            ret.inspection_units_opened_completion = len(set(inspection_units_opened_completion))
-            ret.inspection_units_opened_detection = len(set(inspection_units_opened_detection))
-    elif unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
-        ret.inspected_box_indexes = indexes_to_inspect
-        # Partial inspection_unit inspections allowed to reduce number of sample_units inspected if desired
-        # Handle backward compatibility for within inspection unit proportion
-        within_inspection_unit_proportion = config["inspection"].get("within_inspection_unit_proportion",
-                                                                       config["inspection"].get("within_box_proportion", 1.0))
-        inspect_per_inspection_unit = int(math.ceil(within_inspection_unit_proportion * sample_units_per_inspection_unit))
-        detected = False
-        ret.inspection_units_opened_completion = n_units_to_inspect
-        ret.sample_units_inspected_completion = n_units_to_inspect * inspect_per_inspection_unit
-        for inspection_unit_index in indexes_to_inspect:
-            if not detected:
-                ret.inspection_units_opened_detection += 1
-            # In each inspection_unit, loop through first n sample_units (n = inspect_per_inspection_unit)
-            for sample_unit_in_inspection_unit_index, sample_unit in enumerate(
-                (consignment.inspection_units[inspection_unit_index]).sample_units[0:inspect_per_inspection_unit]
-            ):
-                if detailed:
-                    sample_unit_index = consignment.sample_unit_in_inspection_unit_to_sample_unit_index(
-                        inspection_unit_index, sample_unit_in_inspection_unit_index
-                    )
-                    ret.inspected_sample_unit_indexes.append(sample_unit_index)
-                if not detected:
-                    ret.sample_units_inspected_detection += 1
-                if inspect_sample_unit(sample_unit, effectiveness):
-                    # Count every contaminated sample_unit in sample
-                    ret.contaminated_sample_units_completion += 1
-                    # If first contaminated inspection_unit inspected,
-                    # count contaminated sample_units in inspection_unit
-                    if not detected:
-                        ret.contaminated_sample_units_detection += 1
-            # If inspection_unit contained contaminated sample_units, changed detected variable
-            if ret.contaminated_sample_units_detection > 0:
-                detected = True
-                ret.inspected_box_result.append(1)
-            else:
-                ret.inspected_box_result.append(0)
+                    ret.inspected_box_result.append(1)
+                else:
+                    ret.inspected_box_result.append(0)
 
     ret.consignment_checked_ok = ret.contaminated_sample_units_completion == 0
     return ret
@@ -706,21 +833,49 @@ def consignment_contamination_rate(consignment):
     return count / consignment.num_sample_units
 
 
-def get_detection_and_confidence(
-        origin_country, pm_type, compliance_table_dict,
-        default_detection=0.01, default_confidence=0.8
+def get_detection_and_confidence(consignment,
+                                 compliance_table_dict,
+                                 default_detection=0.01,
+                                 default_confidence=0.8
     ):
     """
-    Fetch detection and confidence levels for (origin_country, pm_type).
+    Fetch detection and confidence levels for specified rbs variables.
     If not found, defaults to low compliance values.
     Returns a tuple: (detection_level, confidence_level)
     """
-    key = (origin_country, pm_type)
-    result = compliance_table_dict.get(key)
+    rbs_variables = compliance_table_dict['rbs_variables']
+    #key = (origin_country, pm_type)
+    if len(rbs_variables) == 0:
+        # If no variables detected in the compliance table, default to low compliance
+        print(f"\nWARNING: No compliance variables found in submitted compliance table. Using low compliance defaults:")
+        print(f"      Default Detection Level: {default_detection}")
+        print(f"      Default Confidence Level: {default_confidence}")
+        return (default_detection, default_confidence)
+    else:
+        values = {attr: consignment.get(attr) for attr in rbs_variables}
+        if any(v is None for v in values.values()):
+            # If not all variable specified in compliance table not detected in consignment, then default to low compliance
+            none_attrs = [k for k, v in values.items() if v is None]
+            print(
+                f"\nWARNING: Some compliance tables variables not found as attributes of the consignment."
+                f" Namely, {none_attrs}."
+                f" Using low compliance defaults:")
+            print(f"      Default Detection Level: {default_detection}")
+            print(f"      Default Confidence Level: {default_confidence}")
+            return (default_detection, default_confidence)
+        else:
+            # If variables found in consignment, attempt to look up in table
+            key = tuple(values[attr] for attr in rbs_variables)
+            result = compliance_table_dict.get(key)
     if result is not None:
+        # If a reference found, then return the associated detection and confidence levels
         return result
     else:
-        print(f"WARNING: No compliance found for {key}. Using low compliance defaults.")
+        # If no reference found, print warning and use low compliance defaults.
+        print(
+            f"\nWARNING: The variables {key} are not found in compliance table. Using low compliance defaults:")
+        print(f"      Default Detection Level: {default_detection}")
+        print(f"      Default Confidence Level: {default_confidence}")
         return (default_detection, default_confidence)
 
 
@@ -748,3 +903,76 @@ def count_contaminated_boxes(consignment):
 def count_contaminated_items(consignment):
     """Return number of contaminated items (backward compatibility)"""
     return count_contaminated_sample_units(consignment)
+
+def _norm(s: str) -> str:
+    """Normalize for matching: lowercase, strip non-alphanum."""
+    return re.sub(r'[^a-z0-9]+', '', s.lower())
+
+def normalize_rbs_variables_against_consignment(
+    rbs_variables,
+    consignment,
+):
+    """
+    Map free-form field names in rbs_variables to actual attributes on a Consignment
+    instance, using case-insensitive aliasing. Keeps unmapped items unchanged.
+
+    Returns:
+        updated_vars: list[str]  # rbs_variables with matched items replaced by canonical attrs
+        mapping: dict[str, str]  # original string -> canonical attribute
+        unmapped: list[str]      # originals that didn't match anything
+    """
+
+    # 1) Canonical attribute keys from the instance (thanks to UserDict)
+    canonical_attrs = set(consignment.keys())
+
+    # 2) Auto-generate basic aliases from the canonical names
+    #    (e.g., "material_type" -> "material type", "Material Type", etc.)
+    auto_aliases = defaultdict(set)
+    for attr in canonical_attrs:
+        spaced = attr.replace('_', ' ')
+        auto_aliases[attr].update({
+            attr,
+            spaced,
+            spaced.title(),          # "Material Type"
+            attr.title(),            # "Material_Type" (rare, but harmless)
+        })
+
+    # Add any pre-specified aliases (see reference.py file in slippage_model_utils)
+    if 'origin' in canonical_attrs:
+        auto_aliases['origin'].update(country_of_origin_names)
+    if 'material_type' in canonical_attrs:
+        auto_aliases['material_type'].update(pm_type_names)
+
+    # Build a lookup: normalized alias -> canonical attribute
+    alias_index = {}
+    for attr, names in auto_aliases.items():
+        for name in names:
+            alias_index[_norm(name)] = attr
+
+    # Walk the input list, map to canonical attributes when possible
+    updated_vars = []
+    mapping = {}
+    unmapped = []
+
+    for original in rbs_variables:
+        key = _norm(original)
+        if key in alias_index:
+            canonical = alias_index[key]
+            mapping[original] = canonical
+            updated_vars.append(canonical)
+        else:
+            # Heuristic fallback: try to match substrings like "origin" inside long names
+            # (Keeps false positives low by requiring the canonical word to appear)
+            matched = None
+            for attr in canonical_attrs:
+                if re.search(rf'\b{re.escape(attr.replace("_", " "))}\b', original, flags=re.I):
+                    matched = attr
+                    break
+            if matched:
+                mapping[original] = matched
+                updated_vars.append(matched)
+            else:
+                unmapped.append(original)
+                updated_vars.append(original)
+
+    return updated_vars, mapping, unmapped
