@@ -1,5 +1,9 @@
-import sys
+from __future__ import annotations
+
+import argparse
 from pathlib import Path
+from typing import Optional
+
 import pandas as pd
 
 # Import functions from popsborder

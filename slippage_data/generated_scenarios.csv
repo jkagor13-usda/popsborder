@@ -1,0 +1,4 @@
+name,consignment name,inspection name,consignment/generation_method,consignment/input_file/file_type,contamination/contamination_unit,contamination/contamination_rate/distribution,contamination/contamination_rate/value,contamination/arrangement,consignment/units_in_shipment,consignment/items_per_unit,inspection/unit,inspection/min_boxes,inspection/sample_strategy,inspection/proportion/value,inspection/hypergeometric/detection_level,inspection/selection_strategy,inspection/within_box_proportion,inspection/compliance_level
+custom-scenario-1,Generated Consignment 1,Generated Inspection,RBS,RBS,plant,beta-binomial,0.05,random,1200,100,boxes,0,rbs,0.05,0.01,random,1.0,Low
+custom-scenario-2,Generated Consignment 2,Generated Inspection,RBS,RBS,plant,beta-binomial,0.05,random,1200,100,boxes,0,rbs,0.05,0.01,random,1.0,Low
+custom-scenario-3,Generated Consignment 3,Generated Inspection,RBS,RBS,plant,beta-binomial,0.05,random,1200,100,boxes,0,rbs,0.05,0.01,random,1.0,Low

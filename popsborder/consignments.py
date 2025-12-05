@@ -134,7 +134,7 @@ class InspectionUnit:
         self.sample_units = sample_units
         self.sample_unit_objects = []  # For hierarchical structure - list of SampleUnit objects
         self.material_type = material_type
-
+ 
     @property
     def num_sample_units(self):
         """Number of sample_units in the InspectionUnit"""

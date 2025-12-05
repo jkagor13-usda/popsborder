@@ -172,7 +172,8 @@ def add_contaminant_beta_binomial(config):
 
 
 def contaminate_units_by_group(contaminated_plants, plant_indices):
-    # Step 1: group tuples by 'a' for fast lookup
+    # Step 1: normalize and group tuples by 'a' for fast lookup
+    contaminated_plants = np.asarray(contaminated_plants).ravel()
     by_inspection_unit = defaultdict(list)
     for t in plant_indices:
         a, b, c = t
@@ -182,6 +183,7 @@ def contaminate_units_by_group(contaminated_plants, plant_indices):
     sampled = []
     rng = np.random.default_rng(123)
     for inspect_unit, count in enumerate(contaminated_plants):
+        count = int(count)
         if count > 0:
             group = by_inspection_unit[inspect_unit]
             if len(group) == 0:
@@ -410,7 +412,7 @@ def add_contaminant_uniform_random(config, consignment):
         if config["contamination_rate"]['distribution'] == 'beta-binomial':
             config["contamination_rate"]['beta_binomial_parameters']['N_bar']=calc_N_bar(consignment)
             config["contamination_rate"]['beta_binomial_parameters']['J']=len(consignment.inspection_units)
-            contaminated_plants = add_contaminant_beta_binomial(config["contamination_rate"])
+            contaminated_plants = np.asarray(add_contaminant_beta_binomial(config["contamination_rate"]), dtype=int).ravel()
             if np.all(contaminated_plants == 0):
                 return
             # If there are contaminats generate across groups (e.g., inspection units),
@@ -437,9 +439,10 @@ def add_contaminant_uniform_random(config, consignment):
             (sample_unit_object.plants == 1).sum() for inspection_unit in consignment.inspection_units for sample_unit_object in inspection_unit.sample_unit_objects
         )
         if config["contamination_rate"]['distribution'] == 'beta-binomial':
-            assert total_contaminated == sum(contaminated_plants)
+            expected = int(np.sum(contaminated_plants))
         else:
-            assert total_contaminated == contaminated_plants
+            expected = int(contaminated_plants)
+        assert total_contaminated == expected
     else:
         raise RuntimeError(f"Unknown contamination unit: {contamination_unit}")
 

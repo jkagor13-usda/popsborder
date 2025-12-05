@@ -87,8 +87,20 @@ class SyntheticConsignmentDataGenerator:
         """
         try:
             df = pd.read_csv(input_file)
-            df = df.dropna()
-            print(f"Loaded {len(df)} records from {input_file}")
+            # Keep any row that has at least one value so we don't throw everything away.
+            df = df.dropna(how="all")
+            if df.empty:
+                raise ValueError("Input data has no rows after removing empty records.")
+            # Fill missing values to avoid numpy.choice errors downstream.
+            for col in df.columns:
+                if np.issubdtype(df[col].dtype, np.number):
+                    if df[col].dropna().empty:
+                        df[col] = df[col].fillna(0)
+                    else:
+                        df[col] = df[col].fillna(df[col].median())
+                else:
+                    df[col] = df[col].fillna("Unknown")
+            print(f"Loaded {len(df)} records from {input_file} (after cleaning)")
             return df
         except Exception as e:
             print(f"Error loading input data file: {e}")
@@ -355,8 +367,8 @@ class SyntheticConsignmentDataGenerator:
         :param sampling_method: Sampling method to use (naive, sequential, gmm, gaussian_copula)
         :return: DataFrame with synthetic data
         """
-        if self.input_data is None:
-            raise ValueError("No input data loaded. Please provide input_data_file parameter.")
+        if self.input_data is None or len(self.input_data) == 0:
+            raise ValueError("No usable input data loaded. Please provide a non-empty input_data_file.")
         
         method = sampling_method
         # Define columns to use for sampling
