@@ -565,16 +565,7 @@ def run_simulation(
     totals.avg_slipped_units_per_consignment /= float(num_simulations)
     totals.avg_slipped_sample_units_per_consignment /= float(num_simulations)
 
-    min_slipped_units = 0,
-    max_slipped_units = 0,
-    percentile_90_slipped_units = 0,
-    min_max_spread_slipped_units = 0,
-    median_slipped_units = 0,
-    std_slipped_units = 0,
-    lower_95_ci_avg = 0,
-    upper_95_ci_avg = 0,
-
-    totals.max_slipped_units = df_rep_outputs['total_slipped_units'].min()
+    totals.min_slipped_units = df_rep_outputs['total_slipped_units'].min()
     totals.max_slipped_units = df_rep_outputs['total_slipped_units'].max()
     totals.percentile_90_slipped_units = df_rep_outputs['total_slipped_units'].quantile(0.9)
     totals.min_max_spread_slipped_units = df_rep_outputs['total_slipped_units'].max() - df_rep_outputs['total_slipped_units'].min()
