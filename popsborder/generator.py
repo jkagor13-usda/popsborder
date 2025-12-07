@@ -293,27 +293,78 @@ class SyntheticConsignmentDataGenerator:
 
 
     def sequential_multinomial_sample(self, df, columns, n_consignments=1, random_state=None):
-        """Sequential sampling to preserve conditional dependencies"""
+        """Sequential sampling to preserve conditional dependencies, with
+        n_consignments unique INSPECTION_NUMBER values and a computed number
+        of rows per inspection via identify_num_inspection_units.
+        """
         np.random.seed(random_state)
+
+        # Compute num_inspection_units inside, using your helper
+        # (note: no extra self argument)
+        num_inspection_units = self.identify_num_inspection_units(
+            df=df,
+            n_consignments=n_consignments
+        )
+
+        num_inspection_units = np.asarray(num_inspection_units, dtype=int)
+        if len(num_inspection_units) != n_consignments:
+            raise ValueError(
+                "identify_num_inspection_units must return an array of length n_consignments"
+            )
+
+        # Make sure INSPECTION_NUMBER is represented
+        inspection_col = "INSPECTION_NUMBER"
+        if inspection_col not in columns:
+            columns = [inspection_col] + list(columns)
+
+        # Create synthetic inspection IDs: INS_0, INS_1, ...
+        inspection_ids = [f"INS_{i}" for i in range(n_consignments)]
+
         samples = []
-        for _ in range(n_consignments):
-            subset = df
-            sample = {}
-            for col in columns:
-                values, counts = np.unique(subset[col], return_counts=True)
-                probs = counts / counts.sum()
-                chosen = np.random.choice(values, p=probs)
-                sample[col] = chosen
-                subset = subset[subset[col] == chosen]
-                if subset.empty:
-                    # If no rows left, sample from original df for remaining columns
-                    for rem_col in columns[len(sample):]:
-                        values, counts = np.unique(df[rem_col], return_counts=True)
-                        probs = counts / counts.sum()
-                        sample[rem_col] = np.random.choice(values, p=probs)
-                    break
-            samples.append(sample)
-        return pd.DataFrame(samples)
+
+        # Loop over each consignment (unique INSPECTION_NUMBER)
+        for cons_idx, n_rows in enumerate(num_inspection_units):
+            ins_id = inspection_ids[cons_idx]
+
+            # For each row under this inspection
+            for _ in range(n_rows):
+                subset = df
+                sample = {}
+
+                for col in columns:
+                    # Do not multinomial-sample INSPECTION_NUMBER; we set it explicitly
+                    if col == inspection_col:
+                        continue
+
+                    values, counts = np.unique(subset[col], return_counts=True)
+                    probs = counts / counts.sum()
+                    chosen = np.random.choice(values, p=probs)
+                    sample[col] = chosen
+
+                    # Condition on this choice for subsequent columns
+                    subset = subset[subset[col] == chosen]
+
+                    if subset.empty:
+                        # If no rows left, sample remaining columns from original df marginals
+                        for rem_col in columns:
+                            if rem_col in sample or rem_col == inspection_col:
+                                continue
+                            values, counts = np.unique(df[rem_col], return_counts=True)
+                            probs = counts / counts.sum()
+                            sample[rem_col] = np.random.choice(values, p=probs)
+                        break
+
+                # Now set inspection ID for this row
+                sample[inspection_col] = ins_id
+
+                samples.append(sample)
+
+        sampled_df = pd.DataFrame(samples)
+
+        # Optional: enforce column order to match `columns`
+        sampled_df = sampled_df[[c for c in columns if c in sampled_df.columns]]
+
+        return sampled_df
     
     def gmm_sample(self, df, columns, n_samples=1, random_state=None, n_components=3):
         """Gaussian Mixture Model sampling for numeric columns with sequential for categorical"""
