@@ -365,43 +365,108 @@ class SyntheticConsignmentDataGenerator:
         sampled_df = sampled_df[[c for c in columns if c in sampled_df.columns]]
 
         return sampled_df
-    
-    def gmm_sample(self, df, columns, n_samples=1, random_state=None, n_components=3):
-        """Gaussian Mixture Model sampling for numeric columns with sequential for categorical"""
-        numeric_cols = [col for col in columns if np.issubdtype(df[col].dtype, np.number)]
-        cat_cols = [col for col in columns if col not in numeric_cols]
-        
-        # Fit GMM on numeric columns
-        if numeric_cols:
-            gmm = GaussianMixture(n_components=n_components, random_state=random_state)
-            gmm.fit(df[numeric_cols])
-            sampled_numeric, _ = gmm.sample(n_samples)
-            sampled_numeric = pd.DataFrame(sampled_numeric, columns=numeric_cols)
-            
-            # Round and clip numeric columns
-            for col in numeric_cols:
-                sampled_numeric[col] = np.round(sampled_numeric[col]).astype(int)
-                sampled_numeric[col] = sampled_numeric[col].clip(df[col].min(), df[col].max())
-        else:
-            sampled_numeric = pd.DataFrame()
-        
-        # Sequential sampling for categorical columns
-        if cat_cols:
-            sampled_cat = self.sequential_multinomial_sample(
-                df, cat_cols, n_samples, random_state
+
+    def gmm_sample(self, df, columns, n_consignments=1, random_state=None, n_components=3):
+        """
+        GMM sampling for numeric columns + Gaussian-copula-based sampling
+        for categorical columns, with grouped INSPECTION_NUMBER values.
+
+        - Computes num_inspection_units via self.identify_num_inspection_units(df, n_consignments)
+        - Output:
+            sum(num_inspection_units) rows
+            n_consignments unique INSPECTION_NUMBER values
+        """
+
+        rng = np.random.default_rng(random_state)
+        inspection_col = "INSPECTION_NUMBER"
+
+        # Ensure INSPECTION_NUMBER is part of columns
+        if inspection_col not in columns:
+            columns = [inspection_col] + list(columns)
+
+        # ----- 1. Figure out how many rows to generate per inspection -----
+        num_inspection_units = self.identify_num_inspection_units(
+            df=df,
+            n_consignments=n_consignments,
+        )
+        num_inspection_units = np.asarray(num_inspection_units, dtype=int)
+
+        if len(num_inspection_units) != n_consignments:
+            raise ValueError(
+                "identify_num_inspection_units must return an array of length n_consignments"
+            )
+
+        total_rows = int(num_inspection_units.sum())
+
+        # Create synthetic inspection IDs; change format if you want real IDs
+        inspection_ids = np.array([f"INS_{i}" for i in range(n_consignments)])
+        inspection_values = np.repeat(inspection_ids, num_inspection_units)
+        if len(inspection_values) != total_rows:
+            raise ValueError("Sum of num_inspection_units must equal total_rows.")
+
+        # ----- 2. Split columns into numeric vs categorical -----
+        numeric_cols = [
+            c for c in columns
+            if c != inspection_col and np.issubdtype(df[c].dtype, np.number)
+        ]
+        cat_cols = [c for c in columns if c not in numeric_cols]
+
+        # We will *not* sample INSPECTION_NUMBER via copula; we assign it manually
+        cat_cols_no_ins = [c for c in cat_cols if c != inspection_col]
+
+        # ----- 3. Sample categorical columns via Gaussian copula sampler -----
+        if cat_cols_no_ins:
+            # gaussian_copula_sample returns a DataFrame with these columns
+            sampled_cat = self.gaussian_copula_sample(
+                df=df,
+                columns=cat_cols_no_ins,
+                n_samples=total_rows,
+                random_state=random_state,
             )
         else:
-            sampled_cat = pd.DataFrame(index=range(n_samples))
-        
-        # Combine results
-        if not sampled_numeric.empty and not sampled_cat.empty:
-            sampled = pd.concat([sampled_cat, sampled_numeric], axis=1)
-        elif not sampled_numeric.empty:
-            sampled = sampled_numeric
+            sampled_cat = pd.DataFrame(index=range(total_rows))
+
+        # Add INSPECTION_NUMBER column explicitly
+        sampled_cat[inspection_col] = inspection_values
+
+        # ----- 4. Fit and sample GMM for numeric columns -----
+        if numeric_cols:
+            gmm = GaussianMixture(
+                n_components=n_components,
+                random_state=random_state
+            )
+            gmm.fit(df[numeric_cols])
+
+            sampled_numeric, _ = gmm.sample(total_rows)
+            sampled_numeric = pd.DataFrame(sampled_numeric, columns=numeric_cols)
+
+            # Optional: round and clip like original
+            for col in numeric_cols:
+                # If your numeric cols are not all integer-like, you can relax this
+                sampled_numeric[col] = np.round(sampled_numeric[col]).astype(int)
+                sampled_numeric[col] = sampled_numeric[col].clip(
+                    df[col].min(),
+                    df[col].max()
+                )
         else:
+            sampled_numeric = pd.DataFrame(index=range(total_rows))
+
+        # ----- 5. Combine categorical + numeric samples -----
+        if not sampled_cat.empty and not sampled_numeric.empty:
+            sampled = pd.concat(
+                [sampled_cat.reset_index(drop=True),
+                 sampled_numeric.reset_index(drop=True)],
+                axis=1,
+            )
+        elif not sampled_cat.empty:
             sampled = sampled_cat
-        
-        return sampled[columns] if columns else sampled
+        else:
+            sampled = sampled_numeric
+
+        # Enforce requested column order
+        sampled = sampled[[c for c in columns if c in sampled.columns]]
+
+        return sampled
     
     def _make_psd(self, S):
         """Clip tiny negative eigenvalues to ensure PSD."""
