@@ -6,6 +6,7 @@ from typing import Optional
 
 import pandas as pd
 
+from examples.notebooks.run_from_xlsx import num_consignments
 # Import functions from popsborder
 from popsborder.scenarios import run_scenarios
 from popsborder.inputs import load_configuration, load_scenario_table, load_compliance_lookup_csv
@@ -36,11 +37,12 @@ def main():
     config = load_configuration(config_file)
 
     # Synthetic data generation
+    num_consignments_to_simulate = 10 # Added input parameter to be the number of consignments you want simulated
     synthetic_data_generator = SyntheticConsignmentDataGenerator(data_dir / "synthetic_rbs_calc_data2.csv")
-    synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="naive")
-    #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="sequential")
+    #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="naive")
+    synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=num_consignments_to_simulate, sampling_method="sequential")
     #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="gmm")
-    #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="gaussian_copula")
+
     save_to_csv(synth_data, filename= data_dir / "synth_data.csv")
 
     config["consignment"]["input_file"]["rbs_file_name"] = str(data_dir / "synth_data.csv")
@@ -180,7 +182,7 @@ def main():
         scenario_table=scenarios,
         seed=42,
         num_simulations=1,            # Only one simulation
-        num_consignments=3,           # You can change this number if needed
+        num_consignments=num_consignments_to_simulate,
         compliance_table=compliance_table,
         detailed=detailed_bool
     )
