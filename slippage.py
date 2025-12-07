@@ -29,14 +29,18 @@ def main():
     scenario_file = data_dir / "test_scenario.csv"
     #scenario_file = data_dir / "pis_contaminate_scenarios.csv"
     pis_data = data_dir / 'synthetic_pis_data.csv'
-    rbs_calc_data = data_dir / 'synthetic_rbs_calc_data.csv'
+    #rbs_calc_data = data_dir / 'synthetic_rbs_calc_data.csv'
+    rbs_calc_data = data_dir / 'synthetic_rbs_calc_data2.csv'
 
     # Load configuration and compliance table
     config = load_configuration(config_file)
 
     # Synthetic data generation
-    synthetic_data_generator = SyntheticConsignmentDataGenerator(data_dir / "fake_pis_data.csv")
-    synth_data = synthetic_data_generator.generate_from_input_data(n_samples=10, sampling_method="sequential")
+    synthetic_data_generator = SyntheticConsignmentDataGenerator(data_dir / "synthetic_rbs_calc_data2.csv")
+    synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="naive")
+    #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="sequential")
+    #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="gmm")
+    #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="gaussian_copula")
     save_to_csv(synth_data, filename= data_dir / "synth_data.csv")
 
     config["consignment"]["input_file"]["rbs_file_name"] = str(data_dir / "synth_data.csv")
@@ -54,33 +58,33 @@ def main():
     #############################################################
     ##### TODO: Replace this block with the appropriate data ####
     #############################################################
-    # Load in PIS Data
-    df_pis_data = pd.read_csv(pis_data)
-
-    # Load in RBS Calculator Data
-    df_rbs_calculator = pd.read_csv(rbs_calc_data)
-    #############################################################
-    ##### TODO: Replace this block with the appropriate data ####
-    #############################################################
-
-    ### Generate clarke inputs via input data
-    inputs = gen_clarke_model_inputs(df_pis_data, df_rbs_calculator)
-
-    # Run clarke model
-    res = run_clarke_bb_group_model(inputs.ty,
-                                    inputs.b,
-                                    inputs.B,
-                                    inputs.Nbar,
-                                    inputs.freq,
-                                    inputs.theta,
-                                    inputs.R,
-                                    inputs.start_val,
-                                    inputs.se)
-
-    print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
-    print(f'   Alpha = {res["alpha"]}')
-    print(f'   Beta = {res["beta"]}')
-    print('')
+    # # Load in PIS Data
+    # df_pis_data = pd.read_csv(pis_data)
+    #
+    # # Load in RBS Calculator Data
+    # df_rbs_calculator = pd.read_csv(rbs_calc_data)
+    # #############################################################
+    # ##### TODO: Replace this block with the appropriate data ####
+    # #############################################################
+    #
+    # ### Generate clarke inputs via input data
+    # inputs = gen_clarke_model_inputs(df_pis_data, df_rbs_calculator)
+    #
+    # # Run clarke model
+    # res = run_clarke_bb_group_model(inputs.ty,
+    #                                 inputs.b,
+    #                                 inputs.B,
+    #                                 inputs.Nbar,
+    #                                 inputs.freq,
+    #                                 inputs.theta,
+    #                                 inputs.R,
+    #                                 inputs.start_val,
+    #                                 inputs.se)
+    #
+    # print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
+    # print(f'   Alpha = {res["alpha"]}')
+    # print(f'   Beta = {res["beta"]}')
+    # print('')
 
     # Update original parameters of config
     #config['contamination']['contamination_rate']['parameters'][0] = res["alpha"]
@@ -156,7 +160,7 @@ def main():
         #scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = res["alpha"]
         #scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] =  res["beta"]
         scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = 0.194628
-        scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] = 4.7609372 #20.12345
+        scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] = 20.12345
         #scenario["contamination/contamination_rate/beta_binomial_parameters/theta"] = inputs.theta
         scenario["contamination/contamination_rate/value"] = None
 
