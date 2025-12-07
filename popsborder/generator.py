@@ -261,20 +261,24 @@ class SyntheticConsignmentDataGenerator:
 
         return sampled_df
 
-    def multinomial_sample(self, df, columns, n_consignments=1, random_state=None):
-        """Naive approach - sample each column independently"""
-        np.random.seed(random_state)
 
-
+    def identify_num_inspection_units(self, df, n_consignments=1):
         # First sample the number of inspection units per consignment uniformly based on data
         counts = df["INSPECTION_NUMBER"].value_counts()
         min_count = counts.min()
         max_count = counts.max()
 
         num_inspection_units = np.random.uniform(low=min_count,
-                                   high=max_count,
-                                   size=n_consignments)
-        num_inspection_units = np.round(num_inspection_units).astype(int)
+                                                 high=max_count,
+                                                 size=n_consignments)
+        return np.round(num_inspection_units).astype(int)
+
+    def multinomial_sample(self, df, columns, n_consignments=1, random_state=None):
+        """Naive approach - sample each column independently"""
+        np.random.seed(random_state)
+
+
+        num_inspection_units = self.identify_num_inspection_units(self, df=df, n_consignments=n_consignments)
 
         sampled_df = self.sample_mixed_with_inspection(
             df=df,
@@ -288,11 +292,11 @@ class SyntheticConsignmentDataGenerator:
         return sampled_df
 
 
-    def sequential_multinomial_sample(self, df, columns, n_samples=1, random_state=None):
+    def sequential_multinomial_sample(self, df, columns, n_consignments=1, random_state=None):
         """Sequential sampling to preserve conditional dependencies"""
         np.random.seed(random_state)
         samples = []
-        for _ in range(n_samples):
+        for _ in range(n_consignments):
             subset = df
             sample = {}
             for col in columns:
