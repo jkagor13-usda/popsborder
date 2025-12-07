@@ -55,6 +55,9 @@ import pandas as pd
 from pathlib import Path
 from scipy.stats import norm, wasserstein_distance
 from sklearn.mixture import GaussianMixture
+import chardet
+from scipy import stats
+import warnings
 
 
 class SyntheticConsignmentDataGenerator:
@@ -86,7 +89,10 @@ class SyntheticConsignmentDataGenerator:
         :return: DataFrame with loaded data or None if failed
         """
         try:
-            df = pd.read_csv(input_file)
+            with open(input_file, 'rb') as f:
+                result = chardet.detect(f.read(100000))
+
+            df = pd.read_csv(input_file, encoding=result['encoding'])
             # Keep any row that has at least one value so we don't throw everything away.
             df = df.dropna(how="all")
             if df.empty:
@@ -105,17 +111,183 @@ class SyntheticConsignmentDataGenerator:
         except Exception as e:
             print(f"Error loading input data file: {e}")
             return None
-    
-    def multinomial_sample(self, df, columns, n_samples=1, random_state=None):
+
+    def fit_best_continuous_distribution(self, data, distributions=None, criterion="aic"):
+        """
+        Fit several continuous distributions to 1D numeric data and select the best.
+        If no distribution can be selected, fall back to fitting a beta distribution.
+        RuntimeWarnings from SciPy are suppressed during fitting.
+
+        Returns
+        -------
+        dist_name : str
+        params : tuple
+            Parameters as returned by dist.fit(data).
+        """
+        # --- Basic cleaning ---
+        data = np.asarray(data, dtype=float)
+        # Remove NaN / inf
+        data = data[np.isfinite(data)]
+        if data.size == 0:
+            raise ValueError("No valid data to fit distribution.")
+
+        # (Optional) clip extreme values to reduce numerical issues
+        # comment these two lines out if you don't want clipping
+        lo, hi = np.percentile(data, [0.1, 99.9])
+        data = np.clip(data, lo, hi)
+
+        if distributions is None:
+            distributions = [
+                stats.norm,
+                stats.lognorm,
+                stats.expon,
+                stats.gamma,
+                stats.beta,
+            ]
+
+        best_score = np.inf
+        best_dist = None
+        best_params = None
+
+        for dist in distributions:
+            try:
+                # Suppress SciPy's runtime warnings inside this block
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=RuntimeWarning)
+                    params = dist.fit(data)
+
+                    if criterion == "aic":
+                        # log-likelihood
+                        ll = np.sum(dist.logpdf(data, *params))
+                        k = len(params)
+                        score = 2 * k - 2 * ll  # AIC
+                    elif criterion == "ks":
+                        ks_stat, _ = stats.kstest(data, dist.name, args=params)
+                        score = ks_stat
+                    else:
+                        raise ValueError("criterion must be 'aic' or 'ks'")
+
+                # If score is nan/inf, treat as bad fit
+                if not np.isfinite(score):
+                    continue
+
+                if score < best_score:
+                    best_score = score
+                    best_dist = dist
+                    best_params = params
+
+            except Exception:
+                # Any fitting failure: skip this distribution
+                continue
+
+        # Fallback: try beta if nothing else worked
+        if best_dist is None:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=RuntimeWarning)
+                try:
+                    beta_params = stats.beta.fit(data)
+                    return "beta", beta_params
+                except Exception:
+                    raise RuntimeError(
+                        "No distribution could be fitted successfully, "
+                        "including beta fallback."
+                    )
+
+        return best_dist.name, best_params
+
+    def sample_mixed_with_inspection(self,
+                                     df,
+                                     columns,
+                                     n_consignments,
+                                     num_inspection_units,
+                                     inspection_col="INSPECTION_NUMBER",
+                                     random_state=None):
+        """
+        - INSPECTION_NUMBER: not sampled from PMF.
+          Instead, create n_consignments unique inspection numbers and repeat each
+          according to sampled_uniform[i].
+        - Other columns:
+          * numeric -> sample from fitted continuous distribution
+          * non-numeric -> sample from empirical PMF
+        """
+        rng = np.random.default_rng(random_state)
+
+        num_inspection_units = np.asarray(num_inspection_units, dtype=int)
+        assert len(num_inspection_units) == n_consignments, \
+            "num_inspection_units must have length n_consignments"
+
+        total_rows = int(num_inspection_units.sum())
+
+        sampled = {}
+
+        # 1. Build INSPECTION_NUMBER values deterministically from num_inspection_units
+        #    Example: "INS_0", "INS_1", ..., but you can change this pattern.
+        inspection_ids = [f"INS_{i}" for i in range(n_consignments)]
+        inspection_col_values = np.repeat(inspection_ids, num_inspection_units)
+
+        if len(inspection_col_values) != total_rows:
+            raise ValueError("Sum of num_inspection_units must equal total number of rows.")
+
+        sampled[inspection_col] = inspection_col_values
+
+        # 2. Sample other columns according to type
+        for col in columns:
+            if col == inspection_col:
+                continue  # already handled
+
+            s = df[col]
+
+            if pd.api.types.is_numeric_dtype(s):
+                # Numeric column: fit and sample continuous distribution
+                numeric_data = s.astype(float).to_numpy()
+                numeric_data = numeric_data[~np.isnan(numeric_data)]
+
+                if numeric_data.size == 0:
+                    sampled[col] = np.full(total_rows, np.nan)
+                    continue
+
+                dist_name, params = self.fit_best_continuous_distribution(numeric_data)
+                dist = getattr(stats, dist_name)
+                sampled[col] = dist.rvs(*params, size=total_rows, random_state=rng)
+
+            else:
+                # Non-numeric: empirical PMF
+                values, counts = np.unique(s.to_numpy(), return_counts=True)
+                probs = counts / counts.sum()
+                sampled[col] = rng.choice(values, size=total_rows, p=probs)
+
+        # 3. Return as DataFrame
+        sampled_df = pd.DataFrame(sampled)
+
+        return sampled_df
+
+    def multinomial_sample(self, df, columns, n_consignments=1, random_state=None):
         """Naive approach - sample each column independently"""
         np.random.seed(random_state)
-        sampled = {}
-        for col in columns:
-            values, counts = np.unique(df[col], return_counts=True)
-            probs = counts / counts.sum()
-            sampled[col] = np.random.choice(values, size=n_samples, p=probs)
-        return pd.DataFrame(sampled)
-    
+
+
+        # First sample the number of inspection units per consignment uniformly based on data
+        counts = df["INSPECTION_NUMBER"].value_counts()
+        min_count = counts.min()
+        max_count = counts.max()
+
+        num_inspection_units = np.random.uniform(low=min_count,
+                                   high=max_count,
+                                   size=n_consignments)
+        num_inspection_units = np.round(num_inspection_units).astype(int)
+
+        sampled_df = self.sample_mixed_with_inspection(
+            df=df,
+            columns=columns,
+            n_consignments=n_consignments,
+            num_inspection_units=num_inspection_units,
+            inspection_col="INSPECTION_NUMBER",
+            random_state=42,
+        )
+
+        return sampled_df
+
+
     def sequential_multinomial_sample(self, df, columns, n_samples=1, random_state=None):
         """Sequential sampling to preserve conditional dependencies"""
         np.random.seed(random_state)
@@ -360,10 +532,10 @@ class SyntheticConsignmentDataGenerator:
         
         return out[columns]
     
-    def generate_from_input_data(self, n_samples=1000, sampling_method=None):
+    def generate_from_input_data(self, n_consignments=1000, sampling_method=None):
         """Generate synthetic data based on input data file using specified sampling method
         
-        :param n_samples: Number of synthetic samples to generate
+        :param n_consignments: Number of unique consignments/shipments to generate
         :param sampling_method: Sampling method to use (naive, sequential, gmm, gaussian_copula)
         :return: DataFrame with synthetic data
         """
@@ -376,7 +548,7 @@ class SyntheticConsignmentDataGenerator:
         target_cols = [col for col in available_cols if col in [
             'INSPECTION_NUMBER', 'INSPECTION_LOCATION_NAME', 'PATHWAY',
             'COUNTRY_OF_ORIGIN_NAME', 'PROPAGATIVE_MATERIAL_TYPE',
-            'TOTAL_SAMPLING_UNITS', 'TOTAL_PLANT_QUANTITY', 'PRODUCER'
+            'TOTAL_SAMPLING_UNITS', 'TOTAL_PLANT_QUANTITY', 'PRODUCER_NAME'
         ]]
         
         if not target_cols:
@@ -388,19 +560,19 @@ class SyntheticConsignmentDataGenerator:
         
         if method == "naive":
             synthetic_data = self.multinomial_sample(
-                self.input_data, target_cols, n_samples, random_state=42
+                self.input_data, target_cols, n_consignments, random_state=42
             )
         elif method == "sequential":
             synthetic_data = self.sequential_multinomial_sample(
-                self.input_data, target_cols, n_samples, random_state=42
+                self.input_data, target_cols, n_consignments, random_state=42
             )
         elif method == "gmm":
             synthetic_data = self.gmm_sample(
-                self.input_data, target_cols, n_samples, random_state=42
+                self.input_data, target_cols, n_consignments, random_state=42
             )
         elif method == "gaussian_copula":
             synthetic_data = self.gaussian_copula_sample(
-                self.input_data, target_cols, n_samples, random_state=42
+                self.input_data, target_cols, n_consignments, random_state=42
             )
         else:
             raise ValueError(f"Unknown sampling method: {method}")
