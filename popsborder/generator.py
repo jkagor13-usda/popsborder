@@ -675,8 +675,8 @@ class SyntheticConsignmentDataGenerator:
             # Fallback to all available columns
             target_cols = available_cols
         
-        print(f"Using sampling method: {method}")
-        print(f"Sampling columns: {target_cols}")
+        # print(f"Using sampling method: {method}")
+        # print(f"Sampling columns: {target_cols}")
         
         if method == "naive":
             synthetic_data = self.multinomial_sample(
