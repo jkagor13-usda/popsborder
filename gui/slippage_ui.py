@@ -154,6 +154,9 @@ def run_pipeline(*, run_scenarios: bool = True):
             seed=engine_options.get("seed", 42),
             num_simulations=engine_options.get("num_simulations", 1),
             run_scenarios_flag=run_scenarios,
+            fit_override=state.get("fit"),
+            pis_df_override=state.get("pis_data"),
+            rbs_df_override=state.get("rbs_data"),
         )
     except Exception as exc:  # pylint: disable=broad-except
         if isinstance(exc, StopIteration):

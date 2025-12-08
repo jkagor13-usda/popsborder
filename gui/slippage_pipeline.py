@@ -210,12 +210,37 @@ def fit_contamination_distribution(
     if "action" not in pis_df.columns:
         pis_df["action"] = 0
     rbs_df = pd.read_csv(rbs_data_path)
-    inputs = gen_clarke_model_inputs(pis_df, rbs_df)
+    # Ensure we have overlapping inspection IDs; if INSPECTION_ID is missing/empty, fall back to INSPECTION_NUMBER.
+    for df in (pis_df, rbs_df):
+        if "INSPECTION_ID" not in df.columns and "INSPECTION_NUMBER" in df.columns:
+            df["INSPECTION_ID"] = df["INSPECTION_NUMBER"]
+        elif "INSPECTION_ID" in df.columns and "INSPECTION_NUMBER" in df.columns:
+            df["INSPECTION_ID"] = df["INSPECTION_ID"].fillna(df["INSPECTION_NUMBER"])
+
+    if "INSPECTION_ID" not in pis_df.columns or "INSPECTION_ID" not in rbs_df.columns:
+        raise ValueError("PIS/RBS files must include INSPECTION_ID or INSPECTION_NUMBER to align for fitting.")
+    shared_ids = set(pis_df["INSPECTION_ID"]).intersection(set(rbs_df["INSPECTION_ID"]))
+    if not shared_ids:
+        raise ValueError(
+            "No shared inspection IDs between PIS and RBS files. "
+            "Ensure both files reference the same consignments."
+        )
+    try:
+        inputs = gen_clarke_model_inputs(pis_df, rbs_df)
+    except StopIteration as exc:
+        raise ValueError(
+            "Fitting failed: no compatible records found between PIS and RBS data. "
+            "Verify that shared INSPECTION_NUMBER rows contain sampling/plant quantities."
+        ) from exc
+    # Guard against NaN/invalid b, B, Nbar coming from sparse data
+    b_val = inputs.b if pd.notna(inputs.b) and np.isfinite(inputs.b) and inputs.b > 0 else 1
+    B_val = inputs.B if pd.notna(inputs.B) and np.isfinite(inputs.B) and inputs.B > 0 else 1
+    Nbar_val = inputs.Nbar if pd.notna(inputs.Nbar) and np.isfinite(inputs.Nbar) and inputs.Nbar > 0 else 1
     result = run_clarke_bb_group_model(
         inputs.ty,
-        inputs.b,
-        inputs.B,
-        inputs.Nbar,
+        int(round(b_val)),
+        int(round(B_val)),
+        int(round(Nbar_val)),
         inputs.freq,
         inputs.theta,
         inputs.R,
@@ -262,6 +287,9 @@ def run_slippage_pipeline(
     seed: int = 42,
     num_simulations: int = 1,
     run_scenarios_flag: bool = True,
+    fit_override: Optional[ClarkeFit] = None,
+    pis_df_override: Optional[pd.DataFrame] = None,
+    rbs_df_override: Optional[pd.DataFrame] = None,
 ) -> PipelineResult:
     """Execute the full slippage pipeline and return artifacts for UI consumption."""
     scenario_df = scenario_df if scenario_df is not None else load_scenario_dataframe(paths.scenario_table)
@@ -298,7 +326,23 @@ def run_slippage_pipeline(
     scenarios = dataframe_to_scenarios(scenario_df)
     compliance_table = load_compliance_lookup_csv(paths.compliance_lookup)
 
-    fit, pis_df, rbs_df = fit_contamination_distribution(paths.pis_data, paths.rbs_data)
+    if fit_override is not None:
+        fit = fit_override
+        if pis_df_override is not None:
+            pis_df = pis_df_override
+        elif paths.pis_data and Path(paths.pis_data).exists():
+            pis_df = pd.read_csv(paths.pis_data)
+        else:
+            pis_df = pd.DataFrame()
+        if rbs_df_override is not None:
+            rbs_df = rbs_df_override
+        elif paths.rbs_data and Path(paths.rbs_data).exists():
+            rbs_df = pd.read_csv(paths.rbs_data)
+        else:
+            rbs_df = pd.DataFrame()
+    else:
+        fit, pis_df, rbs_df = fit_contamination_distribution(paths.pis_data, paths.rbs_data)
+
     config, scenarios = apply_contamination_parameters(config, scenarios, fit)
 
     if run_scenarios_flag:
