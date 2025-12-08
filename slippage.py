@@ -6,7 +6,6 @@ from typing import Optional
 
 import pandas as pd
 
-from examples.notebooks.run_from_xlsx import num_consignments
 # Import functions from popsborder
 from popsborder.scenarios import run_scenarios
 from popsborder.inputs import load_configuration, load_scenario_table, load_compliance_lookup_csv
@@ -162,7 +161,7 @@ def main():
         #scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = res["alpha"]
         #scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] =  res["beta"]
         scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = 0.194628
-        scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] = 20.12345
+        scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] = 4.1 #20.12345
         #scenario["contamination/contamination_rate/beta_binomial_parameters/theta"] = inputs.theta
         scenario["contamination/contamination_rate/value"] = None
 
@@ -181,7 +180,7 @@ def main():
         config=config,
         scenario_table=scenarios,
         seed=42,
-        num_simulations=1,            # Only one simulation
+        num_simulations=2,            # Only one simulation
         num_consignments=num_consignments_to_simulate,
         compliance_table=compliance_table,
         detailed=detailed_bool
@@ -205,8 +204,9 @@ def main():
     results_df = save_scenario_result_to_pandas(scenario_results,
                                                 config_columns=config_columns,
                                                 result_columns=result_columns)
-    results_df.to_csv(output_dir / "pis_contamination_scenario_results.csv", index=False)
-    print("Results saved to output/pis_contamination_scenario_results.csv")
+    results_df.to_csv(output_dir / "pis_contamination_scenario_results2.csv", index=False)
+    print("Results saved to output/pis_contamination_scenario_results2.csv")
+    print('')
 
 if __name__ == "__main__":
     main()
