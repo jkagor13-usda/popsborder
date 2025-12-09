@@ -180,8 +180,6 @@ with fit_tab:
             unique_inspections = pis_df[ins_col].nunique() if ins_col else 0
             total_sampling = pis_df[samp_col].sum() if samp_col else 0
             total_plants = pis_df[plant_col].sum() if plant_col else 0
-            action_col = _find_col(pis_df, ["action"])
-            action_ones = int((pis_df[action_col] == 1).sum()) if action_col else 0
 
             stats = st.columns(2)
             stats[0].metric("Rows", f"{n_rows}")
@@ -189,7 +187,6 @@ with fit_tab:
             stats2 = st.columns(2)
             stats2[0].metric("Total sampling units", f"{total_sampling}")
             stats2[1].metric("Total plant quantity", f"{total_plants}")
-            st.metric("Rows with action = 1", f"{action_ones}")
 
     fit_cols = st.columns(2)
     with fit_cols[0]:
