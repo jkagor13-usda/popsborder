@@ -294,35 +294,19 @@ def run_slippage_pipeline(
     """Execute the full slippage pipeline and return artifacts for UI consumption."""
     scenario_df = scenario_df if scenario_df is not None else load_scenario_dataframe(paths.scenario_table)
 
-    seed_path = None
+    # Use the uploaded/generated RBS file directly; skip synthetic generation
     if paths.rbs_data and Path(paths.rbs_data).exists():
-        seed_path = paths.rbs_data
-    elif paths.synthetic_seed and Path(paths.synthetic_seed).exists():
-        seed_path = paths.synthetic_seed
-    if seed_path is None:
+        rbs_df = pd.read_csv(paths.rbs_data)
+    else:
         raise FileNotFoundError(
-            "No consignment seed data found. Upload RBS calculator data on Page 1/2 or generate consignments manually."
+            "No consignment RBS data found. Upload RBS calculator data on Page 1/2 or generate consignments manually."
         )
-    try:
-        synthetic_df = generate_synthetic_data(
-            seed_path,
-            paths.synthetic_output,
-            synthetic_options,
-        )
-    except StopIteration as exc:
-        raise ValueError(
-            "Synthetic generation failed: seed data appears empty or lacks required columns. "
-            "Upload a non-empty RBS calculator (with TOTAL_SAMPLING_UNITS and TOTAL_PLANT_QUANTITY) "
-            "or reduce missing values, then try again. "
-            f"(Seed file: {seed_path})"
-        ) from exc
-    if synthetic_df is None or synthetic_df.empty:
-        raise ValueError(
-            "Synthetic generation produced no rows. Check the RBS seed data and retry with a valid file."
-        )
+    synthetic_df = rbs_df.copy()
+    if synthetic_df.empty:
+        raise ValueError("RBS data is empty. Upload a non-empty consignment file in tmp/consignments.")
     config = load_configuration(paths.config)
-    config["consignment"]["input_file"]["rbs_file_name"] = str(paths.synthetic_output)
-    num_consignments = _infer_num_consignments(paths, config, synthetic_df)
+    config["consignment"]["input_file"]["rbs_file_name"] = str(paths.rbs_data)
+    num_consignments = max(1, _infer_num_consignments(paths, config, synthetic_df))
     scenarios = dataframe_to_scenarios(scenario_df)
     compliance_table = load_compliance_lookup_csv(paths.compliance_lookup)
 

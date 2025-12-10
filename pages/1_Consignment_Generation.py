@@ -188,6 +188,15 @@ render_sidebar_navigation()
 paths = state["paths"]
 state.setdefault("consignment_source", "synthetic")
 state.setdefault("consignment_base_name", "consignment")
+# Normalize current RBS references for later save buttons
+_state_rbs = state.get("rbs_data")
+current_rbs = None
+if isinstance(_state_rbs, (str, Path)):
+    current_rbs = Path(_state_rbs)
+elif isinstance(state["paths"].rbs_data, (str, Path)):
+    current_rbs = Path(state["paths"].rbs_data)
+
+pending_manual_rbs = state.get("pending_manual_rbs") if isinstance(state.get("pending_manual_rbs"), pd.DataFrame) else None
 synthetic_options: SyntheticOptions = state["synthetic_options"]
 config = yaml.safe_load(Path("config.yml").read_text())
 config_origins = config.get("consignment", {}).get("parameter_based", {}).get("origins", [])
@@ -367,9 +376,6 @@ with ingest_tab:
     current_rbs_path = paths.rbs_data
     pis_ready = current_pis_path is not None and Path(current_pis_path).exists()
     rbs_ready = current_rbs_path is not None and Path(current_rbs_path).exists()
-
-    current_pis = current_pis_path
-    current_rbs = current_rbs_path
 
 with manual_tab:
     st.subheader("Define consignments one by one")
@@ -609,7 +615,6 @@ with saved_tab:
         else:
             st.info("Unable to preview this file.")
 
-current_rbs = state["paths"].rbs_data
 pending_manual_rbs = state.get("pending_manual_rbs")
 
 st.divider()

@@ -7,7 +7,7 @@ import streamlit as st
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
 from gui.slippage_ui import get_slippage_state, run_pipeline, set_engine_options
-from gui.slippage_pipeline import create_default_paths
+from gui.slippage_pipeline import create_default_paths, ClarkeFit
 
 
 st.set_page_config(
@@ -74,6 +74,27 @@ with st.sidebar:
                 state["scenario_df"] = scenario_df
                 state["paths"] = state["paths"].__class__(**{**state["paths"].__dict__, "scenario_table": selected_experiment})
                 st.caption(f"Loaded experiment: {selected_experiment}")
+
+                # Pull contamination params from scenario table to avoid refitting
+                def _get_val(col):
+                    if col in scenario_df.columns:
+                        return scenario_df[col].iloc[0]
+                    return None
+
+                alpha = _get_val("contamination/contamination_rate/beta_binomial_parameters/alpha")
+                beta = _get_val("contamination/contamination_rate/beta_binomial_parameters/beta")
+                theta = _get_val("contamination/contamination_rate/beta_binomial_parameters/theta")
+                if pd.notna(alpha) and pd.notna(beta):
+                    try:
+                        fit = ClarkeFit(
+                            alpha=float(alpha),
+                            beta=float(beta),
+                            theta=float(theta) if pd.notna(theta) else float("inf"),
+                            raw_result={"source": "scenario_table"},
+                        )
+                        state["fit"] = fit
+                    except Exception:  # pylint: disable=broad-except
+                        pass
             except Exception as exc:  # pylint: disable=broad-except
                 st.warning(f"Unable to load selected experiment: {exc}")
     else:
