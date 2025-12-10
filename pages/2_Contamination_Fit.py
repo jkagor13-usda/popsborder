@@ -82,11 +82,14 @@ def _next_param_name(store: dict, base: str = "contamination_param_set") -> str:
     return f"{base}_{idx}"
 
 
-def _save_param_set(name: str, alpha: float, beta: float, theta: float) -> str:
+def _save_param_set(name: str, alpha: float, beta: float, theta: float, sample_unit_rate: Optional[float] = None) -> str:
     store = _read_param_store()
     if not name:
         name = _next_param_name(store)
-    store[name] = {"alpha": alpha, "beta": beta, "theta": theta}
+    entry = {"alpha": alpha, "beta": beta, "theta": theta}
+    if sample_unit_rate is not None:
+        entry["sample_unit_contamination_rate"] = sample_unit_rate
+    store[name] = entry
     _write_param_store(store)
     st.session_state["last_saved_param_set"] = name
     return name
@@ -175,15 +178,18 @@ with fit_tab:
             ins_col = _find_col(pis_df, ["inspection"])
             samp_col = _find_col(pis_df, ["total_sampling"])
             plant_col = _find_col(pis_df, ["total_plant"])
+            action_col = _find_col(pis_df, ["action"])
 
             n_rows = len(pis_df)
             unique_inspections = pis_df[ins_col].nunique() if ins_col else 0
             total_sampling = pis_df[samp_col].sum() if samp_col else 0
             total_plants = pis_df[plant_col].sum() if plant_col else 0
+            action_ones = int((pis_df[action_col] == 1).sum()) if action_col else 0
 
-            stats = st.columns(2)
+            stats = st.columns(3)
             stats[0].metric("Rows", f"{n_rows}")
             stats[1].metric("Unique inspections", f"{unique_inspections}")
+            stats[2].metric("Rows with action = 1", f"{action_ones}")
             stats2 = st.columns(2)
             stats2[0].metric("Total sampling units", f"{total_sampling}")
             stats2[1].metric("Total plant quantity", f"{total_plants}")
@@ -251,46 +257,109 @@ with fit_tab:
 # Manual assignment tab
 with assign_tab:
     st.subheader("Assign contamination parameters manually")
-    st.caption(
-        "Adjust alpha/beta directly. Theta is fixed to infinity by default. The beta PDF preview updates live."
+    mode = st.selectbox(
+        "Choose assignment mode",
+        ["Beta-binomial (alpha/beta)", "Plant-unit contamination rate"],
+        index=0,
     )
-
     assigned_state = st.session_state.get(
         "page2_assigned_fit",
-        {"alpha": FALLBACK_ALPHA, "beta": FALLBACK_BETA, "theta": FALLBACK_THETA},
+        {"alpha": FALLBACK_ALPHA, "beta": FALLBACK_BETA, "theta": FALLBACK_THETA, "sample_unit_rate": 0.01},
     )
 
-    col_a, col_b, col_t = st.columns(3)
-    alpha_val = col_a.number_input("Alpha", min_value=0.000001, value=float(assigned_state["alpha"]), step=0.01)
-    beta_val = col_b.number_input("Beta", min_value=0.000001, value=float(assigned_state["beta"]), step=0.01)
-    theta_str = col_t.text_input("Theta", value="inf")
-    try:
-        theta_val = float("inf") if theta_str.lower() == "inf" else float(theta_str)
-    except ValueError:
+    if mode == "Beta-binomial (alpha/beta)":
+        st.caption("Adjust alpha/beta directly. Theta is fixed to infinity by default.")
+        col_a, col_b, col_t = st.columns(3)
+        alpha_val = col_a.number_input("Alpha", min_value=0.000001, value=float(assigned_state["alpha"]), step=0.01)
+        beta_val = col_b.number_input("Beta", min_value=0.000001, value=float(assigned_state["beta"]), step=0.01)
+        theta_str = col_t.text_input("Theta", value="inf")
+        try:
+            theta_val = float("inf") if theta_str.lower() == "inf" else float(theta_str)
+        except ValueError:
+            theta_val = float("inf")
+
+        st.session_state["page2_assigned_fit"] = {
+            "alpha": alpha_val,
+            "beta": beta_val,
+            "theta": theta_val,
+            "sample_unit_rate": assigned_state.get("sample_unit_rate", 0.01),
+        }
+
+        st.altair_chart(
+            _beta_chart(alpha_val, beta_val, "Beta PDF (manual alpha/beta)"),
+            use_container_width=True,
+        )
+        manual_name = st.text_input(
+            "Parameter set name for manual values",
+            value=st.session_state.get("last_saved_param_set", ""),
+            key="manual_save_name_alpha_beta",
+        )
+        if st.button("Save current parameters", key="save_manual_params_alpha_beta"):
+            saved_name = _save_param_set(
+                manual_name or _next_param_name(_read_param_store()),
+                alpha_val,
+                beta_val,
+                theta_val,
+                assigned_state.get("sample_unit_rate", None),
+            )
+            st.success(
+                f"Saved '{saved_name}' with alpha={alpha_val:.6f}, beta={beta_val:.6f}, theta={theta_val}"
+            )
+    else:
+        st.caption("Set a target mean contamination rate at the plant/sample-unit level and tune width via concentration.")
+        default_conc = max(
+            assigned_state.get("alpha", FALLBACK_ALPHA) + assigned_state.get("beta", FALLBACK_BETA),
+            1e-6,
+        )
+        sample_unit_rate = st.number_input(
+            "Plant unit contamination rate",
+            min_value=0.0,
+            max_value=1.0,
+            value=float(assigned_state.get("sample_unit_rate", 0.01)),
+            step=0.001,
+        )
+        concentration = st.number_input(
+            "Concentration (alpha + beta)",
+            min_value=0.001,
+            value=float(default_conc),
+            step=0.1,
+            help="Higher values tighten the distribution; lower values widen it.",
+        )
         theta_val = float("inf")
+        adj_alpha = max(1e-6, sample_unit_rate * concentration)
+        adj_beta = max(1e-6, (1 - sample_unit_rate) * concentration)
 
-    st.session_state["page2_assigned_fit"] = {"alpha": alpha_val, "beta": beta_val, "theta": theta_val}
+        st.session_state["page2_assigned_fit"] = {
+            "alpha": adj_alpha,
+            "beta": adj_beta,
+            "theta": theta_val,
+            "sample_unit_rate": sample_unit_rate,
+        }
 
-    st.altair_chart(
-        _beta_chart(alpha_val, beta_val, "Beta PDF (manual)"),
-        use_container_width=True,
-    )
-
-    manual_name = st.text_input(
-        "Parameter set name for manual values",
-        value=st.session_state.get("last_saved_param_set", ""),
-        key="manual_save_name",
-    )
-    if st.button("Save current parameters", key="save_manual_params"):
-        saved_name = _save_param_set(
-            manual_name or _next_param_name(_read_param_store()),
-            alpha_val,
-            beta_val,
-            theta_val,
+        st.altair_chart(
+            _beta_chart(adj_alpha, adj_beta, "Beta PDF (manual, from sample-unit rate)"),
+            use_container_width=True,
         )
-        st.success(
-            f"Saved '{saved_name}' with alpha={alpha_val:.6f}, beta={beta_val:.6f}, theta={theta_val}"
+        st.caption(
+            "Adjusting the plant-unit rate shifts the mean; changing concentration adjusts the distribution width."
         )
+        manual_name = st.text_input(
+            "Parameter set name for manual values",
+            value=st.session_state.get("last_saved_param_set", ""),
+            key="manual_save_name_sample_rate",
+        )
+        if st.button("Save current parameters", key="save_manual_params_sample_rate"):
+            saved_name = _save_param_set(
+                manual_name or _next_param_name(_read_param_store()),
+                adj_alpha,
+                adj_beta,
+                theta_val,
+                sample_unit_rate,
+            )
+            st.success(
+                f"Saved '{saved_name}' with alpha={adj_alpha:.6f}, beta={adj_beta:.6f}, "
+                f"theta={theta_val}, sample unit rate={sample_unit_rate}"
+            )
 
 # Saved sets tab
 with saved_tab:
@@ -310,9 +379,12 @@ with saved_tab:
             alpha = float(params.get("alpha", FALLBACK_ALPHA))
             beta = float(params.get("beta", FALLBACK_BETA))
             theta = params.get("theta", FALLBACK_THETA)
+            sample_unit_rate = params.get("sample_unit_contamination_rate")
             st.metric("Alpha", f"{alpha:.6f}")
             st.metric("Beta", f"{beta:.6f}")
             st.metric("Theta", f"{theta}")
+            if sample_unit_rate is not None:
+                st.metric("Plant unit contamination rate", f"{sample_unit_rate}")
             st.altair_chart(
                 _beta_chart(alpha, beta, f"Beta PDF for {sel}"),
                 use_container_width=True,
