@@ -53,7 +53,6 @@ st.caption("Execute the slippage pipeline and compare policies based on slippage
 
 with st.sidebar:
     st.subheader("Execution options")
-    seed = st.number_input("Random seed", value=int(engine_options.get("seed", 42)), step=1)
     simulations = st.number_input(
         "Simulation repetitions",
         min_value=1,
@@ -61,11 +60,24 @@ with st.sidebar:
         value=int(engine_options.get("num_simulations", 1)),
         step=1,
     )
-    if (
-        seed != engine_options.get("seed")
-        or simulations != engine_options.get("num_simulations")
-    ):
-        set_engine_options(seed=int(seed), num_simulations=int(simulations))
+    if simulations != engine_options.get("num_simulations"):
+        set_engine_options(num_simulations=int(simulations))
+
+    experiment_sets = sorted(Path("tmp/experiments").glob("*/scenario_table.csv"))
+    if experiment_sets:
+        labels = [p.parent.name for p in experiment_sets]
+        selected_label = st.selectbox("Experiment to run", labels, index=0)
+        selected_experiment = dict(zip(labels, experiment_sets)).get(selected_label)
+        if selected_experiment:
+            try:
+                scenario_df = pd.read_csv(selected_experiment)
+                state["scenario_df"] = scenario_df
+                state["paths"] = state["paths"].__class__(**{**state["paths"].__dict__, "scenario_table": selected_experiment})
+                st.caption(f"Loaded experiment: {selected_experiment}")
+            except Exception as exc:  # pylint: disable=broad-except
+                st.warning(f"Unable to load selected experiment: {exc}")
+    else:
+        st.info("No experiments saved yet on Page 4.")
     consignment_count = state.get("num_consignments")
     if consignment_count is None:
         synth_total = state.get("synthetic_data")
@@ -85,12 +97,18 @@ with st.sidebar:
         with st.spinner("Running slippage pipeline..."):
             try:
                 run_pipeline()
+                state["run_error"] = None
+                state.pop("run_error_message", None)
                 st.success("Pipeline finished.")
             except Exception as exc:  # pylint: disable=broad-except
-                st.error(f"Pipeline failed: {exc!r}")
+                # Capture the error for display in the main pane
+                state["run_error"] = exc
+                detail = getattr(exc, "stderr", None) or getattr(exc, "output", None)
+                state["run_error_message"] = f"{exc}\n{detail}" if detail else str(exc)
 
 if run_error:
-    st.error(f"Last pipeline error: {run_error}")
+    msg = state.get("run_error_message") or str(run_error)
+    st.error(f"Pipeline failed: {msg}")
     st.caption(
         "Verify that Page 1 has RBS data (or synthetic seed) and Page 2 has PIS action data uploaded before running."
     )

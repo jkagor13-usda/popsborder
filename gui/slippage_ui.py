@@ -127,6 +127,14 @@ def run_pipeline(*, run_scenarios: bool = True):
     paths: SlippagePaths = state["paths"]
     options: SyntheticOptions = state["synthetic_options"]
     engine_options = state["engine_options"]
+    # Prefer scenario table from tmp/scenarios if present
+    tmp_scenario = Path("tmp/scenarios/scenario_table.csv")
+    if tmp_scenario.exists():
+        try:
+            state["scenario_df"] = pd.read_csv(tmp_scenario)
+            paths = paths.__class__(**{**paths.__dict__, "scenario_table": tmp_scenario})
+        except Exception:  # pylint: disable=broad-except
+            pass
     # Fallback to defaults if paths are missing; keep user overrides when present.
     default_paths = create_default_paths()
     # Prefer tmp copies if present
@@ -146,32 +154,23 @@ def run_pipeline(*, run_scenarios: bool = True):
     if paths.synthetic_seed is None and default_paths.synthetic_seed:
         paths = paths.__class__(**{**paths.__dict__, "synthetic_seed": default_paths.synthetic_seed})
     state["paths"] = paths
-    try:
-        result = run_slippage_pipeline(
-            paths,
-            scenario_df=state["scenario_df"],
-            synthetic_options=options,
-            seed=engine_options.get("seed", 42),
-            num_simulations=engine_options.get("num_simulations", 1),
-            run_scenarios_flag=run_scenarios,
-            fit_override=state.get("fit"),
-            pis_df_override=state.get("pis_data"),
-            rbs_df_override=state.get("rbs_data"),
-        )
-    except Exception as exc:  # pylint: disable=broad-except
-        if isinstance(exc, StopIteration):
-            message = (
-                "Pipeline failed: data source exhausted. Ensure RBS seed has non-empty TOTAL_SAMPLING_UNITS "
-                "and TOTAL_PLANT_QUANTITY and PIS action data is uploaded. "
-                f"(RBS: {paths.rbs_data or 'unset'}, PIS: {paths.pis_data or 'unset'})"
-            )
-            record_pipeline_error(message)
-            error_text = message
-        else:
-            record_pipeline_error(str(exc))
-            error_text = str(exc)
-        # DEMO FALLBACK: produce a fake result so the UI can still render
-        result = _fake_pipeline_result(state, error_text)
+    scenario_df = state["scenario_df"].copy()
+    if "consignment/generation_method" in scenario_df.columns:
+        scenario_df["consignment/generation_method"] = scenario_df["consignment/generation_method"].fillna("RBS")
+    if "consignment/input_file/file_type" in scenario_df.columns:
+        scenario_df["consignment/input_file/file_type"] = scenario_df["consignment/input_file/file_type"].fillna("RBS")
+
+    result = run_slippage_pipeline(
+        paths,
+        scenario_df=scenario_df,
+        synthetic_options=options,
+        seed=engine_options.get("seed", 42),
+        num_simulations=engine_options.get("num_simulations", 1),
+        run_scenarios_flag=run_scenarios,
+        fit_override=state.get("fit"),
+        pis_df_override=state.get("pis_data"),
+        rbs_df_override=state.get("rbs_data"),
+    )
     update_from_pipeline(result)
     return result
 
