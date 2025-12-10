@@ -57,9 +57,45 @@ st.caption(
     "and compliance table. Saved experiment packages are written to tmp/experiments."
 )
 
-tabs = st.tabs(["Build experiments", "Saved experiments"])
+tabs = st.tabs(["Upload custom scenario", "Build experiments", "Saved experiments"])
 
 with tabs[0]:
+    st.subheader("Upload custom scenario table")
+    uploaded = st.file_uploader("Upload scenario CSV", type=["csv"], key="custom_scenario_upload")
+    custom_name = st.text_input("Save as experiment set name", value="custom_experiment")
+    if uploaded:
+        try:
+            uploaded.seek(0)
+            df_preview = pd.read_csv(uploaded)
+            st.dataframe(df_preview.head(50), use_container_width=True)
+        except Exception:  # pylint: disable=broad-except
+            st.info("Unable to preview upload.")
+    if uploaded and st.button("Save custom scenario table", type="primary"):
+        try:
+            uploaded.seek(0)
+            df = pd.read_csv(uploaded)
+            set_slug = _slugify(custom_name)
+            scenario_dir = SCENARIO_ROOT / set_slug
+            scenario_dir.mkdir(parents=True, exist_ok=True)
+            dest = scenario_dir / "scenario_table.csv"
+            df.to_csv(dest, index=False)
+            # update master table
+            master_df = pd.DataFrame()
+            if MASTER_SCENARIO_TABLE.exists():
+                try:
+                    master_df = pd.read_csv(MASTER_SCENARIO_TABLE)
+                except Exception:  # pylint: disable=broad-except
+                    master_df = pd.DataFrame()
+            master_df = pd.concat([master_df, df], ignore_index=True).drop_duplicates()
+            MASTER_SCENARIO_TABLE.parent.mkdir(parents=True, exist_ok=True)
+            MASTER_SCENARIO_TABLE.write_text(master_df.to_csv(index=False))
+            state["paths"] = state["paths"].__class__(**{**state["paths"].__dict__, "scenario_table": dest})
+            st.success(f"Saved custom scenario table to {dest}")
+        except Exception as exc:  # pylint: disable=broad-except
+            st.error(f"Failed to save custom scenario table: {exc}")
+
+
+with tabs[1]:
     state.setdefault("experiment_rows", [])
     col_left, col_right = st.columns([2, 1])
 
@@ -197,7 +233,7 @@ with tabs[0]:
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Failed to save experiment: {exc}")
 
-with tabs[1]:
+with tabs[2]:
     st.subheader("Saved experiments (tmp/experiments)")
     saved_files = list(SCENARIO_ROOT.glob("*/scenario_table.csv"))
     if not saved_files:
