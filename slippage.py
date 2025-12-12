@@ -18,11 +18,15 @@ from popsborder.inspections import normalize_rbs_variables_against_consignment
 # Import utility functions for contamination module
 from slippage_model_utils.clarke_r_script_wrapper import *
 from slippage_model_utils.clarke_model_support_functions import *
+from slippage_model_utils.paths import BoxPaths, DefaultPaths
 
 
 def main():
     # Set up data folder and file names
-    data_dir = Path("slippage_data")
+    box_paths = BoxPaths()
+    default_paths = DefaultPaths()
+    #data_dir = Path("slippage_data")
+    data_dir = default_paths.slippage_data_dir()
     config_file = data_dir / "config.yml"
     #compliance_file = data_dir / "compliance_table_test.csv"
     compliance_file = data_dir / "compliance_table.csv"
@@ -37,12 +41,13 @@ def main():
 
     # Synthetic data generation
     num_consignments_to_simulate = 10 # Added input parameter to be the number of consignments you want simulated
+    #synthetic_data_generator = SyntheticConsignmentDataGenerator(box_paths.rbs_calc_data())
     synthetic_data_generator = SyntheticConsignmentDataGenerator(data_dir / "synthetic_rbs_calc_data2.csv")
     #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="naive")
     synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=num_consignments_to_simulate, sampling_method="sequential")
     #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="gmm")
 
-    save_to_csv(synth_data, filename= data_dir / "synth_data.csv")
+    #save_to_csv(synth_data, filename= data_dir / "synth_data.csv")
 
     config["consignment"]["input_file"]["rbs_file_name"] = str(data_dir / "synth_data.csv")
 
@@ -59,33 +64,33 @@ def main():
     #############################################################
     ##### TODO: Replace this block with the appropriate data ####
     #############################################################
-    # # Load in PIS Data
-    # df_pis_data = pd.read_csv(pis_data)
-    #
-    # # Load in RBS Calculator Data
-    # df_rbs_calculator = pd.read_csv(rbs_calc_data)
-    # #############################################################
-    # ##### TODO: Replace this block with the appropriate data ####
-    # #############################################################
-    #
-    # ### Generate clarke inputs via input data
-    # inputs = gen_clarke_model_inputs(df_pis_data, df_rbs_calculator)
-    #
-    # # Run clarke model
-    # res = run_clarke_bb_group_model(inputs.ty,
-    #                                 inputs.b,
-    #                                 inputs.B,
-    #                                 inputs.Nbar,
-    #                                 inputs.freq,
-    #                                 inputs.theta,
-    #                                 inputs.R,
-    #                                 inputs.start_val,
-    #                                 inputs.se)
-    #
-    # print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
-    # print(f'   Alpha = {res["alpha"]}')
-    # print(f'   Beta = {res["beta"]}')
-    # print('')
+    # Load in PIS Data
+    df_pis_data = pd.read_csv(pis_data)
+
+    # Load in RBS Calculator Data
+    df_rbs_calculator = pd.read_csv(rbs_calc_data)
+    #############################################################
+    ##### TODO: Replace this block with the appropriate data ####
+    #############################################################
+
+    ### Generate clarke inputs via input data
+    inputs = gen_clarke_model_inputs(df_pis_data, df_rbs_calculator)
+
+    # Run clarke model
+    res = run_clarke_bb_group_model(inputs.ty,
+                                    inputs.b,
+                                    inputs.B,
+                                    inputs.Nbar,
+                                    inputs.freq,
+                                    inputs.theta,
+                                    inputs.R,
+                                    inputs.start_val,
+                                    inputs.se)
+
+    print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
+    print(f'   Alpha = {res["alpha"]}')
+    print(f'   Beta = {res["beta"]}')
+    print('')
 
     # Update original parameters of config
     #config['contamination']['contamination_rate']['parameters'][0] = res["alpha"]
