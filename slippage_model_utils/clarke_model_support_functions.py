@@ -182,10 +182,23 @@ def _get_b_B_nbar_inputs(
     per_inspection_df_no_outliers = remove_outliers_iqr(per_inspection_df, ["b", "B", "Nbar"])
     per_inspection_df = per_inspection_df_no_outliers.copy()
 
-    # Overall (unweighted) averages across inspection IDs
-    b = per_inspection_df["b"].mean()
-    B = per_inspection_df["B"].mean()
-    Nbar = per_inspection_df["Nbar"].mean()
+    # Overall (unweighted) averages across inspection IDs with graceful fallbacks
+    b = per_inspection_df["b"].mean(skipna=True)
+    B = per_inspection_df["B"].mean(skipna=True)
+    Nbar = per_inspection_df["Nbar"].mean(skipna=True)
+
+    # Fallbacks if anything is NaN/inf/non-positive
+    if (not np.isfinite(b)) or b <= 0:
+        b = pd.to_numeric(df_rbs_calculator_filtered["TOTAL_SAMPLING_UNITS"], errors="coerce").dropna().mean()
+    if (not np.isfinite(Nbar)) or Nbar <= 0:
+        Nbar = pd.to_numeric(df_rbs_calculator_filtered["TOTAL_PLANT_QUANTITY"], errors="coerce").dropna().mean()
+    if (not np.isfinite(B)) or B <= 0:
+        B = float(len(df_rbs_calculator_filtered["INSPECTION_ID"].unique()))
+
+    # Final safety defaults
+    b = b if np.isfinite(b) and b > 0 else 1.0
+    B = B if np.isfinite(B) and B > 0 else 1.0
+    Nbar = Nbar if np.isfinite(Nbar) and Nbar > 0 else 1.0
 
     print("      Final inputs (averaged across inspection IDs):")
     print(f"         b = {round(b,0)}")
@@ -282,25 +295,6 @@ def gen_clarke_model_inputs(
     clarke_inputs.ty, clarke_inputs.freq = calc_ty_freq(df_pis_data_filtered_by_inspection_id)
 
     return clarke_inputs
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def lambda_of_theta(theta, Nbar=100):
