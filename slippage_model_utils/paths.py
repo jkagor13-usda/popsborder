@@ -8,7 +8,7 @@ class DefaultPaths:
 
     def __init__(self):
         paths_file = Path(__file__)
-        self.root = paths_file.parent.parent.parent
+        self.root = paths_file.parent.parent
 
     def slippage_data_dir(self) -> Path:
         return self.root / "slippage_data"
