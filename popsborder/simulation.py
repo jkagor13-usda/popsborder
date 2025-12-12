@@ -224,6 +224,8 @@ def simulation(
                 if consignment.num_plants is not None:
                     total_num_plants += consignment.num_plants
 
+            print(f'\n==== INSPECTION OF CONSIGNMENT {i + 1} COMPLETED ====')
+
             form280.fill(
                 consignment.date,
                 consignment,
@@ -441,6 +443,9 @@ def run_simulation(
     sim_rep_outputs = {}
 
     for i in range(num_simulations):
+        print(f'\n\n======================================================================')
+        print(f'======= RUNNING REPLICATION {i + 1} OUT OF {num_simulations} =========')
+        print(f'======================================================================')
         result = simulation(
             config=config,
             num_consignments=num_consignments,
