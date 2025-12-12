@@ -58,6 +58,8 @@ from sklearn.mixture import GaussianMixture
 import chardet
 from scipy import stats
 import warnings
+import re
+from scipy import stats
 
 
 class SyntheticConsignmentDataGenerator:
@@ -81,35 +83,59 @@ class SyntheticConsignmentDataGenerator:
         # Initialize random seed for reproducible results
         random.seed(42)
         np.random.seed(42)
-    
+
     def _load_input_data(self, input_file):
-        """Load input data file for training sampling models
-        
-        :param input_file: Path to input data file
+        """Load input data file for training sampling models.
+
+        :param input_file: Path to input data file (.csv, .xlsx, .xls)
         :return: DataFrame with loaded data or None if failed
         """
         try:
-            with open(input_file, 'rb') as f:
-                result = chardet.detect(f.read(100000))
+            # Normalize path and detect extension
+            input_path = Path(input_file)
+            ext = input_path.suffix.lower()
 
-            df = pd.read_csv(input_file, encoding=result['encoding'])
+            # Load based on extension
+            if ext == ".csv":
+                # Detect encoding for CSV
+                with open(input_path, "rb") as f:
+                    result = chardet.detect(f.read(100000))
+                encoding = result.get("encoding") or "utf-8"
+
+                df = pd.read_csv(input_path, encoding=encoding)
+
+            elif ext in {".xlsx", ".xls"}:
+                # For Excel files, pandas handles encoding internally.
+                # You may specify engine="openpyxl" if you want to be explicit.
+                df = pd.read_excel(input_path)  # engine="openpyxl" for .xlsx if needed
+
+            else:
+                raise ValueError(
+                    f"Unsupported file type '{ext}'. Supported types are .csv, .xlsx, .xls."
+                )
+
+            # ----- Cleaning logic -----
             # Keep any row that has at least one value so we don't throw everything away.
             df = df.dropna(how="all")
             if df.empty:
                 raise ValueError("Input data has no rows after removing empty records.")
+
             # Fill missing values to avoid numpy.choice errors downstream.
             for col in df.columns:
                 if np.issubdtype(df[col].dtype, np.number):
+                    # If column is entirely NaN, fill with 0; otherwise use median.
                     if df[col].dropna().empty:
                         df[col] = df[col].fillna(0)
                     else:
                         df[col] = df[col].fillna(df[col].median())
                 else:
                     df[col] = df[col].fillna("Unknown")
-            print(f"Loaded {len(df)} records from {input_file} (after cleaning)")
+
+            print(f"Loaded {len(df)} records from {input_path} (after cleaning)")
             return df
+
         except Exception as e:
-            print(f"Error loading input data file: {e}")
+            print(f"Error loading input data file '{input_file}': {e}")
             return None
 
     def fit_best_continuous_distribution(self, data, distributions=None, criterion="aic"):
@@ -261,6 +287,60 @@ class SyntheticConsignmentDataGenerator:
 
         return sampled_df
 
+    def resolve_producer_names(
+            self,
+            df: pd.DataFrame,
+            input_col: str = "PRODUCER_NAME",
+            output_col: str = "PRODUCER_NAME_RESOLVED",
+            alias_map: dict | None = None,
+    ) -> pd.DataFrame:
+        """
+        Simple producer entity resolution.
+
+        - Normalizes text (strip, remove parentheses, collapse spaces).
+        - Optionally applies an alias map whose KEYS are normalized
+          lowercase strings and VALUES are canonical producer names.
+
+        Returns a *copy* of df with a new column `output_col`.
+        """
+
+        df = df.copy()
+
+        def _normalize(name: str | float):
+            if pd.isna(name):
+                return name
+            name = str(name)
+
+            # Strip leading/trailing spaces
+            name = name.strip()
+
+            # Remove anything in parentheses, e.g. "Producer 1 (boxes 1-2)" -> "Producer 1"
+            name = re.sub(r"\s*\(.*?\)\s*", " ", name)
+
+            # Collapse multiple spaces
+            name = re.sub(r"\s+", " ", name)
+
+            return name
+
+        # Step 1: basic normalization
+        normalized = df[input_col].map(_normalize)
+
+        # Step 2: optional alias mapping (for handling typos / variants)
+        # alias_map keys should be *normalized & lowercased* forms.
+        if alias_map is not None:
+            def _apply_alias(n):
+                if pd.isna(n):
+                    return n
+                key = str(n).lower()
+                return alias_map.get(key, n)
+
+            resolved = normalized.map(_apply_alias)
+        else:
+            resolved = normalized
+
+        df[output_col] = resolved
+        return df
+
 
     def identify_num_inspection_units(self, df, n_consignments=1):
         # First sample the number of inspection units per consignment uniformly based on data
@@ -272,6 +352,343 @@ class SyntheticConsignmentDataGenerator:
                                                  high=max_count,
                                                  size=n_consignments)
         return np.round(num_inspection_units).astype(int)
+
+    def identify_num_inspection_units_conditional(self, df, n_consignments=1,
+                                                  cols=None,
+                                                  producer_alias_map: dict | None = None):
+        """
+        Build a nested dictionary keyed by:
+          - Case1 ("Miami PIS"):
+                ("COUNTRY_OF_ORIGIN_NAME", "PROPAGATIVE_MATERIAL_TYPE", "PRODUCER_NAME")
+          - Case2 (not "Miami PIS"):
+                ("INSPECTION_LOCATION_NAME", "COUNTRY_OF_ORIGIN_NAME", "PROPAGATIVE_MATERIAL_TYPE")
+
+        And (optionally) sample inspection units from a given subset later.
+        """
+        if cols is None:
+            cols = [
+                "INSPECTION_LOCATION_NAME",
+                "COUNTRY_OF_ORIGIN_NAME",
+                "PROPAGATIVE_MATERIAL_TYPE",
+                "PRODUCER_NAME",
+            ]
+
+        df = self.resolve_producer_names(
+            df,
+            input_col="PRODUCER_NAME",
+            output_col="PRODUCER_NAME_RESOLVED",
+            alias_map=producer_alias_map,
+        )
+
+        # Top-level dict for the two cases
+        result = {
+            "Miami PIS": {},  # Case1
+            "Non-Miami PIS": {}       # Case2
+        }
+
+        # Masks for the two cases
+        miami_mask = df["INSPECTION_LOCATION_NAME"] == "Miami PIS"
+        miami_df = df.loc[miami_mask]
+        other_df = df.loc[~miami_mask]
+
+        # ----- Case1: INSPECTION_LOCATION_NAME == "Miami PIS" -----
+        # Keys: 3-tuples (COUNTRY_OF_ORIGIN_NAME, PROPAGATIVE_MATERIAL_TYPE, PRODUCER_NAME)
+        case1_group_cols = [
+            "COUNTRY_OF_ORIGIN_NAME",
+            "PROPAGATIVE_MATERIAL_TYPE",
+            "PRODUCER_NAME_RESOLVED",
+        ]
+
+        if not miami_df.empty:
+            for key_tuple, sub_df in miami_df.groupby(case1_group_cols, dropna=False):
+                # key_tuple is a 3-tuple because we grouped on 3 columns
+                result["Miami PIS"][key_tuple] = sub_df
+
+        # ----- Case2: INSPECTION_LOCATION_NAME != "Miami PIS" -----
+        # Keys: 3-tuples (INSPECTION_LOCATION_NAME, COUNTRY_OF_ORIGIN_NAME, PROPAGATIVE_MATERIAL_TYPE)
+        case2_group_cols = [
+            "INSPECTION_LOCATION_NAME",
+            "COUNTRY_OF_ORIGIN_NAME",
+            "PROPAGATIVE_MATERIAL_TYPE",
+        ]
+
+        if not other_df.empty:
+            for key_tuple, sub_df in other_df.groupby(case2_group_cols, dropna=False):
+                result["Non-Miami PIS"][key_tuple] = sub_df
+
+        # 3) Compute and store sampling probabilities based on row counts
+        self._case_sampling_info = {}
+        for case_name, case_dict in result.items():
+            if not case_dict:
+                continue
+
+            keys = list(case_dict.keys())
+            weights = np.array([len(case_dict[k]) for k in keys], dtype=float)
+            probs = weights / weights.sum()
+
+            self._case_sampling_info[case_name] = {
+                "keys": keys,
+                "probs": probs,
+            }
+
+        return result
+
+
+
+    def sample_random_key(self, case: str = "Miami PIS"):
+        """
+        Sample a random key from a given case using the probabilities
+        computed in identify_num_inspection_units_conditional.
+
+        Returns:
+            key (tuple) or None if no sampling info is available.
+        """
+        info = getattr(self, "_case_sampling_info", None)
+        if not info or case not in info:
+            return None
+
+        keys = info[case]["keys"]
+        probs = info[case]["probs"]
+
+        # Make sure we have something to sample from
+        if not keys:
+            return None
+
+        # Sample an index, not the tuples directly
+        idx = np.random.choice(len(keys), p=probs)
+        return keys[idx]
+
+
+
+    def compute_rowcount_pmf_for_location(
+            self,
+            df: pd.DataFrame,
+            location_name: str,
+            total_units_col: str = "TOTAL_SAMPLING_UNITS",
+            loc_col: str = "INSPECTION_LOCATION_NAME",
+            inspection_col: str = "INSPECTION_NUMBER",
+    ) -> pd.Series:
+        """
+        For a given inspection location:
+
+        1. Filter df to that location.
+        2. Drop rows where TOTAL_SAMPLING_UNITS is 0, blank, None, or NA.
+           (We treat the column as numeric and keep rows with value > 0.)
+        3. For each INSPECTION_NUMBER, count number of rows.
+        4. Build an empirical PMF over these counts.
+
+        Returns
+        -------
+        pmf : pd.Series
+            Index: possible row counts (int)
+            Values: probabilities (float, summing to 1).
+        """
+        # 1) subset by location
+        df_loc = df[df[loc_col] == location_name].copy()
+
+        if df_loc.empty:
+            raise ValueError(f"No rows found for location '{location_name}'.")
+
+        # 2) filter out rows with TOTAL_SAMPLING_UNITS <= 0 or non-numeric/blank
+        #    This handles 0, blank, None, NA by coercing to numeric.
+        total_units_numeric = pd.to_numeric(df_loc[total_units_col], errors="coerce")
+        valid_mask = total_units_numeric > 0
+        df_valid = df_loc[valid_mask]
+
+        if df_valid.empty:
+            raise ValueError(
+                f"No valid rows (TOTAL_SAMPLING_UNITS > 0) for location '{location_name}'."
+            )
+
+        # 3) count rows per INSPECTION_NUMBER
+        rows_per_inspection = df_valid.groupby(inspection_col).size()  # Series
+
+        # 4) empirical PMF over these counts
+        #    value_counts gives how often each count occurs
+        freq_by_count = rows_per_inspection.value_counts().sort_index()  # index = count
+        pmf = freq_by_count / freq_by_count.sum()
+
+        return pmf
+
+    def sample_num_rows_from_location_pmf(
+            self,
+            df: pd.DataFrame,
+            location_name: str,
+            total_units_col: str = "TOTAL_SAMPLING_UNITS",
+            loc_col: str = "INSPECTION_LOCATION_NAME",
+            inspection_col: str = "INSPECTION_NUMBER",
+    ) -> tuple[int, pd.Series]:
+        """
+        Convenience wrapper:
+
+        - Computes the pmf via compute_rowcount_pmf_for_location
+        - Samples a row-count according to that pmf.
+
+        Returns
+        -------
+        sampled_count : int
+            A sampled number of rows (e.g., 1, 2, 3, ...)
+        pmf : pd.Series
+            The pmf used for sampling (index = counts, values = probabilities).
+        """
+        pmf = self.compute_rowcount_pmf_for_location(
+            df=df,
+            location_name=location_name,
+            total_units_col=total_units_col,
+            loc_col=loc_col,
+            inspection_col=inspection_col,
+        )
+
+        counts = pmf.index.to_numpy()
+        probs = pmf.to_numpy()
+
+        sampled_count = int(np.random.choice(counts, p=probs))
+        return sampled_count
+
+
+
+
+
+
+    def best_fit_discrete_distribution(self, data, candidate_dists=None):
+        """
+        Fit multiple SciPy *discrete* distributions and return:
+            (best_dist_name, best_dist_obj, best_params, best_aic)
+
+        If no candidate distribution fits, returns:
+            (None, None, None, np.inf)
+        """
+
+        if candidate_dists is None:
+            candidate_dists = {
+                "poisson": stats.poisson,
+                "nbinom": stats.nbinom,
+                "geom": stats.geom,
+            }
+
+        data = np.asarray(data, dtype=int)
+
+        best_dist = None
+        best_name = None
+        best_params = None
+        best_aic = np.inf
+
+        for name, dist in candidate_dists.items():
+            try:
+                # Fit distribution parameters by MLE
+                params = dist.fit(data)
+
+                # log-likelihood
+                loglik = np.sum(dist.logpmf(data, *params))
+
+                # number of parameters
+                k = len(params)
+
+                # AIC
+                aic = 2 * k - 2 * loglik
+
+                if np.isfinite(aic) and aic < best_aic:
+                    best_aic = aic
+                    best_dist = dist
+                    best_name = name
+                    best_params = params
+
+            except Exception:
+                # Some distributions may fail to fit; skip them
+                continue
+
+        return best_name, best_dist, best_params, best_aic
+
+    def sample_positive_from_discrete_best_fit(
+            self,
+            df: pd.DataFrame,
+            inspection_location_name: str,
+            country_of_origin_name: str,
+            propagative_material_type: str,
+            total_units_col: str = "TOTAL_SAMPLING_UNITS",
+            loc_col: str = "INSPECTION_LOCATION_NAME",
+            country_col: str = "COUNTRY_OF_ORIGIN_NAME",
+            material_col: str = "PROPAGATIVE_MATERIAL_TYPE",
+    ):
+        """
+        1. Subset df to given (location, country, material type).
+        2. Extract strictly positive integer TOTAL_SAMPLING_UNITS values.
+        3. Try to fit discrete distributions (Poisson, NB, Geom) by AIC.
+        4. If all fails, fall back to empirical PMF over the observed support.
+        5. Return a single sampled integer > 0 and info about what was used.
+
+        Returns
+        -------
+        sample : int
+        info : dict
+        """
+
+        # ---- 1) Filter df ----
+        mask = (
+                (df[loc_col] == inspection_location_name) &
+                (df[country_col] == country_of_origin_name) &
+                (df[material_col] == propagative_material_type)
+        )
+        df_sub = df.loc[mask]
+
+        if df_sub.empty:
+            raise ValueError(
+                "No rows found for "
+                f"{loc_col}={inspection_location_name!r}, "
+                f"{country_col}={country_of_origin_name!r}, "
+                f"{material_col}={propagative_material_type!r}."
+            )
+
+        # ---- 2) Coerce to integer, keep strictly positive ----
+        vals = pd.to_numeric(df_sub[total_units_col], errors="coerce")
+        vals = vals[vals > 0].dropna().astype(int)
+
+        if vals.empty:
+            return 1, {"dist_name": "one_due_to_no_data", "params": None}
+
+        # ---- 3) Try discrete best fit ----
+        best_name, best_dist, best_params, best_aic = self.best_fit_discrete_distribution(vals)
+
+        # ---- 4) Empirical PMF fallback if no fit worked ----
+        if best_dist is None:
+            # empirical PMF over observed support
+            counts = vals.value_counts(normalize=True).sort_index()
+            support = counts.index.to_numpy()
+            probs = counts.to_numpy()
+
+            sample = int(np.random.choice(support, p=probs))
+            info = {
+                "dist_name": "empirical_pmf_fallback",
+                "params": None,
+                "aic": None,
+                "n_obs": len(vals),
+            }
+            return sample, info
+
+        # ---- 5) Sample from best discrete distribution ----
+        sample = int(best_dist.rvs(*best_params))
+
+        # Safety: ensure > 0; if not, fall back to empirical PMF
+        if sample <= 0:
+            counts = vals.value_counts(normalize=True).sort_index()
+            support = counts.index.to_numpy()
+            probs = counts.to_numpy()
+            sample = int(np.random.choice(support, p=probs))
+            info = {
+                "dist_name": f"{best_name}_with_empirical_fallback",
+                "params": best_params,
+                "aic": best_aic,
+                "n_obs": len(vals),
+            }
+        else:
+            info = {
+                "dist_name": best_name,
+                "params": best_params,
+                "aic": best_aic,
+                "n_obs": len(vals),
+            }
+
+        return sample, info
 
     def multinomial_sample(self, df, columns, n_consignments=1, random_state=None):
         """Naive approach - sample each column independently"""
@@ -299,18 +716,8 @@ class SyntheticConsignmentDataGenerator:
         """
         np.random.seed(random_state)
 
-        # Compute num_inspection_units inside, using your helper
-        # (note: no extra self argument)
-        num_inspection_units = self.identify_num_inspection_units(
-            df=df,
-            n_consignments=n_consignments
-        )
-
-        num_inspection_units = np.asarray(num_inspection_units, dtype=int)
-        if len(num_inspection_units) != n_consignments:
-            raise ValueError(
-                "identify_num_inspection_units must return an array of length n_consignments"
-            )
+        # Build cases + probabilities
+        num_inspection_units_conditional = self.identify_num_inspection_units_conditional(df=df)
 
         # Make sure INSPECTION_NUMBER is represented
         inspection_col = "INSPECTION_NUMBER"
@@ -321,19 +728,89 @@ class SyntheticConsignmentDataGenerator:
         inspection_ids = [f"INS_{i}" for i in range(n_consignments)]
 
         samples = []
+        for ins_id in inspection_ids:
+            # First Sample the PIS
+            values, counts = np.unique(df['INSPECTION_LOCATION_NAME'], return_counts=True)
+            probs = counts / counts.sum()
+            chosen = np.random.choice(values, p=probs)
 
-        # Loop over each consignment (unique INSPECTION_NUMBER)
-        for cons_idx, n_rows in enumerate(num_inspection_units):
-            ins_id = inspection_ids[cons_idx]
+            # Sample a number of inspections to occur from a generated PMF
+            # This function will filter start from original input data, filter
+            # out "TOTAL_SAMPLING_UNITS" rows that are 0, N/A, or None,
+            # generate a pmf over the distribution of the rows over the unique Inspection Numbers,
+            # and sample from that pmf fitted distribution
+            num_inspection_units = self.sample_num_rows_from_location_pmf(
+                df,
+                location_name=chosen,
+            )
+
 
             # For each row under this inspection
-            for _ in range(n_rows):
+            for inspection_unit_number in range(num_inspection_units):
                 subset = df
                 sample = {}
+                sample['INSPECTION_LOCATION_NAME'] = chosen
+                if chosen == 'Miami PIS':
+                    # Pick a random combination of (Origin, PM Type, and Producer)
+                    # from Miami PIS with probability proportional to row counts when filtered
+                    # Sample a Miami key (weighted by rows)
+                    randomly_selected_key = self.sample_random_key(case="Miami PIS")
+                    cols_to_remove = ['COUNTRY_OF_ORIGIN_NAME',
+                                      'PROPAGATIVE_MATERIAL_TYPE',
+                                      'PRODUCER_NAME',
+                                      'TOTAL_SAMPLING_UNITS']
+                    sample['COUNTRY_OF_ORIGIN_NAME'] = randomly_selected_key[0]
+                    sample['PROPAGATIVE_MATERIAL_TYPE'] = randomly_selected_key[1]
+                    sample['PRODUCER_NAME'] = randomly_selected_key[2]
+
+                    # Get the corresponding subset
+                    if randomly_selected_key is not None:
+                        subset = num_inspection_units_conditional["Miami PIS"][randomly_selected_key]
+                else:
+                    # Pick a random combination of (PIS/Location Name, Origin, PM Type,)
+                    # from Non-Miami PIS with probability proportional to row counts when filtered
+                    cols_to_remove = ['INSPECTION_LOCATION_NAME',
+                                      'COUNTRY_OF_ORIGIN_NAME',
+                                      'PROPAGATIVE_MATERIAL_TYPE',
+                                      'TOTAL_SAMPLING_UNITS']
+                    randomly_selected_key = self.sample_random_key(case="Non-Miami PIS")
+                    if inspection_unit_number == 0:
+                        fixed_pis_location = randomly_selected_key[0]
+                        sample['INSPECTION_LOCATION_NAME'] = fixed_pis_location
+                        sample['COUNTRY_OF_ORIGIN_NAME'] = randomly_selected_key[1]
+                        sample['PROPAGATIVE_MATERIAL_TYPE'] = randomly_selected_key[2]
+
+                        # Get the corresponding subset
+                        if randomly_selected_key is not None:
+                            subset = num_inspection_units_conditional["Non-Miami PIS"][randomly_selected_key]
+                    else:
+                        sampled_location = randomly_selected_key[0]
+                        while sampled_location != fixed_pis_location:
+                            randomly_selected_key = self.sample_random_key(case="Non-Miami PIS")
+                            sampled_location = randomly_selected_key[0]
+                        sample['INSPECTION_LOCATION_NAME'] = fixed_pis_location
+                        sample['COUNTRY_OF_ORIGIN_NAME'] = randomly_selected_key[1]
+                        sample['PROPAGATIVE_MATERIAL_TYPE'] = randomly_selected_key[2]
+
+                        # Get the corresponding subset
+                        if randomly_selected_key is not None:
+                            subset = num_inspection_units_conditional["Non-Miami PIS"][randomly_selected_key]
+
+                # Get a random number of sampling units based on what has already been populated by the sample
+                # (i.e., the PIS station, Origin, and PM Type
+                num_sample_units, info = self.sample_positive_from_discrete_best_fit(
+                    df=df,
+                    inspection_location_name=sample['INSPECTION_LOCATION_NAME'],
+                    country_of_origin_name=sample['COUNTRY_OF_ORIGIN_NAME'],
+                    propagative_material_type=sample['PROPAGATIVE_MATERIAL_TYPE'],
+                )
+
+                sample['TOTAL_SAMPLING_UNITS'] = num_sample_units
+
 
                 for col in columns:
                     # Do not multinomial-sample INSPECTION_NUMBER; we set it explicitly
-                    if col == inspection_col:
+                    if col == inspection_col or col in cols_to_remove:
                         continue
 
                     values, counts = np.unique(subset[col], return_counts=True)
