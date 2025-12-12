@@ -202,6 +202,8 @@ with fit_tab:
             else:
                 try:
                     fit, pis_df, rbs_df = fit_contamination_distribution(paths.pis_data, paths.rbs_data)
+                    # Force theta to infinity per requirement
+                    fit = ClarkeFit(alpha=fit.alpha, beta=fit.beta, theta=float("inf"), raw_result=fit.raw_result)
                     slippage_state["fit"] = fit
                     st.session_state["last_fit_params"] = {
                         "alpha": fit.alpha,
@@ -311,23 +313,35 @@ with assign_tab:
             assigned_state.get("alpha", FALLBACK_ALPHA) + assigned_state.get("beta", FALLBACK_BETA),
             1e-6,
         )
+        stored_mean = st.session_state.get("manual_mean_rate", float(assigned_state.get("sample_unit_rate", 0.01)))
         sample_unit_rate = st.number_input(
-            "Plant unit contamination rate",
-            min_value=0.0,
-            max_value=1.0,
-            value=float(assigned_state.get("sample_unit_rate", 0.01)),
-            step=0.001,
-        )
-        concentration = st.number_input(
-            "Concentration (alpha + beta)",
+            "Average percentage of plants contaminated (mean)",
             min_value=0.001,
-            value=float(default_conc),
-            step=0.1,
-            help="Higher values tighten the distribution; lower values widen it.",
+            max_value=0.999,
+            value=float(stored_mean),
+            step=0.01,
+            key="manual_mean_input",
         )
+        stored_conc = st.session_state.get(
+            "manual_concentration",
+            float(max(2.0, assigned_state.get("alpha", FALLBACK_ALPHA) + assigned_state.get("beta", FALLBACK_BETA))),
+        )
+        concentration = st.slider(
+            "Strength-of-belief/confidence in the average plant contamination rate (concentration)",
+            min_value=2.0,
+            max_value=500.0,
+            value=float(stored_conc),
+            step=1.0,
+            key="manual_concentration_slider",
+        )
+        mean_clamped = min(max(sample_unit_rate, 0.001), 0.999)
+        adj_alpha = max(1.001, mean_clamped * concentration)
+        adj_beta = max(1.001, (1 - mean_clamped) * concentration)
         theta_val = float("inf")
-        adj_alpha = max(1e-6, sample_unit_rate * concentration)
-        adj_beta = max(1e-6, (1 - sample_unit_rate) * concentration)
+        # Beta-Binomial variance = n * p * (1 - p) * (1 + (n - 1) * rho) where rho = 1/(alpha+beta+1)
+        rho = 1.0 / (concentration + 1.0)
+        n_trials = 100.0
+        variance = n_trials * mean_clamped * (1 - mean_clamped) * (1 + (n_trials - 1) * rho)
 
         st.session_state["page2_assigned_fit"] = {
             "alpha": adj_alpha,
@@ -335,11 +349,14 @@ with assign_tab:
             "theta": theta_val,
             "sample_unit_rate": sample_unit_rate,
         }
+        st.session_state["manual_concentration"] = concentration
+        st.session_state["manual_mean_rate"] = sample_unit_rate
 
         st.altair_chart(
             _beta_chart(adj_alpha, adj_beta, "Beta PDF (manual, from sample-unit rate)"),
             use_container_width=True,
         )
+        st.metric("Implied beta-binomial variance (n=100)", f"{variance:.4f}")
         st.caption(
             "Adjusting the plant-unit rate shifts the mean; changing concentration adjusts the distribution width."
         )
@@ -426,3 +443,4 @@ with nav_cols[1]:
 with nav_cols[2]:
     if st.button("Next Page", type="primary", key="nav_forward_page4"):
         st.switch_page("pages/3_Inspection_Process.py")
+

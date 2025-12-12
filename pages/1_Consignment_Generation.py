@@ -93,7 +93,18 @@ def _save_rbs_to_tmp(current_rbs: Optional[Path], pending_manual_rbs: Optional[p
             state["rbs_data"] = pending_manual_rbs
             state["rbs_preview"] = pending_manual_rbs.head(10)
         elif cons_source == "synthetic":
-            seed_path = state["paths"].synthetic_seed or _consignment_paths()["uploaded_rbs"]
+            seed_path = None
+            for candidate in [
+                current_rbs,
+                state["paths"].rbs_data,
+                state["paths"].synthetic_seed,
+                _consignment_paths()["uploaded_rbs"],
+            ]:
+                if candidate and Path(candidate).exists():
+                    seed_path = Path(candidate)
+                    break
+            if seed_path is None:
+                return False, "No RBS seed available for synthetic generation. Upload/select an RBS file first."
             options: SyntheticOptions = state.get("synthetic_options", SyntheticOptions())
             synth_df = generate_synthetic_data(seed_path, dest_rbs, options)
             state["rbs_data"] = synth_df
@@ -101,6 +112,8 @@ def _save_rbs_to_tmp(current_rbs: Optional[Path], pending_manual_rbs: Optional[p
         elif current_rbs is not None and Path(current_rbs).exists():
             if Path(current_rbs).resolve() != dest_rbs.resolve():
                 shutil.copy(current_rbs, dest_rbs)
+        else:
+            return False, "No RBS source file found."
         set_paths(rbs_data=dest_rbs)
         return True, f"Saved RBS file with base '{base_name}' to tmp/consignments."
     except Exception as exc:  # pylint: disable=broad-except
@@ -538,9 +551,12 @@ with saved_tab:
     else:
         sel = st.selectbox("Select a saved consignment file", saved_files, format_func=lambda p: p.name)
         st.caption(f"Location: {sel}")
-        preview = _load_preview(sel)
-        if preview is not None:
-            st.dataframe(preview, use_container_width=True)
+        try:
+            full_df = pd.read_csv(sel)
+        except Exception:  # pylint: disable=broad-except
+            full_df = None
+        if full_df is not None:
+            st.dataframe(full_df, use_container_width=True, height=500)
             cols_view = st.columns(2)
             with cols_view[0]:
                 def _safe_count(df: pd.DataFrame, col: str) -> int:
@@ -548,35 +564,35 @@ with saved_tab:
 
                 st.markdown("**Summary statistics**")
                 stats_cols = st.columns(2)
-                stats_cols[0].metric("Rows", f"{len(preview)}")
-                stats_cols[1].metric("Consignments", f"{_safe_count(preview, 'INSPECTION_NUMBER')}")
+                stats_cols[0].metric("Rows", f"{len(full_df)}")
+                stats_cols[1].metric("Consignments", f"{_safe_count(full_df, 'INSPECTION_NUMBER')}")
                 stats_cols2 = st.columns(2)
-                stats_cols2[0].metric("Pathways", f"{_safe_count(preview, 'PATHWAY')}")
-                stats_cols2[1].metric("Origins", f"{_safe_count(preview, 'COUNTRY_OF_ORIGIN_NAME')}")
-                if "TOTAL_PLANT_QUANTITY" in preview.columns:
-                    st.metric("Total plant quantity", f"{preview['TOTAL_PLANT_QUANTITY'].sum():,}")
-                if "TOTAL_SAMPLING_UNITS" in preview.columns:
-                    st.metric("Total sampling units", f"{preview['TOTAL_SAMPLING_UNITS'].sum():,}")
+                stats_cols2[0].metric("Pathways", f"{_safe_count(full_df, 'PATHWAY')}")
+                stats_cols2[1].metric("Origins", f"{_safe_count(full_df, 'COUNTRY_OF_ORIGIN_NAME')}")
+                if "TOTAL_PLANT_QUANTITY" in full_df.columns:
+                    st.metric("Total plant quantity", f"{full_df['TOTAL_PLANT_QUANTITY'].sum():,}")
+                if "TOTAL_SAMPLING_UNITS" in full_df.columns:
+                    st.metric("Total sampling units", f"{full_df['TOTAL_SAMPLING_UNITS'].sum():,}")
 
             with cols_view[1]:
                 plot_cols = st.columns(3)
-                if "COUNTRY_OF_ORIGIN_NAME" in preview.columns:
+                if "COUNTRY_OF_ORIGIN_NAME" in full_df.columns:
                     plot_cols[0].markdown("**Top origins**")
-                    plot_cols[0].bar_chart(preview["COUNTRY_OF_ORIGIN_NAME"].value_counts().head(10).rename("Count"))
-                if "INSPECTION_LOCATION_NAME" in preview.columns:
+                    plot_cols[0].bar_chart(full_df["COUNTRY_OF_ORIGIN_NAME"].value_counts().head(10).rename("Count"))
+                if "INSPECTION_LOCATION_NAME" in full_df.columns:
                     plot_cols[1].markdown("**Top inspection locations**")
                     plot_cols[1].bar_chart(
-                        preview["INSPECTION_LOCATION_NAME"].value_counts().head(10).rename("Count")
+                        full_df["INSPECTION_LOCATION_NAME"].value_counts().head(10).rename("Count")
                     )
-                if "PROPAGATIVE_MATERIAL_TYPE" in preview.columns:
+                if "PROPAGATIVE_MATERIAL_TYPE" in full_df.columns:
                     plot_cols[2].markdown("**Top material types**")
                     plot_cols[2].bar_chart(
-                        preview["PROPAGATIVE_MATERIAL_TYPE"].value_counts().head(10).rename("Count")
+                        full_df["PROPAGATIVE_MATERIAL_TYPE"].value_counts().head(10).rename("Count")
                     )
-                if "TOTAL_PLANT_QUANTITY" in preview.columns and "TOTAL_SAMPLING_UNITS" in preview.columns:
+                if "TOTAL_PLANT_QUANTITY" in full_df.columns and "TOTAL_SAMPLING_UNITS" in full_df.columns:
                     st.markdown("**Plant units vs sampling units (frequency)**")
-                    quantities = preview["TOTAL_PLANT_QUANTITY"].dropna().to_numpy()
-                    sampling_units = preview["TOTAL_SAMPLING_UNITS"].dropna().to_numpy()
+                    quantities = full_df["TOTAL_PLANT_QUANTITY"].dropna().to_numpy()
+                    sampling_units = full_df["TOTAL_SAMPLING_UNITS"].dropna().to_numpy()
                     if quantities.size > 0 and sampling_units.size == quantities.size and sampling_units.size > 0:
                         q_min, q_max = float(quantities.min()), float(quantities.max())
                         s_min, s_max = float(sampling_units.min()), float(sampling_units.max())

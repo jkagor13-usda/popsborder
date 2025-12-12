@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import copy
+import json
+import subprocess
 from dataclasses import dataclass
-from io import StringIO
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 from popsborder.generator import SyntheticConsignmentDataGenerator, save_to_csv
@@ -227,56 +229,88 @@ def fit_contamination_distribution(
         )
     try:
         inputs = gen_clarke_model_inputs(pis_df, rbs_df)
+        print(inputs)
     except StopIteration as exc:
         raise ValueError(
             "Fitting failed: no compatible records found between PIS and RBS data. "
             "Verify that shared INSPECTION_NUMBER rows contain sampling/plant quantities."
         ) from exc
-    # Guard against NaN/invalid b, B, Nbar coming from sparse data
-    b_val = inputs.b if pd.notna(inputs.b) and np.isfinite(inputs.b) and inputs.b > 0 else 1
-    B_val = inputs.B if pd.notna(inputs.B) and np.isfinite(inputs.B) and inputs.B > 0 else 1
-    Nbar_val = inputs.Nbar if pd.notna(inputs.Nbar) and np.isfinite(inputs.Nbar) and inputs.Nbar > 0 else 1
-    result = run_clarke_bb_group_model(
-        inputs.ty,
-        int(round(b_val)),
-        int(round(B_val)),
-        int(round(Nbar_val)),
-        inputs.freq,
-        inputs.theta,
-        inputs.R,
-        inputs.start_val,
-        inputs.se,
-    )
+
+    if not inputs.freq or sum(inputs.freq) <= 0:
+        raise ValueError("Fitting failed: no frequency counts available after aligning PIS and RBS data.")
+
+    # Use Clarke inputs, but if any are invalid fall back to averages from RBS.
+    b_val, B_val, Nbar_val = inputs.b, inputs.B, inputs.Nbar
+
+    def _fallback_mean(df: pd.DataFrame, col: str, default: float = 1.0) -> float:
+        if col in df.columns and df[col].notna().any():
+            return float(pd.to_numeric(df[col], errors="coerce").dropna().mean())
+        return default
+
+    fb_b = _fallback_mean(rbs_df, "TOTAL_SAMPLING_UNITS", 1.0)
+    fb_nbar = _fallback_mean(rbs_df, "TOTAL_PLANT_QUANTITY", 1.0)
+    fb_B = max(1, len(shared_ids))
+
+    if not (np.isfinite(b_val) and b_val > 0):
+        b_val = fb_b
+    if not (np.isfinite(Nbar_val) and Nbar_val > 0):
+        Nbar_val = fb_nbar
+    if not (np.isfinite(B_val) and B_val > 0):
+        B_val = fb_B
+
+    if not (np.isfinite(b_val) and np.isfinite(B_val) and np.isfinite(Nbar_val) and b_val > 0 and B_val > 0 and Nbar_val > 0):
+        raise ValueError(
+            "Fitting failed: computed b/B/Nbar are invalid (NaN or <=0) even after fallback. "
+            "Check RBS calculator columns (TOTAL_SAMPLING_UNITS, TOTAL_PLANT_QUANTITY) and PIS/RBS alignment."
+        )
+    # Always force theta to infinity when invoking the Clarke model
+    theta_val = float("inf")
+
+    # Stabilize start values (R can fail when both are zero)
+    start_vals = [float(v) for v in (inputs.start_val or [])]
+    if not start_vals or all(abs(v) < 1e-9 for v in start_vals):
+        start_vals = [0.1, 0.1]
+
+    try:
+        result = run_clarke_bb_group_model(
+            inputs.ty,
+            int(round(b_val)),
+            int(round(B_val)),
+            int(round(Nbar_val)),
+            inputs.freq,
+            theta_val,
+            inputs.R,
+            start_vals,
+            inputs.se,
+        )
+    except subprocess.CalledProcessError as exc:
+        stderr_preview = (exc.stderr or "")[:500].replace("\n", " | ")
+        stdout_preview = (exc.output or "")[:500].replace("\n", " | ")
+        raise ValueError(
+            f"Fitting failed in R (returncode {exc.returncode}). "
+            f"stdout: {stdout_preview} stderr: {stderr_preview}"
+        ) from exc
     alpha_val = float(result.get("alpha", 0) or 0)
     beta_val = float(result.get("beta", 0) or 0)
-    # Ensure parameters are positive to avoid downstream beta sampling failures.
     alpha_val = max(alpha_val, 1e-3)
     beta_val = max(beta_val, 1e-3)
-    fit = ClarkeFit(alpha=alpha_val, beta=beta_val, theta=inputs.theta, raw_result=result)
+    fit = ClarkeFit(alpha=alpha_val, beta=beta_val, theta=theta_val, raw_result=result)
     return fit, pis_df, rbs_df
 
 
 def apply_contamination_parameters(
-    config: Dict[str, Any],
     scenarios: List[Dict[str, Any]],
     fit: ClarkeFit,
-) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
-    """Inject beta-binomial parameters into config and scenario records."""
-    new_config = copy.deepcopy(config)
+) -> List[Dict[str, Any]]:
+    """Inject beta-binomial parameters into scenario records."""
     new_scenarios = copy.deepcopy(scenarios)
-
-    try:
-        new_config["contamination"]["contamination_rate"]["parameters"][0] = fit.alpha
-        new_config["contamination"]["contamination_rate"]["parameters"][1] = fit.beta
-    except KeyError as exc:
-        raise KeyError("Configuration is missing expected contamination rate parameter slots.") from exc
 
     for scenario in new_scenarios:
         scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = fit.alpha
         scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] = fit.beta
         scenario["contamination/contamination_rate/beta_binomial_parameters/theta"] = fit.theta
         scenario["contamination/contamination_rate/value"] = None
-    return new_config, new_scenarios
+    return new_scenarios
 
 
 def run_slippage_pipeline(
@@ -286,7 +320,6 @@ def run_slippage_pipeline(
     synthetic_options: SyntheticOptions = SyntheticOptions(),
     seed: int = 42,
     num_simulations: int = 1,
-    run_scenarios_flag: bool = True,
     fit_override: Optional[ClarkeFit] = None,
     pis_df_override: Optional[pd.DataFrame] = None,
     rbs_df_override: Optional[pd.DataFrame] = None,
@@ -325,39 +358,61 @@ def run_slippage_pipeline(
         else:
             rbs_df = pd.DataFrame()
     else:
-        fit, pis_df, rbs_df = fit_contamination_distribution(paths.pis_data, paths.rbs_data)
+        # Pull contamination parameters from the saved JSON produced on Page 2
+        param_path = Path("tmp") / "contamination" / "contamination_parameter_sets.json"
+        alpha_val = beta_val = None
+        theta_val = float("inf")
+        if param_path.exists():
+            try:
+                with open(param_path, "r") as f:
+                    param_sets = json.load(f)
+                if isinstance(param_sets, dict) and param_sets:
+                    last_key = list(param_sets.keys())[-1]
+                    params = param_sets.get(last_key, {})
+                    alpha_val = float(params.get("alpha", alpha_val))
+                    beta_val = float(params.get("beta", beta_val))
+                    theta_raw = params.get("theta", theta_val)
+                    theta_val = float("inf") if theta_raw is None or np.isinf(theta_raw) else float(theta_raw)
+            except Exception:
+                pass
 
-    config, scenarios = apply_contamination_parameters(config, scenarios, fit)
+        alpha_default = config.get("contamination", {}).get("contamination_rate", {}).get("parameters", [0.2, 5])[0]
+        beta_default = config.get("contamination", {}).get("contamination_rate", {}).get("parameters", [0.2, 5])[1]
+        alpha_val = alpha_val if alpha_val is not None else alpha_default
+        beta_val = beta_val if beta_val is not None else beta_default
 
-    if run_scenarios_flag:
-        try:
-            scenario_results_raw = run_scenarios_fn(
-                config=config,
-                scenario_table=scenarios,
-                seed=seed,
-                num_simulations=num_simulations,
-                num_consignments=num_consignments,
-                compliance_table=compliance_table,
-                detailed=True,
-            )
-        except StopIteration as exc:
-            raise ValueError(
-                "Scenario execution failed: no valid synthetic consignments were generated. "
-                "Ensure the RBS seed file has non-empty TOTAL_SAMPLING_UNITS and TOTAL_PLANT_QUANTITY columns. "
-                f"(Synthetic input: {paths.synthetic_output})"
-            ) from exc
+        fit = ClarkeFit(alpha=alpha_val, beta=beta_val, theta=theta_val, raw_result={"source": "saved_json"})
+        pis_df = pd.DataFrame()
+        rbs_df = pd.DataFrame()
 
-        scenario_results = [(result, cfg) for _details, result, cfg in scenario_results_raw]
-        paths.output_dir.mkdir(parents=True, exist_ok=True)
-        results_df = save_scenario_result_to_pandas(
-            scenario_results,
-            config_columns=CONFIG_COLUMNS,
-            result_columns=RESULT_COLUMNS,
+    scenarios = apply_contamination_parameters(scenarios, fit)
+
+    try:
+        scenario_results_raw = run_scenarios_fn(
+            config=config,
+            scenario_table=scenarios,
+            seed=seed,
+            num_simulations=num_simulations,
+            num_consignments=num_consignments,
+            compliance_table=compliance_table,
+            detailed=True,
         )
-        results_path = paths.output_dir / "pis_contamination_scenario_results.csv"
-        results_df.to_csv(results_path, index=False)
-    else:
-        results_df = pd.DataFrame()
+    except StopIteration as exc:
+        raise ValueError(
+            "Scenario execution failed: no valid synthetic consignments were generated. "
+            "Ensure the RBS seed file has non-empty TOTAL_SAMPLING_UNITS and TOTAL_PLANT_QUANTITY columns. "
+            f"(Synthetic input: {paths.synthetic_output})"
+        ) from exc
+
+    scenario_results = [(result, cfg) for _details, result, cfg in scenario_results_raw]
+    paths.output_dir.mkdir(parents=True, exist_ok=True)
+    results_df = save_scenario_result_to_pandas(
+        scenario_results,
+        config_columns=CONFIG_COLUMNS,
+        result_columns=RESULT_COLUMNS,
+    )
+    results_path = paths.output_dir / "pis_contamination_scenario_results.csv"
+    results_df.to_csv(results_path, index=False)
 
     return PipelineResult(
         synthetic_data=synthetic_df,
