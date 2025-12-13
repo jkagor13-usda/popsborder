@@ -23,6 +23,14 @@ from slippage_model_utils.clarke_model_support_functions import gen_clarke_model
 from slippage_model_utils.clarke_r_script_wrapper import run_clarke_bb_group_model
 
 
+@dataclass
+class SyntheticOptions:
+    """Placeholder for interface compatibility (not used in simplified pipeline)."""
+
+    n_samples: int = 10
+    sampling_method: str = "sequential"
+
+
 DEFAULT_DATA_DIR = Path("data_input")
 RESULT_COLUMNS = [
     "num_inspections",
@@ -46,13 +54,6 @@ CONFIG_COLUMNS = [
     "name",
 ]
 
-
-@dataclass
-class SyntheticOptions:
-    """Options controlling synthetic consignment data generation."""
-
-    n_samples: int = 10
-    sampling_method: str = "sequential"
 
 
 @dataclass
@@ -110,18 +111,19 @@ def create_default_paths(base_dir: Path = DEFAULT_DATA_DIR) -> SlippagePaths:
     )
 
 
-def load_scenario_dataframe(path: Path, *, dtype: str = "object") -> pd.DataFrame:
-    """Load the slippage scenario CSV into a dataframe suitable for UI editing."""
-    df = pd.read_csv(path, dtype=dtype)
-    df = df.loc[:, ~df.columns.str.startswith("Unnamed")]
-    return df
+def load_scenario_dataframe(path: Path, *, dtype: str = "object"):
+    """Load the slippage scenario table using the shared popsborder loader and return a DataFrame."""
+    records = load_scenario_table(path)
+    return records
 
 
 def dataframe_to_scenarios(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """Convert a dataframe representation of the scenario table into dictionaries."""
+    if isinstance(df, list):
+        # Already a list of records from load_scenario_table
+        return [dict(rec) for rec in df]
     scenarios: List[Dict[str, Any]] = []
     selectable_columns = [col for col in df.columns if col and not str(col).startswith("Unnamed")]
-    # Ensure we don't mutate caller dataframe
     cleaned_df = df.copy()
     for column in selectable_columns:
         if pd.api.types.is_numeric_dtype(cleaned_df[column]):
@@ -162,41 +164,6 @@ def generate_synthetic_data(
     )
     save_to_csv(synth_data, filename=output_path)
     return synth_data
-
-
-def _infer_num_consignments(
-    paths: SlippagePaths,
-    config: Dict[str, Any],
-    synthetic_df: Optional[pd.DataFrame],
-) -> int:
-    """Estimate how many consignments are available for simulation."""
-    consignment_cfg = config.get("consignment", {})
-    input_cfg = consignment_cfg.get("input_file", {}) or {}
-    candidate_files = [
-        input_cfg.get("rbs_file_name"),
-        input_cfg.get("file_name"),
-        input_cfg.get("pis_file_name"),
-    ]
-    for candidate in candidate_files:
-        if not candidate:
-            continue
-        candidate_path = Path(candidate)
-        data: Optional[pd.DataFrame] = None
-        if synthetic_df is not None and candidate_path == paths.synthetic_output:
-            data = synthetic_df
-        elif candidate_path.exists():
-            try:
-                data = pd.read_csv(candidate_path)
-            except Exception:  # pragma: no cover - best-effort fallback
-                data = None
-        if data is None:
-            continue
-        if "INSPECTION_NUMBER" in data.columns:
-            count = data["INSPECTION_NUMBER"].nunique()
-        else:
-            count = len(data)
-        return max(1, int(count))
-    return max(1, int(consignment_cfg.get("num_consignments", 1)))
 
 
 def fit_contamination_distribution(
@@ -298,34 +265,54 @@ def fit_contamination_distribution(
     return fit, pis_df, rbs_df
 
 
-def apply_contamination_parameters(
-    scenarios: List[Dict[str, Any]],
-    fit: ClarkeFit,
-) -> List[Dict[str, Any]]:
-    """Inject beta-binomial parameters into scenario records."""
-    new_scenarios = copy.deepcopy(scenarios)
-
-    for scenario in new_scenarios:
-        scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = fit.alpha
-        scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] = fit.beta
-        scenario["contamination/contamination_rate/beta_binomial_parameters/theta"] = fit.theta
-        scenario["contamination/contamination_rate/value"] = None
-    return new_scenarios
-
 
 def run_slippage_pipeline(
     paths: SlippagePaths,
-    scenario_df: Optional[pd.DataFrame] = None,
     *,
-    synthetic_options: SyntheticOptions = SyntheticOptions(),
     seed: int = 42,
     num_simulations: int = 1,
-    fit_override: Optional[ClarkeFit] = None,
-    pis_df_override: Optional[pd.DataFrame] = None,
-    rbs_df_override: Optional[pd.DataFrame] = None,
 ) -> PipelineResult:
-    """Execute the full slippage pipeline and return artifacts for UI consumption."""
-    scenario_df = scenario_df if scenario_df is not None else load_scenario_dataframe(paths.scenario_table)
+    """Execute the pipeline using the scenario CSV only."""
+    # Load scenario records (list of dicts)
+    records = load_scenario_dataframe(paths.scenario_table)
+    if isinstance(records, pd.DataFrame):
+        records = records.to_dict(orient="records")
+    if not isinstance(records, list):
+        raise ValueError("Scenario table could not be loaded as records.")
+    if not records:
+        raise ValueError("Scenario table is empty. Provide a scenario_table.csv with at least one row.")
+
+    # Remove unnamed columns
+    scenario_records: List[Dict[str, Any]] = [
+        {k: v for k, v in rec.items() if not str(k).startswith("Unnamed")} for rec in records
+    ]
+
+    def _first_value(key: str) -> Any:
+        for rec in scenario_records:
+            val = rec.get(key, None)
+            if val not in (None, "", "None", "nan"):
+                return val
+        return None
+
+    def _unique_values(key: str) -> List[Any]:
+        vals: List[Any] = []
+        seen: set[Any] = set()
+        for rec in scenario_records:
+            val = rec.get(key, None)
+            if val in (None, "", "None", "nan"):
+                continue
+            if val in seen:
+                continue
+            seen.add(val)
+            vals.append(val)
+        return vals
+
+    # Pull contamination parameters from scenario records
+    scenario_alpha = float(_first_value("contamination/contamination_rate/beta_binomial_parameters/alpha") or 0)
+    scenario_beta = float(_first_value("contamination/contamination_rate/beta_binomial_parameters/beta") or 0)
+    theta_val = _first_value("contamination/contamination_rate/beta_binomial_parameters/theta")
+    scenario_theta = float(theta_val) if theta_val not in (None, "", "None", "nan") else float("inf")
+
     experiment_dir = Path(paths.scenario_table).parent
 
     def _resolve_from_experiment(name: str, fallback_dir: Path) -> Optional[Path]:
@@ -342,79 +329,56 @@ def run_slippage_pipeline(
             return dest
         return None
 
-    # Resolve consignment and compliance paths based on the scenario table
-    consignment_col = "consignment name"
-    compliance_col = "inspection name"
-    rbs_path = None
-    compliance_path = None
-    if consignment_col in scenario_df.columns:
-        consignment_names = [c for c in scenario_df[consignment_col].dropna().unique().tolist() if c]
-        if consignment_names:
+    # Resolve consignment and compliance paths based on scenario records
+    consignment_col = (
+        "consignment/input_file/file_name"
+        if any("consignment/input_file/file_name" in r for r in scenario_records)
+        else "consignment name"
+    )
+    compliance_col = (
+        "inspection/compliance_table/file_name"
+        if any("inspection/compliance_table/file_name" in r for r in scenario_records)
+        else "inspection name"
+    )
+
+    rbs_path: Optional[Path] = None
+    compliance_path: Optional[Path] = experiment_dir / "compliance_table.csv"
+
+    consignment_names = _unique_values(consignment_col)
+    if consignment_names:
+        rbs_path = experiment_dir / consignment_names[0]
+        if not rbs_path.exists():
             rbs_path = _resolve_from_experiment(consignment_names[0], Path("tmp") / "consignments")
-    if compliance_col in scenario_df.columns:
-        compliance_names = [c for c in scenario_df[compliance_col].dropna().unique().tolist() if c]
-        if compliance_names:
-            compliance_path = _resolve_from_experiment(compliance_names[0], Path("tmp") / "compliance")
+
+    compliance_names = _unique_values(compliance_col)
+    if compliance_names:
+        candidate = experiment_dir / compliance_names[0]
+        if candidate.exists():
+            compliance_path = candidate
+        else:
+            fallback = _resolve_from_experiment(compliance_names[0], Path("tmp") / "compliance")
+            if fallback:
+                compliance_path = fallback
 
     if rbs_path is None or not rbs_path.exists():
         raise FileNotFoundError("No consignment RBS data found for the selected experiment.")
-    rbs_df = pd.read_csv(rbs_path)
-    synthetic_df = rbs_df.copy()
+    synthetic_df = pd.read_csv(rbs_path)
     if synthetic_df.empty:
         raise ValueError("RBS data is empty. Upload a non-empty consignment file in tmp/consignments.")
 
-    # Use experiment-local config if present; else fallback to default
+    # Load config and compliance
     config_path = experiment_dir / "config.yml"
     config = load_configuration(config_path if config_path.exists() else paths.config)
     config["consignment"]["input_file"]["rbs_file_name"] = str(rbs_path)
     num_consignments = max(1, _infer_num_consignments(paths, config, synthetic_df))
-    scenarios = dataframe_to_scenarios(scenario_df)
-    compliance_lookup_path = compliance_path if compliance_path else paths.compliance_lookup
+    compliance_lookup_path = compliance_path if compliance_path and compliance_path.exists() else paths.compliance_lookup
     compliance_table = load_compliance_lookup_csv(compliance_lookup_path)
 
-    if fit_override is not None:
-        fit = fit_override
-        if pis_df_override is not None:
-            pis_df = pis_df_override
-        elif paths.pis_data and Path(paths.pis_data).exists():
-            pis_df = pd.read_csv(paths.pis_data)
-        else:
-            pis_df = pd.DataFrame()
-        if rbs_df_override is not None:
-            rbs_df = rbs_df_override
-        elif paths.rbs_data and Path(paths.rbs_data).exists():
-            rbs_df = pd.read_csv(paths.rbs_data)
-        else:
-            rbs_df = pd.DataFrame()
-    else:
-        # Pull contamination parameters from the saved JSON produced on Page 2
-        param_path = Path("tmp") / "contamination" / "contamination_parameter_sets.json"
-        alpha_val = beta_val = None
-        theta_val = float("inf")
-    if param_path.exists():
-        try:
-            with open(param_path, "r") as f:
-                param_sets = json.load(f)
-            if isinstance(param_sets, dict) and param_sets:
-                last_key = list(param_sets.keys())[-1]
-                params = param_sets.get(last_key, {})
-                alpha_val = float(params.get("alpha", alpha_val))
-                beta_val = float(params.get("beta", beta_val))
-                theta_raw = params.get("theta", theta_val)
-                theta_val = float("inf") if theta_raw is None or np.isinf(theta_raw) else float(theta_raw)
-        except Exception:
-            pass
-
-        alpha_default = config.get("contamination", {}).get("contamination_rate", {}).get("parameters", [0.2, 5])[0]
-        beta_default = config.get("contamination", {}).get("contamination_rate", {}).get("parameters", [0.2, 5])[1]
-        alpha_val = alpha_val if alpha_val is not None else alpha_default
-        beta_val = beta_val if beta_val is not None else beta_default
-
-        fit = ClarkeFit(alpha=alpha_val, beta=beta_val, theta=theta_val, raw_result={"source": "saved_json"})
-        pis_df = pd.DataFrame()
-        rbs_df = pd.DataFrame()
-
-    scenarios = apply_contamination_parameters(scenarios, fit)
+    # Convert records to scenarios for popsborder
+    scenarios = dataframe_to_scenarios(scenario_records)
+    fit = ClarkeFit(alpha=scenario_alpha, beta=scenario_beta, theta=scenario_theta, raw_result={"source": "scenario_table"})
+    pis_df = pd.DataFrame()
+    rbs_df = pd.DataFrame()
 
     try:
         scenario_results_raw = run_scenarios_fn(
@@ -440,7 +404,9 @@ def run_slippage_pipeline(
         config_columns=CONFIG_COLUMNS,
         result_columns=RESULT_COLUMNS,
     )
-    results_path = experiment_dir / "pis_contamination_scenario_results.csv"
+    out_dir = experiment_dir / "output"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    results_path = out_dir / "pis_contamination_scenario_results.csv"
     results_df.to_csv(results_path, index=False)
 
     return PipelineResult(
@@ -457,7 +423,6 @@ def run_slippage_pipeline(
 
 
 __all__ = [
-    "SyntheticOptions",
     "SlippagePaths",
     "ClarkeFit",
     "PipelineResult",
@@ -466,6 +431,6 @@ __all__ = [
     "dataframe_to_scenarios",
     "generate_synthetic_data",
     "fit_contamination_distribution",
-    "apply_contamination_parameters",
     "run_slippage_pipeline",
+    "SyntheticOptions",
 ]

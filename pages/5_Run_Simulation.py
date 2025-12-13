@@ -25,30 +25,6 @@ paths = state["paths"]
 TMP_DIR = Path("tmp")
 
 
-def _rbs_ready() -> tuple[bool, str]:
-    """Check that the RBS input exists and has key columns before running."""
-    # Use defaults if state is missing paths
-    default_paths = create_default_paths()
-    if paths.rbs_data is None and default_paths.rbs_data:
-        state["paths"] = paths.__class__(**{**paths.__dict__, "rbs_data": default_paths.rbs_data})
-    current_paths = state["paths"]
-    try:
-        if current_paths.rbs_data is None:
-            return False, "No RBS calculator file selected. Upload on Page 1."
-        rbs_path = Path(current_paths.rbs_data)
-        if not rbs_path.exists():
-            return False, f"RBS calculator file not found at {rbs_path}."
-        df = pd.read_csv(rbs_path, nrows=200)
-        required = {"TOTAL_SAMPLING_UNITS", "TOTAL_PLANT_QUANTITY"}
-        missing = required - set(df.columns)
-        if missing:
-            return False, f"RBS calculator file is missing required columns: {', '.join(sorted(missing))}"
-        if df[["TOTAL_SAMPLING_UNITS", "TOTAL_PLANT_QUANTITY"]].dropna().empty:
-            return False, "RBS calculator file has no non-empty sampling/plant quantity rows."
-        return True, ""
-    except Exception as exc:  # pylint: disable=broad-except
-        return False, f"Unable to validate RBS calculator file: {exc}"
-
 st.title("Page 5 - Run Simulation")
 st.caption("Execute the slippage pipeline and compare policies based on slippage metrics.")
 
@@ -111,10 +87,8 @@ with st.sidebar:
     )
 
     st.divider()
-    rbs_ok, rbs_msg = _rbs_ready()
-    if not rbs_ok:
-        st.warning(rbs_msg)
-    run_now = st.button("Run pipeline", use_container_width=True, disabled=not rbs_ok)
+    run_disabled = not experiment_sets  # only disable when no experiments
+    run_now = st.button("Run pipeline", use_container_width=True, disabled=run_disabled)
     if run_now:
         with st.spinner("Running slippage pipeline..."):
             try:
@@ -141,6 +115,19 @@ if results_df is None or results_df.empty:
     st.info("Run the pipeline to generate scenario results.")
     st.stop()
 
+# Persist results into the selected experiment folder for convenience
+try:
+    scenario_table = state["paths"].scenario_table if hasattr(state["paths"], "scenario_table") else None
+    if scenario_table:
+        exp_dir = Path(scenario_table).parent
+        out_dir = exp_dir / "output"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / "pis_contamination_scenario_results.csv"
+        results_df.to_csv(out_path, index=False)
+        st.caption(f"Results saved to {out_path}")
+except Exception as exc:  # pylint: disable=broad-except
+    st.warning(f"Could not save results to experiment folder: {exc}")
+
 st.markdown("### Overall summary")
 summary = (
     results_df.groupby("name")[
@@ -156,9 +143,10 @@ summary = (
     .sum()
     .reset_index()
 )
-summary["detection_rate"] = summary["total_intercepted_contaminants"] / (
-    summary["total_intercepted_contaminants"] + summary["total_missed_contaminants"]
-)
+denom = summary["total_intercepted_contaminants"] + summary["total_missed_contaminants"]
+summary["detection_rate"] = (
+    summary["total_intercepted_contaminants"] / denom.replace(0, pd.NA)
+).fillna(0)
 summary["slippage_rate"] = 1 - summary["detection_rate"]
 summary = summary.fillna(0)
 
