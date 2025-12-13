@@ -7,7 +7,7 @@ import streamlit as st
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
 from gui.slippage_ui import get_slippage_state, run_pipeline, set_engine_options
-from gui.slippage_pipeline import create_default_paths, ClarkeFit
+from gui.slippage_pipeline import create_default_paths
 
 
 st.set_page_config(
@@ -51,62 +51,51 @@ with st.sidebar:
                 state["scenario_df"] = scenario_df
                 state["paths"] = state["paths"].__class__(**{**state["paths"].__dict__, "scenario_table": selected_experiment})
                 st.caption(f"Loaded experiment: {selected_experiment}")
-
-                # Pull contamination params from scenario table to avoid refitting
-                def _get_val(col):
-                    if col in scenario_df.columns:
-                        return scenario_df[col].iloc[0]
-                    return None
-
-                alpha = _get_val("contamination/contamination_rate/beta_binomial_parameters/alpha")
-                beta = _get_val("contamination/contamination_rate/beta_binomial_parameters/beta")
-                theta = _get_val("contamination/contamination_rate/beta_binomial_parameters/theta")
-                if pd.notna(alpha) and pd.notna(beta):
-                    try:
-                        fit = ClarkeFit(
-                            alpha=float(alpha),
-                            beta=float(beta),
-                            theta=float(theta) if pd.notna(theta) else float("inf"),
-                            raw_result={"source": "scenario_table"},
-                        )
-                        state["fit"] = fit
-                    except Exception:  # pylint: disable=broad-except
-                        pass
+       
             except Exception as exc:  # pylint: disable=broad-except
                 st.warning(f"Unable to load selected experiment: {exc}")
     else:
         st.info("No experiments saved yet on Page 4.")
-    consignment_count = state.get("num_consignments")
-    if consignment_count is None:
-        synth_total = state.get("synthetic_data")
-        if synth_total is not None:
-            consignment_count = len(synth_total)
-    st.caption(
-        "Consignments per scenario are derived from the available data: "
-        f"{consignment_count if consignment_count is not None else 'generate data on Page 1'}."
-    )
-
     st.divider()
     run_disabled = not experiment_sets  # only disable when no experiments
-    run_now = st.button("Run pipeline", use_container_width=True, disabled=run_disabled)
-    if run_now:
-        with st.spinner("Running slippage pipeline..."):
-            try:
-                run_pipeline()
-                state["run_error"] = None
-                state.pop("run_error_message", None)
-                st.success("Pipeline finished.")
-            except Exception as exc:  # pylint: disable=broad-except
-                # Capture the error for display in the main pane
-                state["run_error"] = exc
-                detail = getattr(exc, "stderr", None) or getattr(exc, "output", None)
-                state["run_error_message"] = f"{exc}\n{detail}" if detail else str(exc)
+    if st.button("Run pipeline", use_container_width=True, disabled=run_disabled):
+        # Defer execution to main pane to show spinner there
+        state["run_request_experiment"] = selected_experiment.parent if selected_experiment else None
+        st.session_state["_trigger_run_pipeline"] = True
+
+# Main-pane run handler with spinner
+run_placeholder = st.empty()
+if st.session_state.get("_trigger_run_pipeline"):
+    st.session_state["_trigger_run_pipeline"] = False
+    exp_dir = state.pop("run_request_experiment", None)
+    with st.spinner("Running slippage pipeline..."):
+        try:
+            results = run_pipeline(exp_dir)
+            state["run_error"] = None
+            state.pop("run_error_message", None)
+            st.success("Pipeline finished.")
+        except Exception as exc:  # pylint: disable=broad-except
+            state["run_error"] = exc
+            detail = getattr(exc, "stderr", None) or getattr(exc, "output", None)
+            state["run_error_message"] = f"{exc}\n{detail}" if detail else str(exc)
 
 if run_error:
     msg = state.get("run_error_message") or str(run_error)
-    st.error(f"Pipeline failed: {msg}")
+    st.error("Pipeline failed")
+    st.code(msg, language="text")
     st.caption(
-        "Verify that Page 1 has RBS data (or synthetic seed) and Page 2 has PIS action data uploaded before running."
+        "Common fixes: confirm the selected experiment folder has a scenario_table.csv with non-empty inspection fields, "
+        "RBS data in tmp/consignments, and PIS action data on Page 2. Check the full message above for the failing file."
+    )
+    # Surface current paths to help debugging
+    paths_obj = state.get("paths")
+    st.write(
+        {
+            "scenario_table": str(paths_obj.scenario_table) if paths_obj else None,
+            "rbs_data": str(getattr(paths_obj, "rbs_data", None)) if paths_obj else None,
+            "compliance_lookup": str(getattr(paths_obj, "compliance_lookup", None)) if paths_obj else None,
+            "config": str(getattr(paths_obj, "config", None)) if paths_obj else None,
+        }
     )
 
 results_df = state.get("results")
@@ -234,4 +223,3 @@ with nav_cols[1]:
 with nav_cols[2]:
     if st.button("Finish and Return Home", type="primary", key="nav_finish"):
         st.switch_page("frontend.py")
-

@@ -54,6 +54,11 @@ CONFIG_COLUMNS = [
     "name",
 ]
 
+CONS_FILENAME = "consignment_uploaded_rbs_data.csv"
+COMPLIANCE_FILENAME = "compliance_table.csv"
+CONFIG_FILENAME = "config.yml"
+SCENARIO_FILENAME = "scenario_table.csv"
+
 
 
 @dataclass
@@ -72,6 +77,17 @@ class SlippagePaths:
 
 
 @dataclass
+class ExperimentPaths:
+    """Container for inputs in a specific experiment folder."""
+
+    experiment_dir: Path
+    scenario_table: Path
+    consignment: Optional[Path] = None
+    compliance: Optional[Path] = None
+    config: Optional[Path] = None
+
+
+@dataclass
 class ClarkeFit:
     """Fitted contamination parameters."""
 
@@ -85,11 +101,9 @@ class ClarkeFit:
 class PipelineResult:
     """Outputs from a pipeline run."""
 
-    synthetic_data: pd.DataFrame
     contamination_fit: ClarkeFit
     scenario_results: pd.DataFrame
     config: Dict[str, Any]
-    scenarios: List[Dict[str, Any]]
     compliance_table: Any
     pis_data: pd.DataFrame
     rbs_data: pd.DataFrame
@@ -113,40 +127,8 @@ def create_default_paths(base_dir: Path = DEFAULT_DATA_DIR) -> SlippagePaths:
 
 def load_scenario_dataframe(path: Path, *, dtype: str = "object"):
     """Load the slippage scenario table using the shared popsborder loader and return a DataFrame."""
-    records = load_scenario_table(path)
-    return records
-
-
-def dataframe_to_scenarios(df: pd.DataFrame) -> List[Dict[str, Any]]:
-    """Convert a dataframe representation of the scenario table into dictionaries."""
-    if isinstance(df, list):
-        # Already a list of records from load_scenario_table
-        return [dict(rec) for rec in df]
-    scenarios: List[Dict[str, Any]] = []
-    selectable_columns = [col for col in df.columns if col and not str(col).startswith("Unnamed")]
-    cleaned_df = df.copy()
-    for column in selectable_columns:
-        if pd.api.types.is_numeric_dtype(cleaned_df[column]):
-            cleaned_df[column] = cleaned_df[column]
-        else:
-            cleaned_df[column] = cleaned_df[column].astype("object")
-
-    for _, row in cleaned_df.iterrows():
-        scenario: Dict[str, Any] = {}
-        for column in selectable_columns:
-            value = row[column]
-            if pd.isna(value):
-                scenario[column] = None
-                continue
-            if isinstance(value, str):
-                value = value.strip()
-            if value in ("", "None", "nan"):
-                scenario[column] = None
-                continue
-            scenario[column] = text_to_value(value)
-        scenarios.append(scenario)
+    scenarios = load_scenario_table(path)
     return scenarios
-
 
 def generate_synthetic_data(
     seed_path: Path,
@@ -164,6 +146,22 @@ def generate_synthetic_data(
     )
     save_to_csv(synth_data, filename=output_path)
     return synth_data
+
+
+def _infer_num_consignments(consignment_path: Optional[Path]) -> int:
+    """Estimate consignments by counting unique inspection IDs in the provided consignment file."""
+    if consignment_path and Path(consignment_path).exists():
+        try:
+            df = pd.read_csv(consignment_path)
+            if "INSPECTION_ID" in df.columns:
+                return max(1, int(df["INSPECTION_ID"].nunique()))
+            if "INSPECTION_NUMBER" in df.columns:
+                return max(1, int(df["INSPECTION_NUMBER"].nunique()))
+            return max(1, len(df))
+        except Exception:
+            pass
+    return 1
+
 
 
 def fit_contamination_distribution(
@@ -199,7 +197,7 @@ def fit_contamination_distribution(
         print(inputs)
     except StopIteration as exc:
         raise ValueError(
-            "Fitting failed: no compatible records found between PIS and RBS data. "
+            "Fitting failed: no compatible scenarios found between PIS and RBS data. "
             "Verify that shared INSPECTION_NUMBER rows contain sampling/plant quantities."
         ) from exc
 
@@ -267,118 +265,56 @@ def fit_contamination_distribution(
 
 
 def run_slippage_pipeline(
-    paths: SlippagePaths,
+    exp_paths: ExperimentPaths,
     *,
     seed: int = 42,
     num_simulations: int = 1,
 ) -> PipelineResult:
-    """Execute the pipeline using the scenario CSV only."""
-    # Load scenario records (list of dicts)
-    records = load_scenario_dataframe(paths.scenario_table)
-    if isinstance(records, pd.DataFrame):
-        records = records.to_dict(orient="records")
-    if not isinstance(records, list):
-        raise ValueError("Scenario table could not be loaded as records.")
-    if not records:
-        raise ValueError("Scenario table is empty. Provide a scenario_table.csv with at least one row.")
+    """Execute the pipeline using files inside a specific experiment folder."""
 
-    # Remove unnamed columns
-    scenario_records: List[Dict[str, Any]] = [
-        {k: v for k, v in rec.items() if not str(k).startswith("Unnamed")} for rec in records
-    ]
+    experiment_dir = exp_paths.experiment_dir
+    scenario_table = exp_paths.scenario_table
+    consignment_path = exp_paths.consignment
+    compliance_path = exp_paths.compliance
+    config_path = exp_paths.config or DEFAULT_DATA_DIR / "config.yml"
 
-    def _first_value(key: str) -> Any:
-        for rec in scenario_records:
-            val = rec.get(key, None)
-            if val not in (None, "", "None", "nan"):
-                return val
-        return None
+    scenarios = load_scenario_dataframe(scenario_table)
+    if isinstance(scenarios, pd.DataFrame):
+        scenarios = scenarios.to_dict(orient="records")
+    if not isinstance(scenarios, list) or not scenarios:
+        raise ValueError("Scenario table is empty or unreadable.")
 
-    def _unique_values(key: str) -> List[Any]:
-        vals: List[Any] = []
-        seen: set[Any] = set()
-        for rec in scenario_records:
-            val = rec.get(key, None)
-            if val in (None, "", "None", "nan"):
-                continue
-            if val in seen:
-                continue
-            seen.add(val)
-            vals.append(val)
-        return vals
+    # Expect prepackaged experiment: consignment/compliance/config already in experiment folder
+    cons_path = consignment_path if consignment_path and consignment_path.exists() else None
+    if not cons_path:
+        raise FileNotFoundError(f"Consignment file missing in experiment folder {experiment_dir} (expected {CONS_FILENAME}).")
+    comp_path = compliance_path if compliance_path and compliance_path.exists() else None
 
-    # Pull contamination parameters from scenario records
-    scenario_alpha = float(_first_value("contamination/contamination_rate/beta_binomial_parameters/alpha") or 0)
-    scenario_beta = float(_first_value("contamination/contamination_rate/beta_binomial_parameters/beta") or 0)
-    theta_val = _first_value("contamination/contamination_rate/beta_binomial_parameters/theta")
-    scenario_theta = float(theta_val) if theta_val not in (None, "", "None", "nan") else float("inf")
+    if not config_path or not Path(config_path).exists():
+        raise FileNotFoundError(f"Config file missing in experiment folder {experiment_dir} (expected {CONFIG_FILENAME}).")
+    config = load_configuration(config_path)
 
-    experiment_dir = Path(paths.scenario_table).parent
+    cons_path_str = str(cons_path).replace("\\", "/")
+    comp_lookup_path = comp_path if comp_path and comp_path.exists() else DEFAULT_DATA_DIR / "compliance_table.csv"
+    if not comp_lookup_path or not Path(comp_lookup_path).exists():
+        raise FileNotFoundError(f"Compliance table not found for experiment {experiment_dir}. Expected {COMPLIANCE_FILENAME}.")
+    comp_lookup_str = str(comp_lookup_path).replace("\\", "/")
 
-    def _resolve_from_experiment(name: str, fallback_dir: Path) -> Optional[Path]:
-        if not name:
-            return None
-        cand = experiment_dir / name
-        if cand.exists():
-            return cand
-        fallback = fallback_dir / name
-        if fallback.exists():
-            dest = experiment_dir / name
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(fallback.read_bytes())
-            return dest
-        return None
+    # Ensure config points to the experiment consignment and compliance
+    config.setdefault("consignment", {}).setdefault("input_file", {})
+    config["consignment"]["input_file"]["rbs_file_name"] = cons_path_str
+    config["consignment"]["input_file"]["file_name"] = cons_path_str
+    config.setdefault("inspection", {}).setdefault("compliance_table", {})
+    config["inspection"]["compliance_table"]["file_name"] = comp_lookup_str
 
-    # Resolve consignment and compliance paths based on scenario records
-    consignment_col = (
-        "consignment/input_file/file_name"
-        if any("consignment/input_file/file_name" in r for r in scenario_records)
-        else "consignment name"
-    )
-    compliance_col = (
-        "inspection/compliance_table/file_name"
-        if any("inspection/compliance_table/file_name" in r for r in scenario_records)
-        else "inspection name"
-    )
+    # Ensure scenario records carry the resolved paths
+    for rec in scenarios:
+        rec["consignment/input_file/file_name"] = rec.get("consignment/input_file/file_name") or cons_path_str
+        if comp_lookup_str:
+            rec["inspection/compliance_table/file_name"] = rec.get("inspection/compliance_table/file_name") or comp_lookup_str
 
-    rbs_path: Optional[Path] = None
-    compliance_path: Optional[Path] = experiment_dir / "compliance_table.csv"
-
-    consignment_names = _unique_values(consignment_col)
-    if consignment_names:
-        rbs_path = experiment_dir / consignment_names[0]
-        if not rbs_path.exists():
-            rbs_path = _resolve_from_experiment(consignment_names[0], Path("tmp") / "consignments")
-
-    compliance_names = _unique_values(compliance_col)
-    if compliance_names:
-        candidate = experiment_dir / compliance_names[0]
-        if candidate.exists():
-            compliance_path = candidate
-        else:
-            fallback = _resolve_from_experiment(compliance_names[0], Path("tmp") / "compliance")
-            if fallback:
-                compliance_path = fallback
-
-    if rbs_path is None or not rbs_path.exists():
-        raise FileNotFoundError("No consignment RBS data found for the selected experiment.")
-    synthetic_df = pd.read_csv(rbs_path)
-    if synthetic_df.empty:
-        raise ValueError("RBS data is empty. Upload a non-empty consignment file in tmp/consignments.")
-
-    # Load config and compliance
-    config_path = experiment_dir / "config.yml"
-    config = load_configuration(config_path if config_path.exists() else paths.config)
-    config["consignment"]["input_file"]["rbs_file_name"] = str(rbs_path)
-    num_consignments = max(1, _infer_num_consignments(paths, config, synthetic_df))
-    compliance_lookup_path = compliance_path if compliance_path and compliance_path.exists() else paths.compliance_lookup
-    compliance_table = load_compliance_lookup_csv(compliance_lookup_path)
-
-    # Convert records to scenarios for popsborder
-    scenarios = dataframe_to_scenarios(scenario_records)
-    fit = ClarkeFit(alpha=scenario_alpha, beta=scenario_beta, theta=scenario_theta, raw_result={"source": "scenario_table"})
-    pis_df = pd.DataFrame()
-    rbs_df = pd.DataFrame()
+    num_consignments = _infer_num_consignments(cons_path)
+    compliance_table = load_compliance_lookup_csv(comp_lookup_path)
 
     try:
         scenario_results_raw = run_scenarios_fn(
@@ -390,45 +326,47 @@ def run_slippage_pipeline(
             compliance_table=compliance_table,
             detailed=True,
         )
+    except ZeroDivisionError as exc:
+        raise ValueError(
+            "Division by zero during scenario run. Check inspection proportion, sampling units, and config values."
+        ) from exc
     except StopIteration as exc:
         raise ValueError(
-            "Scenario execution failed: no valid synthetic consignments were generated. "
-            "Ensure the RBS seed file has non-empty TOTAL_SAMPLING_UNITS and TOTAL_PLANT_QUANTITY columns. "
-            f"(Synthetic input: {paths.synthetic_output})"
+            "Scenario execution failed: no valid consignments were generated. "
+            "Ensure the consignment file has valid inspection identifiers."
         ) from exc
 
     scenario_results = [(result, cfg) for _details, result, cfg in scenario_results_raw]
-    paths.output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = experiment_dir / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
     results_df = save_scenario_result_to_pandas(
         scenario_results,
         config_columns=CONFIG_COLUMNS,
         result_columns=RESULT_COLUMNS,
     )
-    out_dir = experiment_dir / "output"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    results_path = out_dir / "pis_contamination_scenario_results.csv"
+    results_path = output_dir / "pis_contamination_scenario_results.csv"
     results_df.to_csv(results_path, index=False)
 
+    fit = ClarkeFit(alpha=0.0, beta=0.0, theta=float("inf"), raw_result={"source": "scenario_table"})
+
     return PipelineResult(
-        synthetic_data=synthetic_df,
         contamination_fit=fit,
         scenario_results=results_df,
         config=config,
-        scenarios=scenarios,
         compliance_table=compliance_table,
-        pis_data=pis_df,
-        rbs_data=rbs_df,
+        pis_data=pd.DataFrame(),
+        rbs_data=pd.DataFrame(),
         num_consignments=num_consignments,
     )
 
 
 __all__ = [
     "SlippagePaths",
+    "ExperimentPaths",
     "ClarkeFit",
     "PipelineResult",
     "create_default_paths",
     "load_scenario_dataframe",
-    "dataframe_to_scenarios",
     "generate_synthetic_data",
     "fit_contamination_distribution",
     "run_slippage_pipeline",

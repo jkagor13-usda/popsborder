@@ -12,7 +12,7 @@ import streamlit as st
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
-from gui.slippage_pipeline import SyntheticOptions, create_default_paths, generate_synthetic_data
+from gui.slippage_pipeline import SyntheticOptions, generate_synthetic_data
 from gui.slippage_ui import (
     get_slippage_state,
     set_paths,
@@ -26,43 +26,6 @@ CONSIGNMENT_ROOT = TMP_DIR / "consignments"
 CONSIGNMENT_ROOT.mkdir(parents=True, exist_ok=True)
 
 
-def _persist_upload(df: pd.DataFrame, dest: Path) -> Path:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(dest, index=False)
-    return dest
-
-
-def _select_columns(df: pd.DataFrame, keywords: List[str]) -> List[str]:
-    selected: List[str] = []
-    for word in keywords:
-        match = next((col for col in df.columns if word in col.lower()), None)
-        if match and match not in selected:
-            selected.append(match)
-    return selected
-
-
-def _summarize_rbs(df: pd.DataFrame) -> pd.DataFrame:
-    grouping_cols = _select_columns(df, ["consignment", "origin", "material"])
-    if not grouping_cols:
-        return df.head(25)
-    summary = df.groupby(grouping_cols).size().reset_index(name="records")
-    return summary.sort_values("records", ascending=False).head(50)
-
-
-def _parse_list(text: str, fallback: List[str]) -> List[str]:
-    cleaned = [item.strip() for item in text.replace(";", ",").split(",") if item.strip()]
-    return cleaned or fallback
-
-
-def _load_preview(path: Optional[Path], rows: int = 50) -> Optional[pd.DataFrame]:
-    if path is None:
-        return None
-    try:
-        return pd.read_csv(path).head(rows)
-    except Exception:  # pylint: disable=broad-except
-        return None
-
-
 def _consignment_dir() -> Path:
     base = CONSIGNMENT_ROOT
     base.mkdir(parents=True, exist_ok=True)
@@ -73,8 +36,8 @@ def _consignment_paths(base_name: Optional[str] = None) -> dict[str, Path]:
     base = _consignment_dir()
     base_name = base_name or st.session_state.get("consignment_base_name", "consignment") or "consignment"
     return {
-        "uploaded_rbs": base / f"{base_name}_uploaded_rbs_data.csv",
-        "manual_rbs": base / f"{base_name}_user_defined_rbs_data.csv",
+        "uploaded_rbs": base / f"{base_name}_built_consignments.csv",
+        "manual_rbs": base / f"{base_name}_built_consignments.csv",
     }
 
 
@@ -152,55 +115,61 @@ def _save_rbs_to_tmp(
         return False, f"Unable to save consignment files: {exc}"
 
 
-def _build_seed_dataset(
-    count: int,
-    prefix: str,
-    origins: List[str],
-    ports: List[str],
-    pathways: List[str],
-    materials: List[str],
-    sample_units: int,
-    plants_per_sample: int,
-    producer: str,
-    contamination_rate: float,
-    detection_level: float,
-    confidence_level: float,
-    required_boxes: int,
-) -> pd.DataFrame:
-    rows = []
-    for idx in range(count):
-        inspection_number = f"{prefix}-{idx+1:04d}"
-        origin = origins[idx % len(origins)]
-        port = ports[idx % len(ports)]
-        pathway = pathways[idx % len(pathways)]
-        material = materials[idx % len(materials)]
-        total_sampling_units = sample_units
-        total_plants = sample_units * plants_per_sample
-        created_time = f"{(idx * 7) % 59:02d}:{(idx * 11) % 59:02d}.{(idx * 3) % 10}"
-        total_plants_contaminated = int(round(total_plants * contamination_rate))
-        rows.append(
-            {
-                "INSPECTION_NUMBER": inspection_number,
-                "INSPECTION_ID": inspection_number,
-                "INSPECTION_LOCATION_NAME": port,
-                "PATHWAY": pathway,
-                "COUNTRY_OF_ORIGIN_NAME": origin,
-                "PROPAGATIVE_MATERIAL_TYPE": material,
-                "TOTAL_SAMPLING_UNITS": total_sampling_units,
-                "TOTAL_PLANT_QUANTITY": total_plants,
-                "TOTAL_PLANTS_CONTAMINATED": total_plants_contaminated,
-                "PRODUCER": producer,
-                "CREATED_DATETIME": created_time,
-                "IS_RBS": 1,
-                "RBS_STATUS": "RBS",
-                "SIMULATED_CONTAMINATION_RATE": contamination_rate,
-                "DETECTION_LEVEL": detection_level,
-                "CONFIDENCE_LEVEL": confidence_level,
-                "REQUIRED_NUMBER_OF_BOXES": required_boxes,
-                "action": 0,
-            }
-        )
-    return pd.DataFrame(rows)
+def _save_historical_rbs(
+    current_rbs: Optional[Path],
+    pending_upload_rbs: Optional[pd.DataFrame],
+    *,
+    base_name: Optional[str] = None,
+) -> tuple[bool, str]:
+    """Persist uploaded historical RBS data to tmp/consignments without generation."""
+    base_name = base_name or st.session_state.get("consignment_base_name", "Historical") or "Historical"
+    paths_map = _consignment_paths(base_name)
+    dest_rbs = _unique_path(paths_map["uploaded_rbs"])
+    dest_rbs.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        if pending_upload_rbs is not None and not pending_upload_rbs.empty:
+            pending_upload_rbs.to_csv(dest_rbs, index=False)
+            state = get_slippage_state()
+            state["rbs_preview"] = pending_upload_rbs.head(10)
+            state["pending_rbs_upload"] = None
+            set_paths(rbs_data=dest_rbs)
+            return True, f"Saved uploaded RBS file with base '{base_name}' to tmp/consignments."
+
+        if current_rbs is not None and Path(current_rbs).exists():
+            if Path(current_rbs).resolve() != dest_rbs.resolve():
+                shutil.copy(current_rbs, dest_rbs)
+            state = get_slippage_state()
+            state["rbs_preview"] = pd.read_csv(dest_rbs).head(10)
+            set_paths(rbs_data=dest_rbs)
+            return True, f"Saved RBS file with base '{base_name}' to tmp/consignments."
+
+        return False, "No RBS source file found."
+    except Exception as exc:  # pylint: disable=broad-except
+        return False, f"Unable to save consignment files: {exc}"
+
+
+def _save_manual_rbs(
+    pending_manual_rbs: Optional[pd.DataFrame],
+    *,
+    base_name: Optional[str] = None,
+) -> tuple[bool, str]:
+    """Persist a manual RBS dataset to a unique path under tmp/consignments."""
+    if pending_manual_rbs is None or pending_manual_rbs.empty:
+        return False, "No manual RBS data to save."
+    try:
+        paths_map = _consignment_paths(base_name)
+        dest_rbs = _unique_path(paths_map["manual_rbs"])
+        dest_rbs.parent.mkdir(parents=True, exist_ok=True)
+        pending_manual_rbs.to_csv(dest_rbs, index=False)
+        state = get_slippage_state()
+        state["rbs_preview"] = pending_manual_rbs.head(10)
+        set_paths(rbs_data=dest_rbs)
+        return True, f"Saved manual RBS file with base '{base_name or st.session_state.get('consignment_base_name', 'consignment')}' to tmp/consignments."
+    except Exception as exc:  # pylint: disable=broad-except
+        return False, f"Unable to save manual RBS file: {exc}"
+
+
 
 
 def _build_rbs_dataset(seed_df: pd.DataFrame) -> pd.DataFrame:
@@ -264,121 +233,61 @@ ingest_tab, manual_tab, saved_tab = st.tabs(
 )
 
 with ingest_tab:
-    st.subheader("Consignment Parameters")
 
     pis_df: Optional[pd.DataFrame] = state.get("pis_data")
     rbs_df: Optional[pd.DataFrame] = state.get("pending_rbs_upload")
 
-    preview_cols = st.columns(2)
-    with preview_cols[0]:
-        st.subheader("Upload RBS calculator")
-        rbs_upload = st.file_uploader("RBS calculator CSV", type=["csv"], key="rbs_upload_ingest")
-        if rbs_upload is not None:
-            rbs_df = pd.read_csv(rbs_upload)
-            state["pending_rbs_upload"] = rbs_df
-            st.success(f"Loaded {len(rbs_df):,} RBS records. Save below to persist to tmp/consignments.")
-        if rbs_df is not None and not rbs_df.empty:
-            st.dataframe(rbs_df.head(25), use_container_width=True, height=300)
-            summary_parts = []
-            if "INSPECTION_NUMBER" in rbs_df.columns:
-                summary_parts.append(f"Consignments (unique INSPECTION_NUMBER): {rbs_df['INSPECTION_NUMBER'].nunique():,}")
-            if "PATHWAY" in rbs_df.columns:
-                summary_parts.append(f"Pathways: {rbs_df['PATHWAY'].nunique():,}")
-            if "INSPECTION_LOCATION_NAME" in rbs_df.columns:
-                summary_parts.append(f"Inspection locations: {rbs_df['INSPECTION_LOCATION_NAME'].nunique():,}")
-            if "COUNTRY_OF_ORIGIN_NAME" in rbs_df.columns:
-                summary_parts.append(f"Countries of origin: {rbs_df['COUNTRY_OF_ORIGIN_NAME'].nunique():,}")
-            if summary_parts:
-                st.markdown("  \n".join(summary_parts))
-        else:
-            st.info("Upload RBS calculator data here.")
+    st.subheader("Upload RBS calculator")
+    rbs_upload = st.file_uploader("RBS calculator CSV", type=["csv"], key="rbs_upload_ingest")
+    if rbs_upload is not None:
+        rbs_df = pd.read_csv(rbs_upload)
+        state["pending_rbs_upload"] = rbs_df
+        st.success(f"Loaded {len(rbs_df):,} RBS records. Save below to persist to tmp/consignments.")
+    if rbs_df is not None and not rbs_df.empty:
+        st.dataframe(rbs_df.head(25), use_container_width=True, height=300)
+        # Inline summary (mirrors Page 3 layout: table + stats together)
+        metrics_top = st.columns(4)
+        if "INSPECTION_NUMBER" in rbs_df.columns:
+            metrics_top[0].metric("Consignments", f"{rbs_df['INSPECTION_NUMBER'].nunique():,}")
+        if "PATHWAY" in rbs_df.columns:
+            metrics_top[1].metric("Pathways", f"{rbs_df['PATHWAY'].nunique():,}")
+        if "INSPECTION_LOCATION_NAME" in rbs_df.columns:
+            metrics_top[2].metric("Locations", f"{rbs_df['INSPECTION_LOCATION_NAME'].nunique():,}")
+        if "COUNTRY_OF_ORIGIN_NAME" in rbs_df.columns:
+            metrics_top[3].metric("Countries", f"{rbs_df['COUNTRY_OF_ORIGIN_NAME'].nunique():,}")
 
-    # Right column intentionally left minimal
-    with preview_cols[1]:
-        st.subheader("Summary")
-        if rbs_df is not None and not rbs_df.empty:
-            cols = st.columns(3)
-            if "COUNTRY_OF_ORIGIN_NAME" in rbs_df.columns:
-                cols[0].markdown("**Top origins**")
-                cols[0].bar_chart(
-                    rbs_df["COUNTRY_OF_ORIGIN_NAME"].value_counts().head(10).rename("Count")
-                )
-            if "INSPECTION_LOCATION_NAME" in rbs_df.columns:
-                cols[1].markdown("**Top inspection locations**")
-                cols[1].bar_chart(
-                    rbs_df["INSPECTION_LOCATION_NAME"].value_counts().head(10).rename("Count")
-                )
-            if "PROPAGATIVE_MATERIAL_TYPE" in rbs_df.columns:
-                cols[2].markdown("**Top material types**")
-                cols[2].bar_chart(
-                    rbs_df["PROPAGATIVE_MATERIAL_TYPE"].value_counts().head(10).rename("Count")
-                )
-            if "TOTAL_PLANT_QUANTITY" in rbs_df.columns:
-                st.markdown("**Plant units vs sampling units (frequency)**")
-                quantities = rbs_df["TOTAL_PLANT_QUANTITY"].dropna().to_numpy()
-                if "TOTAL_SAMPLING_UNITS" in rbs_df.columns:
-                    sampling_units = rbs_df["TOTAL_SAMPLING_UNITS"].dropna().to_numpy()
-                else:
-                    sampling_units = np.array([])
+        totals_cards = st.columns(2)
+        if "TOTAL_PLANT_QUANTITY" in rbs_df.columns:
+            totals_cards[0].metric("Total plant units", f"{int(rbs_df['TOTAL_PLANT_QUANTITY'].sum()):,}")
+        if "TOTAL_SAMPLING_UNITS" in rbs_df.columns:
+            totals_cards[1].metric("Total sampling units", f"{int(rbs_df['TOTAL_SAMPLING_UNITS'].sum()):,}")
+        st.info("Save or generate to view rich plots in the Saved consignments tab.")
+    else:
+        st.info("Upload RBS calculator data here.")
 
-                if quantities.size > 0 and sampling_units.size == quantities.size and sampling_units.size > 0:
-                    q_min, q_max = float(quantities.min()), float(quantities.max())
-                    s_min, s_max = float(sampling_units.min()), float(sampling_units.max())
-                    q_bins = np.linspace(q_min, q_max, num=21) if q_min != q_max else np.array([q_min, q_max + 1])
-                    s_bins = np.linspace(s_min, s_max, num=11) if s_min != s_max else np.array([s_min, s_max + 1])
-                    heat, q_edges, s_edges = np.histogram2d(quantities, sampling_units, bins=[q_bins, s_bins])
-                    heat_df = pd.DataFrame(
-                        {
-                            "plant_bin_start": np.repeat(q_edges[:-1], len(s_edges) - 1),
-                            "plant_bin_end": np.repeat(q_edges[1:], len(s_edges) - 1),
-                            "sample_bin_start": np.tile(s_edges[:-1], len(q_edges) - 1),
-                            "sample_bin_end": np.tile(s_edges[1:], len(q_edges) - 1),
-                            "frequency": heat.flatten(),
-                        }
-                    )
-                    chart = (
-                        alt.Chart(heat_df)
-                        .mark_rect()
-                        .encode(
-                            x=alt.X(
-                                "plant_bin_start:Q",
-                                bin=alt.Bin(binned=True, step=float(q_bins[1] - q_bins[0])),
-                                title="Plant units (bin start)",
-                            ),
-                            x2="plant_bin_end:Q",
-                            y=alt.Y(
-                                "sample_bin_start:Q",
-                                bin=alt.Bin(binned=True, step=float(s_bins[1] - s_bins[0])),
-                                title="Sampling units (bin start)",
-                            ),
-                            y2="sample_bin_end:Q",
-                            color=alt.Color("frequency:Q", title="Frequency", scale=alt.Scale(scheme="blues")),
-                        )
-                    )
-                    st.altair_chart(chart, use_container_width=True)
-                else:
-                    st.info("Need both TOTAL_PLANT_QUANTITY and TOTAL_SAMPLING_UNITS to render the heat map.")
-        else:
-            st.info("No RBS loaded.")
-
-    source_choice = st.radio(
+    source_choice = st.selectbox(
         "Consignment source for downstream analysis",
         [
             "Generate synthetic consignments from data",
             "Use historical consignments",
         ],
         index=0 if state["consignment_source"] == "synthetic" else 1,
-        horizontal=True,
     )
     state["consignment_source"] = "synthetic" if source_choice.startswith("Generate") else "historical"
 
-    # Base name input before actions
+    # Base name input before actions, with defaults per mode
+    default_base = "Generated" if state["consignment_source"] == "synthetic" else "Historical"
+    # If the stored value is one of the old defaults, realign it to the current mode before rendering the widget
+    if st.session_state.get("consignment_base_name") in ("Generated", "Historical", "Generated_Historical"):
+        st.session_state["consignment_base_name"] = default_base
+    current_base = st.session_state.get("consignment_base_name", default_base) or default_base
     st.text_input(
         "Consignment input file base name",
-        value=state["consignment_base_name"],
+        value=current_base,
         key="consignment_base_name",
-        help="Used to name RBS files in tmp/consignments (e.g., <name>_uploaded_rbs_data.csv).",
+        help="Used to name RBS files in tmp/consignments (e.g., <name>_built_consignments.csv).",
     )
+    state["consignment_base_name"] = st.session_state.get("consignment_base_name", current_base) or default_base
 
     if state["consignment_source"] == "synthetic":
         st.markdown("### Synthetic consignment generation")
@@ -403,7 +312,7 @@ with ingest_tab:
         ):
             st.warning("Upload both PIS action and RBS data on **Page 2 - Contamination Fit** to rely on historical consignments.")
         if st.button("Save uploaded consignments", type="primary", key="save_consignment_ingest", use_container_width=True):
-            ok, msg = _save_rbs_to_tmp(current_rbs, pending_manual_rbs, state.get("pending_rbs_upload"))
+            ok, msg = _save_historical_rbs(current_rbs, state.get("pending_rbs_upload"), base_name=current_base)
             if ok:
                 st.success(msg)
             else:
@@ -474,11 +383,10 @@ with manual_tab:
     detection_level = 0.01
     confidence_level = 0.8
     st.caption(
-        "Detection level is fixed at 1% and confidence level at 80% for generated RBS rows. "
         "Required inspection units are auto-computed."
     )
     if st.button(
-        "Save consignment from inspection units",
+        "Build consignment from inspection units above",
         type="secondary",
         use_container_width=True,
         disabled=not state["manual_units"],
@@ -556,12 +464,12 @@ with manual_tab:
 
     manual_base = st.text_input(
         "Consignment input file base name (manual)",
-        value=state["consignment_base_name"],
+        value=st.session_state.get("consignment_base_name_manual", "Manual"),
         key="consignment_base_name_manual",
-        help="Used to name RBS files in tmp/consignments (e.g., <name>_uploaded_rbs_data.csv).",
-    ) or state["consignment_base_name"]
+        help="Used to name RBS files in tmp/consignments (e.g., <name>_built_consignments.csv).",
+    ) or "Manual"
     if st.button("Save manual consignments", type="primary", key="save_consignment_manual", use_container_width=True):
-        ok, msg = _save_rbs_to_tmp(current_rbs, pending_manual_rbs, state.get("pending_rbs_upload"), base_name=manual_base)
+        ok, msg = _save_manual_rbs(pending_manual_rbs, base_name=manual_base)
         if ok:
             st.success(msg)
         else:
@@ -582,6 +490,80 @@ with saved_tab:
         try:
             full_df = pd.read_csv(sel)
             st.dataframe(full_df, use_container_width=True, height=500)
+            # Summary under the table (single column)
+            st.markdown("### Summary statistics")
+            stats_cols = st.columns(4)
+            if "INSPECTION_NUMBER" in full_df.columns:
+                stats_cols[0].metric("Consignments", f"{full_df['INSPECTION_NUMBER'].nunique():,}")
+            if "PATHWAY" in full_df.columns:
+                stats_cols[1].metric("Pathways", f"{full_df['PATHWAY'].nunique():,}")
+            if "INSPECTION_LOCATION_NAME" in full_df.columns:
+                stats_cols[2].metric("Locations", f"{full_df['INSPECTION_LOCATION_NAME'].nunique():,}")
+            if "COUNTRY_OF_ORIGIN_NAME" in full_df.columns:
+                stats_cols[3].metric("Countries", f"{full_df['COUNTRY_OF_ORIGIN_NAME'].nunique():,}")
+            totals_cols = st.columns(2)
+            if "TOTAL_PLANT_QUANTITY" in full_df.columns:
+                totals_cols[0].metric("Total plant units", f"{int(full_df['TOTAL_PLANT_QUANTITY'].sum()):,}")
+            if "TOTAL_SAMPLING_UNITS" in full_df.columns:
+                totals_cols[1].metric("Total sampling units", f"{int(full_df['TOTAL_SAMPLING_UNITS'].sum()):,}")
+
+            st.markdown("### Distributions")
+            plots_two_col = st.columns(2)
+            with plots_two_col[0]:
+                plot_subcols = st.columns(3)
+                if "COUNTRY_OF_ORIGIN_NAME" in full_df.columns:
+                    plot_subcols[0].markdown("**Top origins**")
+                    plot_subcols[0].bar_chart(full_df["COUNTRY_OF_ORIGIN_NAME"].value_counts().head(10).rename("Count"))
+                if "INSPECTION_LOCATION_NAME" in full_df.columns:
+                    plot_subcols[1].markdown("**Top inspection locations**")
+                    plot_subcols[1].bar_chart(full_df["INSPECTION_LOCATION_NAME"].value_counts().head(10).rename("Count"))
+                if "PROPAGATIVE_MATERIAL_TYPE" in full_df.columns:
+                    plot_subcols[2].markdown("**Top material types**")
+                    plot_subcols[2].bar_chart(full_df["PROPAGATIVE_MATERIAL_TYPE"].value_counts().head(10).rename("Count"))
+            with plots_two_col[1]:
+                if "TOTAL_PLANT_QUANTITY" in full_df.columns and "TOTAL_SAMPLING_UNITS" in full_df.columns:
+                    st.markdown("**Plant units vs sampling units (frequency)**")
+                    quantities = full_df["TOTAL_PLANT_QUANTITY"].dropna().to_numpy()
+                    sampling_units = full_df["TOTAL_SAMPLING_UNITS"].dropna().to_numpy()
+                    if quantities.size > 0 and sampling_units.size == quantities.size and sampling_units.size > 0:
+                        q_min, q_max = float(quantities.min()), float(quantities.max())
+                        s_min, s_max = float(sampling_units.min()), float(sampling_units.max())
+                        q_bins = np.linspace(q_min, q_max, num=21) if q_min != q_max else np.array([q_min, q_max + 1])
+                        s_bins = np.linspace(s_min, s_max, num=11) if s_min != s_max else np.array([s_min, s_max + 1])
+                        heat, q_edges, s_edges = np.histogram2d(quantities, sampling_units, bins=[q_bins, s_bins])
+                        heat_df = pd.DataFrame(
+                            {
+                                "plant_bin_start": np.repeat(q_edges[:-1], len(s_edges) - 1),
+                                "plant_bin_end": np.repeat(q_edges[1:], len(s_edges) - 1),
+                                "sample_bin_start": np.tile(s_edges[:-1], len(q_edges) - 1),
+                                "sample_bin_end": np.tile(s_edges[1:], len(q_edges) - 1),
+                                "frequency": heat.flatten(),
+                            }
+                        )
+                        chart = (
+                            alt.Chart(heat_df)
+                            .mark_rect()
+                            .encode(
+                                x=alt.X(
+                                    "plant_bin_start:Q",
+                                    bin=alt.Bin(binned=True, step=float(q_bins[1] - q_bins[0])),
+                                    title="Plant units (bin start)",
+                                ),
+                                x2="plant_bin_end:Q",
+                                y=alt.Y(
+                                    "sample_bin_start:Q",
+                                    bin=alt.Bin(binned=True, step=float(s_bins[1] - s_bins[0])),
+                                    title="Sampling units (bin start)",
+                                ),
+                                y2="sample_bin_end:Q",
+                                color=alt.Color("frequency:Q", title="Frequency", scale=alt.Scale(scheme="blues")),
+                            )
+                        )
+                        st.altair_chart(chart, use_container_width=True)
+                    else:
+                        st.info("Need both TOTAL_PLANT_QUANTITY and TOTAL_SAMPLING_UNITS to render the heat map.")
+                else:
+                    st.info("Need both TOTAL_PLANT_QUANTITY and TOTAL_SAMPLING_UNITS to render the heat map.")
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Unable to preview file: {exc}")
 

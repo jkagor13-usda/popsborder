@@ -107,5 +107,6 @@ inspection:
     confidence_level: 0.80  # 80% confidence level
   fixed_n: 10
   selection_strategy: random  # Random selection of sample units
+  within_box_proportion: 1
   compliance_table:
     file_name: data/compliance_table.csv

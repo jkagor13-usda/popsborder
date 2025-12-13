@@ -2,7 +2,7 @@ import streamlit as st
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
-from gui.slippage_ui import export_state_snapshot, init_slippage_state
+from gui.slippage_ui import init_slippage_state
 
 
 st.set_page_config(page_title="Home", layout="wide")

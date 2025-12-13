@@ -117,82 +117,76 @@ with fit_tab:
     st.subheader("Fit beta-binomial contamination parameters")
     st.caption("Fits are based on the PIS action upload and RBS calculator selection in this tab.")
 
-    ingest_cols = st.columns(2)
-    with ingest_cols[0]:
-        st.subheader("PIS action data upload")
-        pis_upload = st.file_uploader(
-            "Upload PIS action CSV",
-            type=["csv"],
-            key="pis_upload",
-            help="PIS action data is required for contamination fitting.",
-        )
-        if pis_upload is not None:
-            dest = CONTAM_DIR / "fit_pis_data.csv"
-            df = pd.read_csv(pis_upload)
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            df.to_csv(dest, index=False)
-            set_paths(pis_data=dest)
-            paths = slippage_state["paths"]
-            st.success(f"Saved PIS data to {dest}")
-        pis_preview = _load_preview(slippage_state["paths"].pis_data)
-        if pis_preview is not None:
-            st.dataframe(pis_preview, use_container_width=True)
-        else:
-            st.info("No PIS action data loaded yet.")
+    st.subheader("PIS action data upload")
+    pis_upload = st.file_uploader(
+        "Upload PIS action CSV",
+        type=["csv"],
+        key="pis_upload",
+        help="PIS action data is required for contamination fitting.",
+    )
+    if pis_upload is not None:
+        dest = CONTAM_DIR / "fit_pis_data.csv"
+        df = pd.read_csv(pis_upload)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(dest, index=False)
+        set_paths(pis_data=dest)
+        paths = slippage_state["paths"]
+        st.success(f"Saved PIS data to {dest}")
 
-        st.subheader("Select RBS calculator file")
-        rbs_candidates = sorted(
-            [p for p in (Path("tmp") / "consignments").glob("*.csv") if "rbs" in p.name.lower()]
-        )
-        if not rbs_candidates:
-            st.warning("No RBS files found in tmp/consignments. Add one on Page 1.")
-        else:
-            current_rbs = slippage_state["paths"].rbs_data
-            default_idx = 0
-            if current_rbs in rbs_candidates:
-                default_idx = rbs_candidates.index(current_rbs)
-            chosen_rbs = st.selectbox("RBS file", rbs_candidates, index=default_idx, format_func=lambda p: p.name)
-            set_paths(rbs_data=chosen_rbs, synthetic_seed=chosen_rbs)
-            paths = slippage_state["paths"]
+    pis_df = None
+    pis_preview = _load_preview(slippage_state["paths"].pis_data)
+    if pis_preview is not None:
+        st.dataframe(pis_preview, use_container_width=True)
+        try:
+            pis_df = pd.read_csv(slippage_state["paths"].pis_data)
+        except Exception:  # pylint: disable=broad-except
+            pis_df = None
+    else:
+        st.info("No PIS action data loaded yet.")
 
-    with ingest_cols[1]:
-        st.subheader("PIS action summary statistics")
-        pis_df = None
-        if slippage_state["paths"].pis_data and Path(slippage_state["paths"].pis_data).exists():
-            try:
-                pis_df = pd.read_csv(slippage_state["paths"].pis_data)
-            except Exception:  # pylint: disable=broad-except
-                pis_df = None
+    # Summary stats beneath the table (one-column flow)
+    if pis_df is not None and not pis_df.empty:
+        def _find_col(df, substrings):
+            lower_map = {c.lower(): c for c in df.columns}
+            for s in substrings:
+                for lc, orig in lower_map.items():
+                    if s in lc:
+                        return orig
+            return None
 
-        if pis_df is None or pis_df.empty:
-            st.info("No PIS data loaded yet.")
-        else:
-            def _find_col(df, substrings):
-                lower_map = {c.lower(): c for c in df.columns}
-                for s in substrings:
-                    for lc, orig in lower_map.items():
-                        if s in lc:
-                            return orig
-                return None
+        ins_col = _find_col(pis_df, ["inspection"])
+        samp_col = _find_col(pis_df, ["total_sampling"])
+        plant_col = _find_col(pis_df, ["total_plant"])
+        action_col = _find_col(pis_df, ["action"])
 
-            ins_col = _find_col(pis_df, ["inspection"])
-            samp_col = _find_col(pis_df, ["total_sampling"])
-            plant_col = _find_col(pis_df, ["total_plant"])
-            action_col = _find_col(pis_df, ["action"])
+        n_rows = len(pis_df)
+        unique_inspections = pis_df[ins_col].nunique() if ins_col else 0
+        total_sampling = pis_df[samp_col].sum() if samp_col else 0
+        total_plants = pis_df[plant_col].sum() if plant_col else 0
+        action_ones = int((pis_df[action_col] == 1).sum()) if action_col else 0
 
-            n_rows = len(pis_df)
-            unique_inspections = pis_df[ins_col].nunique() if ins_col else 0
-            total_sampling = pis_df[samp_col].sum() if samp_col else 0
-            total_plants = pis_df[plant_col].sum() if plant_col else 0
-            action_ones = int((pis_df[action_col] == 1).sum()) if action_col else 0
+        stats = st.columns(3)
+        stats[0].metric("Rows", f"{n_rows}")
+        stats[1].metric("Unique inspections", f"{unique_inspections}")
+        stats[2].metric("Rows with action = 1", f"{action_ones}")
+        stats2 = st.columns(2)
+        stats2[0].metric("Total sampling units", f"{total_sampling:,}")
+        stats2[1].metric("Total plant quantity", f"{total_plants}")
 
-            stats = st.columns(3)
-            stats[0].metric("Rows", f"{n_rows}")
-            stats[1].metric("Unique inspections", f"{unique_inspections}")
-            stats[2].metric("Rows with action = 1", f"{action_ones}")
-            stats2 = st.columns(2)
-            stats2[0].metric("Total sampling units", f"{total_sampling}")
-            stats2[1].metric("Total plant quantity", f"{total_plants}")
+    st.subheader("Select RBS calculator file")
+    rbs_candidates = sorted(
+        [p for p in (Path("tmp") / "consignments").glob("*.csv") if "rbs" in p.name.lower()]
+    )
+    if not rbs_candidates:
+        st.warning("No RBS files found in tmp/consignments. Add one on Page 1.")
+    else:
+        current_rbs = slippage_state["paths"].rbs_data
+        default_idx = 0
+        if current_rbs in rbs_candidates:
+            default_idx = rbs_candidates.index(current_rbs)
+        chosen_rbs = st.selectbox("RBS file", rbs_candidates, index=default_idx, format_func=lambda p: p.name)
+        set_paths(rbs_data=chosen_rbs, synthetic_seed=chosen_rbs)
+        paths = slippage_state["paths"]
 
     fit_cols = st.columns(2)
     with fit_cols[0]:
