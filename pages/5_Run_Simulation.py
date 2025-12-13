@@ -22,6 +22,7 @@ render_sidebar_navigation()
 engine_options = state["engine_options"]
 run_error = state.get("run_error")
 paths = state["paths"]
+TMP_DIR = Path("tmp")
 
 
 def _rbs_ready() -> tuple[bool, str]:
@@ -226,11 +227,23 @@ st.markdown("### Raw configuration output")
 #     st.dataframe(scenario_df[existing_cols], use_container_width=True)
 
 st.divider()
-nav_cols = st.columns(2)
+nav_cols = st.columns(3)
 with nav_cols[0]:
-    if st.button("Back to Page 4", type="primary", key="nav_back_page5"):
-        st.switch_page("pages/4_Scenario_Experiments.py")
+    if st.button("Reset and Return Home", type="secondary", key="nav_reset_page5"):
+        try:
+            if TMP_DIR.exists():
+                import shutil  # pylint: disable=import-outside-toplevel
+                shutil.rmtree(TMP_DIR)
+            TMP_DIR.mkdir(parents=True, exist_ok=True)
+            st.session_state.clear()
+            state["paths"] = create_default_paths()
+            st.switch_page("frontend.py")
+        except Exception as exc:  # pylint: disable=broad-except
+            st.error(f"Unable to reset temporary files: {exc}")
 with nav_cols[1]:
+    if st.button("Previous Page", type="primary", key="nav_back_page5"):
+        st.switch_page("pages/4_Scenario_Experiments.py")
+with nav_cols[2]:
     if st.button("Finish and Return Home", type="primary", key="nav_finish"):
         st.switch_page("frontend.py")
 

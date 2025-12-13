@@ -24,7 +24,6 @@ TMP_DIR = Path("tmp")
 TMP_DIR.mkdir(exist_ok=True)
 SCENARIO_ROOT = TMP_DIR / "experiments"
 SCENARIO_ROOT.mkdir(parents=True, exist_ok=True)
-MASTER_SCENARIO_TABLE = SCENARIO_ROOT / "scenario_table.csv"
 TEMPLATE_SCENARIO = Path("data_input") / "pis_contaminate_scenarios.csv"
 
 
@@ -79,16 +78,6 @@ with tabs[0]:
             scenario_dir.mkdir(parents=True, exist_ok=True)
             dest = scenario_dir / "scenario_table.csv"
             df.to_csv(dest, index=False)
-            # update master table
-            master_df = pd.DataFrame()
-            if MASTER_SCENARIO_TABLE.exists():
-                try:
-                    master_df = pd.read_csv(MASTER_SCENARIO_TABLE)
-                except Exception:  # pylint: disable=broad-except
-                    master_df = pd.DataFrame()
-            master_df = pd.concat([master_df, df], ignore_index=True).drop_duplicates()
-            MASTER_SCENARIO_TABLE.parent.mkdir(parents=True, exist_ok=True)
-            MASTER_SCENARIO_TABLE.write_text(master_df.to_csv(index=False))
             state["paths"] = state["paths"].__class__(**{**state["paths"].__dict__, "scenario_table": dest})
             st.success(f"Saved custom scenario table to {dest}")
         except Exception as exc:  # pylint: disable=broad-except
@@ -101,7 +90,6 @@ with tabs[1]:
 
     with col_left:
         scenario_label = st.text_input("Scenario label", value=f"scenario_{len(state['experiment_rows'])+1}")
-        scenario_note = st.text_input("Optional note/description", value="")
 
         consignment_files = _list_files(TMP_DIR / "consignments", "*.csv")
         consignment_choice = st.selectbox(
@@ -182,6 +170,17 @@ with tabs[1]:
     else:
         st.info("Add at least one scenario row.")
 
+    col_actions = st.columns(2)
+    with col_actions[0]:
+        if st.button("Clear current rows", type="secondary", disabled=rows_df.empty):
+            state["experiment_rows"] = []
+            st.rerun()
+    with col_actions[1]:
+        if st.button("Remove last row", type="secondary", disabled=rows_df.empty):
+            if state["experiment_rows"]:
+                state["experiment_rows"].pop()
+            st.rerun()
+
     scenario_set = st.text_input("Experiment set name (CSV)", value="experiment_set_1")
 
     can_save = all([scenario_set]) and not rows_df.empty
@@ -197,39 +196,34 @@ with tabs[1]:
                 else rows_df.columns.tolist()
             )
             scenario_table = rows_df.reindex(columns=template_cols, fill_value="")
-            # Append to set-specific table
-            existing = pd.DataFrame()
-            if scenario_path.exists():
-                try:
-                    existing = pd.read_csv(scenario_path)
-                except Exception:  # pylint: disable=broad-except
-                    existing = pd.DataFrame(columns=template_cols)
-            existing = existing.reindex(columns=scenario_table.columns, fill_value="")
-            scenario_table = pd.concat([existing, scenario_table], ignore_index=True)
             scenario_table.to_csv(scenario_path, index=False)
-            # Save contamination params snapshot for reference
-            import json  # pylint: disable=import-outside-toplevel
-            (scenario_dir / "contamination_params.json").write_text(
-                json.dumps(_load_param_sets(), indent=2)
-            )
-            if scenario_note:
-                (scenario_dir / "README.txt").write_text(scenario_note)
+
+            # Copy referenced consignment and compliance files into the experiment folder
+            consignment_names = [c for c in rows_df.get("consignment name", []).dropna().unique().tolist() if c]
+            compliance_names = [c for c in rows_df.get("inspection name", []).dropna().unique().tolist() if c]
+            for name in consignment_names:
+                src = Path("tmp") / "consignments" / name
+                if src.exists():
+                    dest = scenario_dir / name
+                    dest.write_bytes(src.read_bytes())
+            for name in compliance_names:
+                src = Path("tmp") / "compliance" / name
+                if src.exists():
+                    dest = scenario_dir / name
+                    dest.write_bytes(src.read_bytes())
+            # Copy contamination parameter sets snapshot if it exists
+            contam_src = Path("tmp") / "contamination" / "contamination_parameter_sets.json"
+            if contam_src.exists():
+                (scenario_dir / "contamination_parameter_sets.json").write_bytes(contam_src.read_bytes())
+            # Copy config for consistency
+            config_src = state["paths"].config if state.get("paths") and getattr(state["paths"], "config", None) else Path("data_input") / "config.yml"
+            if Path(config_src).exists():
+                (scenario_dir / "config.yml").write_bytes(Path(config_src).read_bytes())
+
             # Update engine options and state paths
             set_engine_options(num_simulations=int(num_simulations), seed=int(seed))
-            # Update master scenario table
-            master_df = pd.DataFrame()
-            if MASTER_SCENARIO_TABLE.exists():
-                try:
-                    master_df = pd.read_csv(MASTER_SCENARIO_TABLE)
-                except Exception:  # pylint: disable=broad-except
-                    master_df = pd.DataFrame(columns=scenario_table.columns)
-            master_df = master_df.reindex(columns=scenario_table.columns, fill_value="")
-            master_df = pd.concat([master_df, scenario_table], ignore_index=True)
-            MASTER_SCENARIO_TABLE.parent.mkdir(parents=True, exist_ok=True)
-            MASTER_SCENARIO_TABLE.write_text(master_df.to_csv(index=False))
-
-            state["paths"] = state["paths"].__class__(**{**state["paths"].__dict__, "scenario_table": MASTER_SCENARIO_TABLE})
-            st.success(f"Experiment saved to {scenario_dir} and appended to {MASTER_SCENARIO_TABLE}")
+            state["paths"] = state["paths"].__class__(**{**state["paths"].__dict__, "scenario_table": scenario_path})
+            st.success(f"Experiment saved to {scenario_path}")
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Failed to save experiment: {exc}")
 
@@ -244,14 +238,34 @@ with tabs[2]:
             preview = pd.read_csv(sel)
             st.dataframe(preview, use_container_width=True)
             st.caption(f"Path: {sel}")
+            if st.button("Delete this experiment set", type="secondary"):
+                try:
+                    shutil.rmtree(sel.parent)
+                    st.success(f"Deleted {sel.parent}")
+                    st.rerun()
+                except Exception as exc:  # pylint: disable=broad-except
+                    st.error(f"Unable to delete experiment: {exc}")
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Unable to preview experiment: {exc}")
 
 st.divider()
 nav_cols = st.columns(2)
 with nav_cols[0]:
-    if st.button("Back to Page 3", type="primary", key="nav_back_page3"):
-        st.switch_page("pages/3_Inspection_Process.py")
+    if st.button("Reset and Return Home", type="secondary"):
+        # Clear all of tmp and paths, then go home
+        try:
+            shutil.rmtree(TMP_DIR)
+        except Exception:
+            pass
+        TMP_DIR.mkdir(parents=True, exist_ok=True)
+        st.session_state.clear()
+        state["paths"] = state["paths"].__class__(**{**state["paths"].__dict__, "scenario_table": TEMPLATE_SCENARIO})
+        st.switch_page("frontend.py")
 with nav_cols[1]:
-    if st.button("Continue to Page 5", type="primary", key="nav_forward_page5"):
-        st.switch_page("pages/5_Run_Simulation.py")
+    prev_next = st.columns(2)
+    with prev_next[0]:
+        if st.button("Previous Page", type="primary", key="nav_back_page4"):
+            st.switch_page("pages/3_Inspection_Process.py")
+    with prev_next[1]:
+        if st.button("Next Page", type="primary", key="nav_forward_page5"):
+            st.switch_page("pages/5_Run_Simulation.py")

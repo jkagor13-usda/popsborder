@@ -244,6 +244,7 @@ with nav_cols[0]:
             if TMP_DIR.exists():
                 shutil.rmtree(TMP_DIR)
             TMP_DIR.mkdir(parents=True, exist_ok=True)
+            st.session_state.clear()
             state["paths"] = create_default_paths()
             st.switch_page("frontend.py")
         except Exception as exc:  # pylint: disable=broad-except

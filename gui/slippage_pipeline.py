@@ -326,22 +326,51 @@ def run_slippage_pipeline(
 ) -> PipelineResult:
     """Execute the full slippage pipeline and return artifacts for UI consumption."""
     scenario_df = scenario_df if scenario_df is not None else load_scenario_dataframe(paths.scenario_table)
+    experiment_dir = Path(paths.scenario_table).parent
 
-    # Use the uploaded/generated RBS file directly; skip synthetic generation
-    if paths.rbs_data and Path(paths.rbs_data).exists():
-        rbs_df = pd.read_csv(paths.rbs_data)
-    else:
-        raise FileNotFoundError(
-            "No consignment RBS data found. Upload RBS calculator data on Page 1/2 or generate consignments manually."
-        )
+    def _resolve_from_experiment(name: str, fallback_dir: Path) -> Optional[Path]:
+        if not name:
+            return None
+        cand = experiment_dir / name
+        if cand.exists():
+            return cand
+        fallback = fallback_dir / name
+        if fallback.exists():
+            dest = experiment_dir / name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(fallback.read_bytes())
+            return dest
+        return None
+
+    # Resolve consignment and compliance paths based on the scenario table
+    consignment_col = "consignment name"
+    compliance_col = "inspection name"
+    rbs_path = None
+    compliance_path = None
+    if consignment_col in scenario_df.columns:
+        consignment_names = [c for c in scenario_df[consignment_col].dropna().unique().tolist() if c]
+        if consignment_names:
+            rbs_path = _resolve_from_experiment(consignment_names[0], Path("tmp") / "consignments")
+    if compliance_col in scenario_df.columns:
+        compliance_names = [c for c in scenario_df[compliance_col].dropna().unique().tolist() if c]
+        if compliance_names:
+            compliance_path = _resolve_from_experiment(compliance_names[0], Path("tmp") / "compliance")
+
+    if rbs_path is None or not rbs_path.exists():
+        raise FileNotFoundError("No consignment RBS data found for the selected experiment.")
+    rbs_df = pd.read_csv(rbs_path)
     synthetic_df = rbs_df.copy()
     if synthetic_df.empty:
         raise ValueError("RBS data is empty. Upload a non-empty consignment file in tmp/consignments.")
-    config = load_configuration(paths.config)
-    config["consignment"]["input_file"]["rbs_file_name"] = str(paths.rbs_data)
+
+    # Use experiment-local config if present; else fallback to default
+    config_path = experiment_dir / "config.yml"
+    config = load_configuration(config_path if config_path.exists() else paths.config)
+    config["consignment"]["input_file"]["rbs_file_name"] = str(rbs_path)
     num_consignments = max(1, _infer_num_consignments(paths, config, synthetic_df))
     scenarios = dataframe_to_scenarios(scenario_df)
-    compliance_table = load_compliance_lookup_csv(paths.compliance_lookup)
+    compliance_lookup_path = compliance_path if compliance_path else paths.compliance_lookup
+    compliance_table = load_compliance_lookup_csv(compliance_lookup_path)
 
     if fit_override is not None:
         fit = fit_override
@@ -362,19 +391,19 @@ def run_slippage_pipeline(
         param_path = Path("tmp") / "contamination" / "contamination_parameter_sets.json"
         alpha_val = beta_val = None
         theta_val = float("inf")
-        if param_path.exists():
-            try:
-                with open(param_path, "r") as f:
-                    param_sets = json.load(f)
-                if isinstance(param_sets, dict) and param_sets:
-                    last_key = list(param_sets.keys())[-1]
-                    params = param_sets.get(last_key, {})
-                    alpha_val = float(params.get("alpha", alpha_val))
-                    beta_val = float(params.get("beta", beta_val))
-                    theta_raw = params.get("theta", theta_val)
-                    theta_val = float("inf") if theta_raw is None or np.isinf(theta_raw) else float(theta_raw)
-            except Exception:
-                pass
+    if param_path.exists():
+        try:
+            with open(param_path, "r") as f:
+                param_sets = json.load(f)
+            if isinstance(param_sets, dict) and param_sets:
+                last_key = list(param_sets.keys())[-1]
+                params = param_sets.get(last_key, {})
+                alpha_val = float(params.get("alpha", alpha_val))
+                beta_val = float(params.get("beta", beta_val))
+                theta_raw = params.get("theta", theta_val)
+                theta_val = float("inf") if theta_raw is None or np.isinf(theta_raw) else float(theta_raw)
+        except Exception:
+            pass
 
         alpha_default = config.get("contamination", {}).get("contamination_rate", {}).get("parameters", [0.2, 5])[0]
         beta_default = config.get("contamination", {}).get("contamination_rate", {}).get("parameters", [0.2, 5])[1]
@@ -411,7 +440,7 @@ def run_slippage_pipeline(
         config_columns=CONFIG_COLUMNS,
         result_columns=RESULT_COLUMNS,
     )
-    results_path = paths.output_dir / "pis_contamination_scenario_results.csv"
+    results_path = experiment_dir / "pis_contamination_scenario_results.csv"
     results_df.to_csv(results_path, index=False)
 
     return PipelineResult(

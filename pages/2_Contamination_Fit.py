@@ -430,8 +430,7 @@ with nav_cols[0]:
                 shutil.rmtree(TMP_DIR)
             TMP_DIR.mkdir(parents=True, exist_ok=True)
             # Clear in-memory state
-            st.session_state.pop("last_saved_param_set", None)
-            st.session_state.pop("page2_assigned_fit", None)
+            st.session_state.clear()
             slippage_state["paths"] = create_default_paths()
             slippage_state["fit"] = None
             st.switch_page("frontend.py")

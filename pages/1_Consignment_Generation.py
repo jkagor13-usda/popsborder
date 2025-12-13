@@ -69,53 +69,85 @@ def _consignment_dir() -> Path:
     return base
 
 
-def _consignment_paths() -> dict[str, Path]:
+def _consignment_paths(base_name: Optional[str] = None) -> dict[str, Path]:
     base = _consignment_dir()
-    base_name = st.session_state.get("consignment_base_name", "consignment") or "consignment"
+    base_name = base_name or st.session_state.get("consignment_base_name", "consignment") or "consignment"
     return {
         "uploaded_rbs": base / f"{base_name}_uploaded_rbs_data.csv",
         "manual_rbs": base / f"{base_name}_user_defined_rbs_data.csv",
     }
 
 
-def _save_rbs_to_tmp(current_rbs: Optional[Path], pending_manual_rbs: Optional[pd.DataFrame]) -> tuple[bool, str]:
-    paths_map = _consignment_paths()
-    base_name = st.session_state.get("consignment_base_name", "consignment") or "consignment"
-    if current_rbs is None and pending_manual_rbs is None:
+def _unique_path(path: Path) -> Path:
+    """Return a non-conflicting path by appending an incrementing suffix if needed."""
+    if not path.exists():
+        return path
+    stem, suffix = path.stem, path.suffix
+    for i in itertools.count(1):
+        candidate = path.with_name(f"{stem}_{i}{suffix}")
+        if not candidate.exists():
+            return candidate
+
+
+def _save_rbs_to_tmp(
+    current_rbs: Optional[Path],
+    pending_manual_rbs: Optional[pd.DataFrame],
+    pending_upload_rbs: Optional[pd.DataFrame] = None,
+    *,
+    base_name: Optional[str] = None,
+) -> tuple[bool, str]:
+    paths_map = _consignment_paths(base_name)
+    base_name = base_name or st.session_state.get("consignment_base_name", "consignment") or "consignment"
+    if current_rbs is None and pending_manual_rbs is None and pending_upload_rbs is None:
         return False, "No RBS data available. Upload a calculator file or create consignments manually first."
     try:
-        dest_rbs = paths_map["uploaded_rbs"]
-        dest_rbs.parent.mkdir(parents=True, exist_ok=True)
         state = get_slippage_state()
         cons_source = state.get("consignment_source", "synthetic")
-        if pending_manual_rbs is not None:
-            pending_manual_rbs.to_csv(dest_rbs, index=False)
-            state["rbs_data"] = pending_manual_rbs
-            state["rbs_preview"] = pending_manual_rbs.head(10)
-        elif cons_source == "synthetic":
-            seed_path = None
-            for candidate in [
-                current_rbs,
-                state["paths"].rbs_data,
-                state["paths"].synthetic_seed,
-                _consignment_paths()["uploaded_rbs"],
-            ]:
-                if candidate and Path(candidate).exists():
-                    seed_path = Path(candidate)
-                    break
-            if seed_path is None:
+
+        if cons_source == "synthetic":
+            # Always generate a new synthetic file into a unique output
+            dest_rbs = _unique_path(paths_map["uploaded_rbs"])
+            dest_rbs.parent.mkdir(parents=True, exist_ok=True)
+            if pending_upload_rbs is not None:
+                seed_path = _consignment_dir() / f"{base_name}_seed_rbs.csv"
+                pending_upload_rbs.to_csv(seed_path, index=False)
+                state["pending_rbs_upload"] = None
+            elif current_rbs and Path(current_rbs).exists():
+                seed_path = Path(current_rbs)
+            elif paths_map["uploaded_rbs"].exists():
+                seed_path = paths_map["uploaded_rbs"]
+            else:
                 return False, "No RBS seed available for synthetic generation. Upload/select an RBS file first."
+
             options: SyntheticOptions = state.get("synthetic_options", SyntheticOptions())
             synth_df = generate_synthetic_data(seed_path, dest_rbs, options)
-            state["rbs_data"] = synth_df
             state["rbs_preview"] = synth_df.head(10)
-        elif current_rbs is not None and Path(current_rbs).exists():
+            set_paths(rbs_data=dest_rbs, synthetic_seed=seed_path)
+            return True, f"Generated and saved RBS file with base '{base_name}' to tmp/consignments."
+
+        # Historical/manual: write exactly what is provided
+        dest_rbs = _unique_path(paths_map["uploaded_rbs"])
+        dest_rbs.parent.mkdir(parents=True, exist_ok=True)
+        if pending_upload_rbs is not None:
+            pending_upload_rbs.to_csv(dest_rbs, index=False)
+            state["rbs_preview"] = pending_upload_rbs.head(10)
+            state["pending_rbs_upload"] = None
+            set_paths(rbs_data=dest_rbs)
+            return True, f"Saved RBS file with base '{base_name}' to tmp/consignments."
+        if pending_manual_rbs is not None:
+            pending_manual_rbs.to_csv(dest_rbs, index=False)
+            state["rbs_preview"] = pending_manual_rbs.head(10)
+            set_paths(rbs_data=dest_rbs)
+            return True, f"Saved RBS file with base '{base_name}' to tmp/consignments."
+        if current_rbs is not None and Path(current_rbs).exists():
             if Path(current_rbs).resolve() != dest_rbs.resolve():
                 shutil.copy(current_rbs, dest_rbs)
-        else:
-            return False, "No RBS source file found."
-        set_paths(rbs_data=dest_rbs)
-        return True, f"Saved RBS file with base '{base_name}' to tmp/consignments."
+            state["rbs_preview"] = pd.read_csv(dest_rbs).head(10)
+            set_paths(rbs_data=dest_rbs)
+            return True, f"Saved RBS file with base '{base_name}' to tmp/consignments."
+
+        return False, "No RBS source file found."
+
     except Exception as exc:  # pylint: disable=broad-except
         return False, f"Unable to save consignment files: {exc}"
 
@@ -201,6 +233,7 @@ render_sidebar_navigation()
 paths = state["paths"]
 state.setdefault("consignment_source", "synthetic")
 state.setdefault("consignment_base_name", "consignment")
+state.setdefault("pending_rbs_upload", None)
 # Normalize current RBS references for later save buttons
 _state_rbs = state.get("rbs_data")
 current_rbs = None
@@ -233,12 +266,8 @@ ingest_tab, manual_tab, saved_tab = st.tabs(
 with ingest_tab:
     st.subheader("Consignment Parameters")
 
-    st.info(
-        "Generate consignments or use historical data directly"
-    )
-
     pis_df: Optional[pd.DataFrame] = state.get("pis_data")
-    rbs_df: Optional[pd.DataFrame] = state.get("rbs_data")
+    rbs_df: Optional[pd.DataFrame] = state.get("pending_rbs_upload")
 
     preview_cols = st.columns(2)
     with preview_cols[0]:
@@ -246,32 +275,27 @@ with ingest_tab:
         rbs_upload = st.file_uploader("RBS calculator CSV", type=["csv"], key="rbs_upload_ingest")
         if rbs_upload is not None:
             rbs_df = pd.read_csv(rbs_upload)
-            state["rbs_data"] = rbs_df
-            state["rbs_preview"] = rbs_df.head(10)
-            target = _consignment_paths()["uploaded_rbs"]
-            _persist_upload(rbs_df, target)
-            set_paths(rbs_data=target)
-            st.success(f"Loaded {len(rbs_df):,} RBS records. Saved to {target}")
+            state["pending_rbs_upload"] = rbs_df
+            st.success(f"Loaded {len(rbs_df):,} RBS records. Save below to persist to tmp/consignments.")
         if rbs_df is not None and not rbs_df.empty:
-            with st.expander("Uploaded RBS preview", expanded=True):
-                st.dataframe(rbs_df.head(25), use_container_width=True, height=400)
-                # Text summary beneath the preview
-                summary_parts = []
-                if "INSPECTION_NUMBER" in rbs_df.columns:
-                    summary_parts.append(f"Consignments (unique INSPECTION_NUMBER): {rbs_df['INSPECTION_NUMBER'].nunique():,}")
-                if "PATHWAY" in rbs_df.columns:
-                    summary_parts.append(f"Pathways: {rbs_df['PATHWAY'].nunique():,}")
-                if "INSPECTION_LOCATION_NAME" in rbs_df.columns:
-                    summary_parts.append(f"Inspection locations: {rbs_df['INSPECTION_LOCATION_NAME'].nunique():,}")
-                if "COUNTRY_OF_ORIGIN_NAME" in rbs_df.columns:
-                    summary_parts.append(f"Countries of origin: {rbs_df['COUNTRY_OF_ORIGIN_NAME'].nunique():,}")
-                if summary_parts:
-                    st.markdown("  \n".join(summary_parts))
+            st.dataframe(rbs_df.head(25), use_container_width=True, height=300)
+            summary_parts = []
+            if "INSPECTION_NUMBER" in rbs_df.columns:
+                summary_parts.append(f"Consignments (unique INSPECTION_NUMBER): {rbs_df['INSPECTION_NUMBER'].nunique():,}")
+            if "PATHWAY" in rbs_df.columns:
+                summary_parts.append(f"Pathways: {rbs_df['PATHWAY'].nunique():,}")
+            if "INSPECTION_LOCATION_NAME" in rbs_df.columns:
+                summary_parts.append(f"Inspection locations: {rbs_df['INSPECTION_LOCATION_NAME'].nunique():,}")
+            if "COUNTRY_OF_ORIGIN_NAME" in rbs_df.columns:
+                summary_parts.append(f"Countries of origin: {rbs_df['COUNTRY_OF_ORIGIN_NAME'].nunique():,}")
+            if summary_parts:
+                st.markdown("  \n".join(summary_parts))
         else:
             st.info("Upload RBS calculator data here.")
 
+    # Right column intentionally left minimal
     with preview_cols[1]:
-        st.subheader("Summary statistics")
+        st.subheader("Summary")
         if rbs_df is not None and not rbs_df.empty:
             cols = st.columns(3)
             if "COUNTRY_OF_ORIGIN_NAME" in rbs_df.columns:
@@ -335,7 +359,7 @@ with ingest_tab:
                 else:
                     st.info("Need both TOTAL_PLANT_QUANTITY and TOTAL_SAMPLING_UNITS to render the heat map.")
         else:
-            st.info("Upload RBS calculator data to view summary statistics.")
+            st.info("No RBS loaded.")
 
     source_choice = st.radio(
         "Consignment source for downstream analysis",
@@ -348,41 +372,42 @@ with ingest_tab:
     )
     state["consignment_source"] = "synthetic" if source_choice.startswith("Generate") else "historical"
 
-    if state["consignment_source"] == "historical" and (
-        (pis_df is None or pis_df.empty) or (rbs_df is None or rbs_df.empty)
-    ):
-        st.warning("Upload both PIS action and RBS data on **Page 2 - Contamination Fit** to rely on historical consignments.")
-
-    if state["consignment_source"] == "synthetic":
-        st.markdown("### Synthetic consignment generation")
-        gen_cols = st.columns(2)
-        n_samples = gen_cols[0].number_input("Number of consignments to generate", min_value=1, max_value=10000, value=200, step=10)
-        method = gen_cols[1].selectbox(
-            "Sampling method",
-            options=["naive", "sequential", "gmm", "gaussian_copula"],
-            index=1,
-        )
-        if st.button("Generate synthetic consignments", type="secondary", use_container_width=True):
-            set_synthetic_options(SyntheticOptions(n_samples=int(n_samples), sampling_method=method))
-            # Use the uploaded RBS as the seed for synthetic generation
-            set_paths(synthetic_seed=_consignment_paths()["uploaded_rbs"])
-            st.success(
-                f"Configured generation of {n_samples} consignments via '{method}'. "
-                "Use the save buttons below to write the RBS file with your chosen base name."
-            )
-
+    # Base name input before actions
     st.text_input(
         "Consignment input file base name",
         value=state["consignment_base_name"],
         key="consignment_base_name",
         help="Used to name RBS files in tmp/consignments (e.g., <name>_uploaded_rbs_data.csv).",
     )
-    if st.button("Save consignment generation", type="secondary", key="save_consignment_ingest", use_container_width=True):
-        ok, msg = _save_rbs_to_tmp(current_rbs, pending_manual_rbs)
-        if ok:
-            st.success(msg)
-        else:
-            st.warning(msg)
+
+    if state["consignment_source"] == "synthetic":
+        st.markdown("### Synthetic consignment generation")
+        gen_cols = st.columns(2)
+        n_samples = gen_cols[0].number_input("Number of consignments to generate", min_value=1, max_value=10000, value=20, step=10)
+        method = gen_cols[1].selectbox(
+            "Sampling method",
+            options=[ "sequential", "gmm"],
+            index=1,
+        )
+        if st.button("Generate synthetic consignments", type="primary", use_container_width=True):
+            set_synthetic_options(SyntheticOptions(n_samples=int(n_samples), sampling_method=method))
+            set_paths(synthetic_seed=_consignment_paths()["uploaded_rbs"])
+            ok, msg = _save_rbs_to_tmp(current_rbs, pending_manual_rbs, state.get("pending_rbs_upload"))
+            if ok:
+                st.success(f"Generated and saved synthetic consignments: {msg}")
+            else:
+                st.warning(msg)
+    else:
+        if state["consignment_source"] == "historical" and (
+            (pis_df is None or pis_df.empty) or (rbs_df is None or rbs_df.empty)
+        ):
+            st.warning("Upload both PIS action and RBS data on **Page 2 - Contamination Fit** to rely on historical consignments.")
+        if st.button("Save uploaded consignments", type="primary", key="save_consignment_ingest", use_container_width=True):
+            ok, msg = _save_rbs_to_tmp(current_rbs, pending_manual_rbs, state.get("pending_rbs_upload"))
+            if ok:
+                st.success(msg)
+            else:
+                st.warning(msg)
 
 
     current_pis_path = paths.pis_data
@@ -529,14 +554,14 @@ with manual_tab:
         else:
             st.info("Create a seed dataset to preview and download the generated RBS file.")
 
-    st.text_input(
+    manual_base = st.text_input(
         "Consignment input file base name (manual)",
         value=state["consignment_base_name"],
         key="consignment_base_name_manual",
         help="Used to name RBS files in tmp/consignments (e.g., <name>_uploaded_rbs_data.csv).",
-    )
-    if st.button("Save consignment generation", type="secondary", key="save_consignment_manual", use_container_width=True):
-        ok, msg = _save_rbs_to_tmp(current_rbs, pending_manual_rbs)
+    ) or state["consignment_base_name"]
+    if st.button("Save manual consignments", type="primary", key="save_consignment_manual", use_container_width=True):
+        ok, msg = _save_rbs_to_tmp(current_rbs, pending_manual_rbs, state.get("pending_rbs_upload"), base_name=manual_base)
         if ok:
             st.success(msg)
         else:
@@ -546,6 +571,9 @@ with manual_tab:
 with saved_tab:
     st.subheader("Saved consignments")
     saved_files = sorted(CONSIGNMENT_ROOT.glob("*.csv"))
+    refresh = st.button("Refresh saved consignments", type="secondary")
+    if refresh:
+        st.rerun()
     if not saved_files:
         st.info("No consignment files saved yet in tmp/consignments.")
     else:
@@ -553,83 +581,9 @@ with saved_tab:
         st.caption(f"Location: {sel}")
         try:
             full_df = pd.read_csv(sel)
-        except Exception:  # pylint: disable=broad-except
-            full_df = None
-        if full_df is not None:
             st.dataframe(full_df, use_container_width=True, height=500)
-            cols_view = st.columns(2)
-            with cols_view[0]:
-                def _safe_count(df: pd.DataFrame, col: str) -> int:
-                    return df[col].nunique() if col in df.columns else 0
-
-                st.markdown("**Summary statistics**")
-                stats_cols = st.columns(2)
-                stats_cols[0].metric("Rows", f"{len(full_df)}")
-                stats_cols[1].metric("Consignments", f"{_safe_count(full_df, 'INSPECTION_NUMBER')}")
-                stats_cols2 = st.columns(2)
-                stats_cols2[0].metric("Pathways", f"{_safe_count(full_df, 'PATHWAY')}")
-                stats_cols2[1].metric("Origins", f"{_safe_count(full_df, 'COUNTRY_OF_ORIGIN_NAME')}")
-                if "TOTAL_PLANT_QUANTITY" in full_df.columns:
-                    st.metric("Total plant quantity", f"{full_df['TOTAL_PLANT_QUANTITY'].sum():,}")
-                if "TOTAL_SAMPLING_UNITS" in full_df.columns:
-                    st.metric("Total sampling units", f"{full_df['TOTAL_SAMPLING_UNITS'].sum():,}")
-
-            with cols_view[1]:
-                plot_cols = st.columns(3)
-                if "COUNTRY_OF_ORIGIN_NAME" in full_df.columns:
-                    plot_cols[0].markdown("**Top origins**")
-                    plot_cols[0].bar_chart(full_df["COUNTRY_OF_ORIGIN_NAME"].value_counts().head(10).rename("Count"))
-                if "INSPECTION_LOCATION_NAME" in full_df.columns:
-                    plot_cols[1].markdown("**Top inspection locations**")
-                    plot_cols[1].bar_chart(
-                        full_df["INSPECTION_LOCATION_NAME"].value_counts().head(10).rename("Count")
-                    )
-                if "PROPAGATIVE_MATERIAL_TYPE" in full_df.columns:
-                    plot_cols[2].markdown("**Top material types**")
-                    plot_cols[2].bar_chart(
-                        full_df["PROPAGATIVE_MATERIAL_TYPE"].value_counts().head(10).rename("Count")
-                    )
-                if "TOTAL_PLANT_QUANTITY" in full_df.columns and "TOTAL_SAMPLING_UNITS" in full_df.columns:
-                    st.markdown("**Plant units vs sampling units (frequency)**")
-                    quantities = full_df["TOTAL_PLANT_QUANTITY"].dropna().to_numpy()
-                    sampling_units = full_df["TOTAL_SAMPLING_UNITS"].dropna().to_numpy()
-                    if quantities.size > 0 and sampling_units.size == quantities.size and sampling_units.size > 0:
-                        q_min, q_max = float(quantities.min()), float(quantities.max())
-                        s_min, s_max = float(sampling_units.min()), float(sampling_units.max())
-                        q_bins = np.linspace(q_min, q_max, num=21) if q_min != q_max else np.array([q_min, q_max + 1])
-                        s_bins = np.linspace(s_min, s_max, num=11) if s_min != s_max else np.array([s_min, s_max + 1])
-                        heat, q_edges, s_edges = np.histogram2d(quantities, sampling_units, bins=[q_bins, s_bins])
-                        heat_df = pd.DataFrame(
-                            {
-                                "plant_bin_start": np.repeat(q_edges[:-1], len(s_edges) - 1),
-                                "plant_bin_end": np.repeat(q_edges[1:], len(s_edges) - 1),
-                                "sample_bin_start": np.tile(s_edges[:-1], len(q_edges) - 1),
-                                "sample_bin_end": np.tile(s_edges[1:], len(q_edges) - 1),
-                                "frequency": heat.flatten(),
-                            }
-                        )
-                        chart = (
-                            alt.Chart(heat_df)
-                            .mark_rect()
-                            .encode(
-                                x=alt.X(
-                                    "plant_bin_start:Q",
-                                    bin=alt.Bin(binned=True, step=float(q_bins[1] - q_bins[0])),
-                                    title="Plant units (bin start)",
-                                ),
-                                x2="plant_bin_end:Q",
-                                y=alt.Y(
-                                    "sample_bin_start:Q",
-                                    bin=alt.Bin(binned=True, step=float(s_bins[1] - s_bins[0])),
-                                    title="Sampling units (bin start)",
-                                ),
-                                y2="sample_bin_end:Q",
-                                color=alt.Color("frequency:Q", title="Frequency", scale=alt.Scale(scheme="blues")),
-                            )
-                        )
-                        st.altair_chart(chart, use_container_width=True)
-        else:
-            st.info("Unable to preview this file.")
+        except Exception as exc:  # pylint: disable=broad-except
+            st.error(f"Unable to preview file: {exc}")
 
 pending_manual_rbs = state.get("pending_manual_rbs")
 
@@ -651,25 +605,17 @@ with nav_cols[0]:
             if src_cfg.exists():
                 dst_cfg = TMP_DIR / "config.yml"
                 shutil.copy(src_cfg, dst_cfg)
-            state["paths"] = create_default_paths()
-            state["pis_data"] = None
-            state["pis_preview"] = None
-            state["rbs_data"] = None
-            state["rbs_preview"] = None
-            state["synthetic_data"] = None
-            state["synthetic_preview"] = None
-            state["manual_units"] = []
-            state["manual_consignments"] = []
+            st.session_state.clear()
             st.success("Temporary files cleared. Returning to Home...")
             st.switch_page("frontend.py")
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Unable to reset temporary files: {exc}")
 with nav_cols[1]:
-    if st.button("Back to Home", type="primary", key="nav_home_page2"):
+    if st.button("Previous Page", type="primary", key="nav_home_page2"):
         st.switch_page("frontend.py")
 with nav_cols[2]:
     if st.button(
-        "Confirm upload and continue to next page",
+        "Next Page",
         type="primary",
         key="nav_forward_page2",
         disabled=not current_rbs,
