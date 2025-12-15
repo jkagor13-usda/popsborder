@@ -153,10 +153,17 @@ def _infer_num_consignments(consignment_path: Optional[Path]) -> int:
     if consignment_path and Path(consignment_path).exists():
         try:
             df = pd.read_csv(consignment_path)
-            if "INSPECTION_ID" in df.columns:
-                return max(1, int(df["INSPECTION_ID"].nunique()))
-            if "INSPECTION_NUMBER" in df.columns:
-                return max(1, int(df["INSPECTION_NUMBER"].nunique()))
+            id_cols = [
+                "INSPECTION_NUMBER",
+                "INSPECTION_ID",
+                "inspection_number",
+                "inspection_id",
+            ]
+            for col in id_cols:
+                if col in df.columns:
+                    n_unique = df[col].nunique(dropna=True)
+                    if n_unique > 0:
+                        return max(1, int(n_unique))
             return max(1, len(df))
         except Exception:
             pass
@@ -284,11 +291,36 @@ def run_slippage_pipeline(
     if not isinstance(scenarios, list) or not scenarios:
         raise ValueError("Scenario table is empty or unreadable.")
 
-    # Expect prepackaged experiment: consignment/compliance/config already in experiment folder
-    cons_path = consignment_path if consignment_path and consignment_path.exists() else None
+    def _resolve_first_path(records: List[Dict[str, Any]], key: str) -> Optional[Path]:
+        for rec in records:
+            val = rec.get(key)
+            if val not in (None, "", "None", "nan"):
+                return Path(str(val))
+        return None
+
+    def _with_experiment_dir(p: Path) -> Path:
+        return p if p.is_absolute() else (experiment_dir / p.name if not p.exists() else p)
+
+    # Resolve consignment/compliance paths (prefer explicit exp_paths, else first scenario reference)
+    cons_candidates: List[Path] = []
+    if consignment_path and consignment_path.exists():
+        cons_candidates.append(consignment_path)
+    for rec in scenarios:
+        cand_val = rec.get("consignment/input_file/file_name")
+        if cand_val not in (None, "", "None", "nan"):
+            cand = _with_experiment_dir(Path(str(cand_val)))
+            if cand.exists():
+                cons_candidates.append(cand)
+    cons_path = cons_candidates[0] if cons_candidates else None
     if not cons_path:
-        raise FileNotFoundError(f"Consignment file missing in experiment folder {experiment_dir} (expected {CONS_FILENAME}).")
+        raise FileNotFoundError(f"Consignment file missing in experiment folder {experiment_dir}.")
+
     comp_path = compliance_path if compliance_path and compliance_path.exists() else None
+    if not comp_path:
+        cand = _resolve_first_path(scenarios, "inspection/compliance_table/file_name")
+        if cand:
+            cand = _with_experiment_dir(cand)
+            comp_path = cand if cand.exists() else None
 
     if not config_path or not Path(config_path).exists():
         raise FileNotFoundError(f"Config file missing in experiment folder {experiment_dir} (expected {CONFIG_FILENAME}).")
@@ -300,6 +332,24 @@ def run_slippage_pipeline(
         raise FileNotFoundError(f"Compliance table not found for experiment {experiment_dir}. Expected {COMPLIANCE_FILENAME}.")
     comp_lookup_str = str(comp_lookup_path).replace("\\", "/")
 
+    # Normalize scenario inspection parameters to avoid over-sampling
+    norm_scenarios = []
+    for rec in scenarios:
+        rec = rec.copy()
+        try:
+            prop_val = float(rec.get("inspection/proportion/value", 0) or 0)
+        except Exception:
+            prop_val = 0.0
+        if prop_val <= 0:
+            prop_val = 0.02
+        if prop_val > 1:
+            prop_val = 1.0
+        rec["inspection/proportion/value"] = prop_val
+        if not rec.get("inspection/sample_strategy"):
+            rec["inspection/sample_strategy"] = "rbs"
+        norm_scenarios.append(rec)
+    scenarios = norm_scenarios
+
     # Ensure config points to the experiment consignment and compliance
     config.setdefault("consignment", {}).setdefault("input_file", {})
     config["consignment"]["input_file"]["rbs_file_name"] = cons_path_str
@@ -307,18 +357,20 @@ def run_slippage_pipeline(
     config.setdefault("inspection", {}).setdefault("compliance_table", {})
     config["inspection"]["compliance_table"]["file_name"] = comp_lookup_str
 
-    # Ensure scenario records carry the resolved paths
-    for rec in scenarios:
-        rec["consignment/input_file/file_name"] = rec.get("consignment/input_file/file_name") or cons_path_str
-        if comp_lookup_str:
-            rec["inspection/compliance_table/file_name"] = rec.get("inspection/compliance_table/file_name") or comp_lookup_str
-
-    num_consignments = _infer_num_consignments(cons_path)
+    # Use the total consignment count across all referenced consignment files (deduped by path)
+    unique_cons_files = []
+    seen = set()
+    for p in cons_candidates:
+        key = str(Path(p))
+        if key not in seen:
+            seen.add(key)
+            unique_cons_files.append(p)
+    num_consignments = sum(_infer_num_consignments(p) for p in unique_cons_files) if unique_cons_files else 1
     compliance_table = load_compliance_lookup_csv(comp_lookup_path)
 
-    try:
-        scenario_results_raw = run_scenarios_fn(
-            config=config,
+    def _run_with_config(cfg):
+        return run_scenarios_fn(
+            config=cfg,
             scenario_table=scenarios,
             seed=seed,
             num_simulations=num_simulations,
@@ -326,6 +378,27 @@ def run_slippage_pipeline(
             compliance_table=compliance_table,
             detailed=True,
         )
+
+    try:
+        scenario_results_raw = _run_with_config(config)
+    except ValueError as exc:
+        msg = str(exc)
+        if "Sample larger than population" in msg:
+            # Retry once with a conservative sampling proportion to avoid crash
+            cfg_retry = copy.deepcopy(config)
+            cfg_retry.setdefault("inspection", {}).setdefault("proportion", {})
+            current_prop = cfg_retry["inspection"]["proportion"].get("value", 0.02) or 0.02
+            cfg_retry["inspection"]["proportion"]["value"] = min(float(current_prop), 0.01)
+            cfg_retry["inspection"]["min_inspection_units"] = 0
+            try:
+                scenario_results_raw = _run_with_config(cfg_retry)
+            except Exception as inner_exc:  # pylint: disable=broad-except
+                raise ValueError(
+                    "Sampling request exceeded available population even after clamping. "
+                    "Reduce inspection proportion or check TOTAL_SAMPLING_UNITS in the consignment file."
+                ) from inner_exc
+        else:
+            raise
     except ZeroDivisionError as exc:
         raise ValueError(
             "Division by zero during scenario run. Check inspection proportion, sampling units, and config values."

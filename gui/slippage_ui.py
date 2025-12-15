@@ -119,15 +119,33 @@ def run_pipeline(experiment_dir):
     engine_options = state["engine_options"]
 
     cfg_path = experiment_dir / CONFIG_FILENAME
-    consignment_path = experiment_dir / CONS_FILENAME
-    compliance_path = experiment_dir / COMPLIANCE_FILENAME
     scenario_path = experiment_dir / SCENARIO_FILENAME
+    # Resolve consignment/compliance filenames from the scenario table (supports custom names)
+    consignment_path = None
+    compliance_path = None
+    try:
+        scenario_df = pd.read_csv(scenario_path)
+        def _first_value(col: str) -> Optional[Path]:
+            if col not in scenario_df.columns:
+                return None
+            for val in scenario_df[col].dropna().tolist():
+                if val:
+                    return Path(str(val))
+            return None
+        cons_val = _first_value("consignment/input_file/file_name")
+        comp_val = _first_value("inspection/compliance_table/file_name")
+        if cons_val:
+            consignment_path = experiment_dir / cons_val.name if not cons_val.is_absolute() else cons_val
+        if comp_val:
+            compliance_path = experiment_dir / comp_val.name if not comp_val.is_absolute() else comp_val
+    except Exception:
+        scenario_df = None
 
     exp_paths = ExperimentPaths(
         experiment_dir=experiment_dir,
         scenario_table=scenario_path,
-        consignment=consignment_path if consignment_path.exists() else None,
-        compliance=compliance_path if compliance_path.exists() else None,
+        consignment=consignment_path if consignment_path and consignment_path.exists() else None,
+        compliance=compliance_path if compliance_path and compliance_path.exists() else None,
         config=cfg_path if cfg_path.exists() else paths.config,
     )
     # Keep state paths in sync with the experiment we are about to run
@@ -136,8 +154,8 @@ def run_pipeline(experiment_dir):
             **paths.__dict__,
             "scenario_table": scenario_path,
             "config": exp_paths.config or paths.config,
-            "rbs_data": consignment_path if consignment_path.exists() else paths.__dict__.get("rbs_data"),
-            "compliance_lookup": compliance_path if compliance_path.exists() else paths.__dict__.get("compliance_lookup"),
+            "rbs_data": consignment_path if consignment_path and consignment_path.exists() else paths.__dict__.get("rbs_data"),
+            "compliance_lookup": compliance_path if compliance_path and compliance_path.exists() else paths.__dict__.get("compliance_lookup"),
         }
     )
     

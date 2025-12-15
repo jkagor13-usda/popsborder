@@ -3,6 +3,7 @@ from typing import Optional, Union
 import json
 import re
 import shutil
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -55,24 +56,27 @@ def _load_param_sets() -> dict:
 def _copy_inputs(rows_df: pd.DataFrame, scenario_dir: Path) -> None:
     """Copy consignment/compliance files and contamination params/config into scenario_dir with standard names."""
     missing: list[str] = []
+    copied_files: list[str] = []
     # Copy consignment file as CONS_FILENAME
     cons_col = "consignment/input_file/file_name"
     if cons_col in rows_df.columns:
-        vals = [v for v in rows_df[cons_col].dropna().unique().tolist() if v]
+        vals = [v for v in rows_df[cons_col].dropna().tolist() if v]
         if vals:
-            name = Path(str(vals[0])).name
-            src_candidates = [
-                Path(str(vals[0])),
-                Path("tmp") / "consignments" / name,
-                Path(name),
-            ]
-            src = next((p for p in src_candidates if p.exists()), None)
-            if src:
-                dest = scenario_dir / CONS_FILENAME
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(src.read_bytes())
-            else:
-                missing.append(f"consignment file '{name}'")
+            for val in vals:
+                name = Path(str(val)).name
+                src_candidates = [
+                    Path(str(val)),
+                    Path("tmp") / "consignments" / name,
+                    Path(name),
+                ]
+                src = next((p for p in src_candidates if p.exists()), None)
+                if src:
+                    dest = scenario_dir / name
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(src.read_bytes())
+                    copied_files.append(dest.name)
+                else:
+                    missing.append(f"consignment file '{name}'")
         else:
             missing.append("consignment file (none listed)")
     else:
@@ -81,21 +85,23 @@ def _copy_inputs(rows_df: pd.DataFrame, scenario_dir: Path) -> None:
     # Copy compliance file as COMPLIANCE_FILENAME
     comp_col = "inspection/compliance_table/file_name"
     if comp_col in rows_df.columns:
-        vals = [v for v in rows_df[comp_col].dropna().unique().tolist() if v]
+        vals = [v for v in rows_df[comp_col].dropna().tolist() if v]
         if vals:
-            name = Path(str(vals[0])).name
-            src_candidates = [
-                Path(str(vals[0])),
-                Path("tmp") / "compliance" / name,
-                Path(name),
-            ]
-            src = next((p for p in src_candidates if p.exists()), None)
-            if src:
-                dest = scenario_dir / COMPLIANCE_FILENAME
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(src.read_bytes())
-            else:
-                missing.append(f"compliance file '{name}'")
+            for val in vals:
+                name = Path(str(val)).name
+                src_candidates = [
+                    Path(str(val)),
+                    Path("tmp") / "compliance" / name,
+                    Path(name),
+                ]
+                src = next((p for p in src_candidates if p.exists()), None)
+                if src:
+                    dest = scenario_dir / name
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(src.read_bytes())
+                    copied_files.append(dest.name)
+                else:
+                    missing.append(f"compliance file '{name}'")
         else:
             missing.append("compliance file (none listed)")
     else:
@@ -108,16 +114,20 @@ def _copy_inputs(rows_df: pd.DataFrame, scenario_dir: Path) -> None:
         )
 
     # Copy config
-    config_src = (
-        state["paths"].config
-        if state.get("paths") and getattr(state["paths"], "config", None)
-        else Path("data_input") / "config.yml"
-    )
-    config_src = Path(config_src)
-    if config_src.exists():
+    config_candidates = []
+    if state.get("paths") and getattr(state["paths"], "config", None):
+        config_candidates.append(Path(state["paths"].config))
+    config_candidates.append(Path("tmp") / "config.yml")
+    config_candidates.append(Path("data_input") / "config.yml")
+    config_src = next((p for p in config_candidates if p.exists()), None)
+    if config_src:
         (scenario_dir / CONFIG_FILENAME).write_bytes(config_src.read_bytes())
+        copied_files.append(CONFIG_FILENAME)
+    else:
+        missing.append("config.yml")
     if missing:
         raise FileNotFoundError("; ".join(missing))
+    return copied_files
 
 
 def _normalize_rows(rows_df: pd.DataFrame) -> pd.DataFrame:
@@ -342,15 +352,20 @@ with tabs[1]:
 
             # Make file paths portable (within scenario_dir, forward slashes)
             if "consignment/input_file/file_name" in rows_df.columns:
-                rows_df["consignment/input_file/file_name"] = f"{base_prefix}/{CONS_FILENAME}"
+                rows_df["consignment/input_file/file_name"] = rows_df["consignment/input_file/file_name"].apply(
+                    lambda v: f"{base_prefix}/{Path(str(v)).name}".replace("\\", "/") if v else v
+                )
             if "inspection/compliance_table/file_name" in rows_df.columns:
-                rows_df["inspection/compliance_table/file_name"] = f"{base_prefix}/{COMPLIANCE_FILENAME}"
+                rows_df["inspection/compliance_table/file_name"] = rows_df["inspection/compliance_table/file_name"].apply(
+                    lambda v: f"{base_prefix}/{Path(str(v)).name}".replace("\\", "/") if v else v
+                )
 
             rows_df = _normalize_rows(rows_df)
             scenario_table = rows_df.reindex(columns=template_cols, fill_value="")
             scenario_table.to_csv(scenario_path, index=False)
 
-            _copy_inputs(raw_rows_df, scenario_dir)
+            copied = _copy_inputs(raw_rows_df, scenario_dir)
+            st.caption(f"Copied files to {scenario_dir}: {', '.join(copied)}")
 
             state["paths"] = state["paths"].__class__(
                 **{**state["paths"].__dict__, "scenario_table": scenario_path}

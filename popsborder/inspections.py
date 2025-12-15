@@ -588,6 +588,10 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     )
 
     if sample_strategy == "rbs":
+         
+        """
+        TODO: Investigate min guard and impact on oversampling
+        """
         if unit in ["sample_unit", "sample_units", "item", "items"]:
             detected = False
             if selection_strategy == "cluster":
