@@ -31,7 +31,7 @@ st.caption("Execute the slippage pipeline and compare policies based on slippage
 with st.sidebar:
     st.subheader("Execution options")
     simulations = st.number_input(
-        "Simulation repetitions",
+        "Simulation replications",
         min_value=1,
         max_value=500,
         value=int(engine_options.get("num_simulations", 1)),
@@ -129,6 +129,15 @@ summary_cols = [
     "total_intercepted_contaminants",
 ]
 summary = results_df.groupby("name")[summary_cols].sum().reset_index()
+# Attach mean of avg_inspection_units_opened_completion if present
+if "avg_inspection_units_opened_completion" in results_df.columns:
+    opened_mean = (
+        results_df.groupby("name")["avg_inspection_units_opened_completion"]
+        .mean()
+        .reset_index()
+        .rename(columns={"avg_inspection_units_opened_completion": "avg_opened_completion"})
+    )
+    summary = summary.merge(opened_mean, on="name", how="left")
 denom = summary["total_intercepted_contaminants"] + summary["total_missed_contaminants"]
 summary["detection_rate"] = (
     summary["total_intercepted_contaminants"] / denom.replace(0, pd.NA)
@@ -175,11 +184,13 @@ rate_chart = (
 )
 st.altair_chart(rate_chart, use_container_width=True)
 
-st.markdown("### Slippage vs inspected units")
-scatter_source = summary[["name", "num_inspections", "slippage_rate"]].rename(
-    columns={"num_inspections": "Inspected Units", "slippage_rate": "Slippage Rate"}
+scatter_metric = "avg_opened_completion" if "avg_opened_completion" in summary.columns else "num_inspections"
+scatter_label = "Avg inspection units opened" if scatter_metric == "avg_opened_completion" else "Inspected Units"
+st.markdown(f"### Slippage vs {scatter_label.lower()}")
+scatter_source = summary[["name", scatter_metric, "slippage_rate"]].rename(
+    columns={scatter_metric: scatter_label, "slippage_rate": "Slippage Rate"}
 )
-st.scatter_chart(scatter_source, x="Inspected Units", y="Slippage Rate", size=None, color="name")
+st.scatter_chart(scatter_source, x=scatter_label, y="Slippage Rate", size=None, color="name")
 
 # Extended inspection/contamination statistics
 stat_cols = [

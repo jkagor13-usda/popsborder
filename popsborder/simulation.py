@@ -151,7 +151,10 @@ def simulation(
         print(f'\nSimulating Consignment {i+1} out of {num_consignments} total consignments')
         try:
             consignment = consignment_generator.generate_consignment()
+            print(f"   Generated consignment with {consignment.num_inspection_units} inspection units and {consignment.num_sample_units} sample units")
+            print("   Starting contamination...")
             add_contaminant(consignment)
+            print("   Finished contamination.")
             total_contaminated_units = 0
             total_contaminated_inspection_units = 0
             total_contaminated_sample_units = 0
@@ -201,7 +204,9 @@ def simulation(
             if must_inspect:
                 print(f'\n\n==== INSPECTION OF CONSIGNMENT {i + 1} NOW BEING EXECUTED ====')
                 n_units_to_inspect = sample(consignment)
+                print(f"   Requested sample units to inspect (total): {n_units_to_inspect}")
                 ret = inspect(config, consignment, n_units_to_inspect, detailed)
+                print(f"   Completed inspection. Sample units inspected: {ret.sample_units_inspected_completion}")
                 #simData.add_to_synthetic_data(ret, consignment, n_units_to_inspect)
                 consignment_checked_ok = ret.consignment_checked_ok
                 num_inspections += 1

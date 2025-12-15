@@ -4,10 +4,8 @@ import shutil
 
 import pandas as pd
 import streamlit as st
-try:
-    import plotly.express as px
-except Exception:  # pylint: disable=broad-except
-    px = None
+import plotly.express as px
+
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation

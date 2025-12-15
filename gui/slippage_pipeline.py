@@ -357,7 +357,7 @@ def run_slippage_pipeline(
     config.setdefault("inspection", {}).setdefault("compliance_table", {})
     config["inspection"]["compliance_table"]["file_name"] = comp_lookup_str
 
-    # Use the total consignment count across all referenced consignment files (deduped by path)
+    # Use the minimum available consignments across referenced files to avoid over-requesting
     unique_cons_files = []
     seen = set()
     for p in cons_candidates:
@@ -365,38 +365,87 @@ def run_slippage_pipeline(
         if key not in seen:
             seen.add(key)
             unique_cons_files.append(p)
-    num_consignments = sum(_infer_num_consignments(p) for p in unique_cons_files) if unique_cons_files else 1
+    counts = [_infer_num_consignments(p) for p in unique_cons_files] if unique_cons_files else []
+    num_consignments = min(counts) if counts else 1
     compliance_table = load_compliance_lookup_csv(comp_lookup_path)
 
-    def _run_with_config(cfg):
+    def _run_with_config(cfg, scenario_subset, consignment_count):
         return run_scenarios_fn(
             config=cfg,
-            scenario_table=scenarios,
+            scenario_table=scenario_subset,
             seed=seed,
             num_simulations=num_simulations,
-            num_consignments=num_consignments,
+            num_consignments=consignment_count,
             compliance_table=compliance_table,
             detailed=True,
         )
 
+    scenario_results_raw = []
+    consignment_counts = []
     try:
-        scenario_results_raw = _run_with_config(config)
+        for rec in scenarios:
+            # Resolve per-scenario consignment and count
+            rec_cons_path = None
+            cons_val = rec.get("consignment/input_file/file_name")
+            if cons_val not in (None, "", "None", "nan"):
+                p = Path(str(cons_val))
+                rec_cons_path = p if p.exists() else (experiment_dir / p.name if not p.is_absolute() else p)
+            rec_num_consignments = _infer_num_consignments(rec_cons_path) if rec_cons_path else 1
+            consignment_counts.append(rec_num_consignments)
+
+            # Build per-scenario config with correct consignment/compliance paths
+            cfg_local = copy.deepcopy(config)
+            if rec_cons_path:
+                rec_cons_str = str(rec_cons_path).replace("\\", "/")
+                cfg_local.setdefault("consignment", {}).setdefault("input_file", {})
+                cfg_local["consignment"]["input_file"]["rbs_file_name"] = rec_cons_str
+                cfg_local["consignment"]["input_file"]["file_name"] = rec_cons_str
+            # Per-scenario compliance override if provided
+            rec_comp_path = None
+            comp_val = rec.get("inspection/compliance_table/file_name")
+            if comp_val not in (None, "", "None", "nan"):
+                cp = Path(str(comp_val))
+                rec_comp_path = cp if cp.exists() else (experiment_dir / cp.name if not cp.is_absolute() else cp)
+            if rec_comp_path and rec_comp_path.exists():
+                cfg_local.setdefault("inspection", {}).setdefault("compliance_table", {})
+                cfg_local["inspection"]["compliance_table"]["file_name"] = str(rec_comp_path).replace("\\", "/")
+
+            scenario_results_raw.extend(_run_with_config(cfg_local, [rec], rec_num_consignments))
     except ValueError as exc:
         msg = str(exc)
         if "Sample larger than population" in msg:
-            # Retry once with a conservative sampling proportion to avoid crash
             cfg_retry = copy.deepcopy(config)
             cfg_retry.setdefault("inspection", {}).setdefault("proportion", {})
             current_prop = cfg_retry["inspection"]["proportion"].get("value", 0.02) or 0.02
             cfg_retry["inspection"]["proportion"]["value"] = min(float(current_prop), 0.001)
             cfg_retry["inspection"]["min_inspection_units"] = 0
-            try:
-                scenario_results_raw = _run_with_config(cfg_retry)
-            except Exception as inner_exc:  # pylint: disable=broad-except
-                raise ValueError(
-                    "Sampling request exceeded available population even after clamping. "
-                    "Reduce inspection proportion or check TOTAL_SAMPLING_UNITS in the consignment file."
-                ) from inner_exc
+            scenario_results_raw = []
+            consignment_counts = []
+            for rec in scenarios:
+                rec_cons_path = None
+                cons_val = rec.get("consignment/input_file/file_name")
+                if cons_val not in (None, "", "None", "nan"):
+                    p = Path(str(cons_val))
+                    rec_cons_path = p if p.exists() else (experiment_dir / p.name if not p.is_absolute() else p)
+                rec_num_consignments = _infer_num_consignments(rec_cons_path) if rec_cons_path else 1
+                consignment_counts.append(rec_num_consignments)
+
+                cfg_local = copy.deepcopy(cfg_retry)
+                if rec_cons_path:
+                    rec_cons_str = str(rec_cons_path).replace("\\", "/")
+                    cfg_local.setdefault("consignment", {}).setdefault("input_file", {})
+                    cfg_local["consignment"]["input_file"]["rbs_file_name"] = rec_cons_str
+                    cfg_local["consignment"]["input_file"]["file_name"] = rec_cons_str
+                rec_comp_path = None
+                comp_val = rec.get("inspection/compliance_table/file_name")
+                if comp_val not in (None, "", "None", "nan"):
+                    cp = Path(str(comp_val))
+                    rec_comp_path = cp if cp.exists() else (experiment_dir / cp.name if not cp.is_absolute() else cp)
+                if rec_comp_path and rec_comp_path.exists():
+                    cfg_local.setdefault("inspection", {}).setdefault("compliance_table", {})
+                    cfg_local["inspection"]["compliance_table"]["file_name"] = str(rec_comp_path).replace("\\", "/")
+
+                scenario_results_raw.extend(_run_with_config(cfg_local, [rec], rec_num_consignments))
         else:
             raise
     except ZeroDivisionError as exc:
@@ -422,6 +471,8 @@ def run_slippage_pipeline(
 
     fit = ClarkeFit(alpha=0.0, beta=0.0, theta=float("inf"), raw_result={"source": "scenario_table"})
 
+    total_cons = sum(consignment_counts) if consignment_counts else num_consignments
+
     return PipelineResult(
         contamination_fit=fit,
         scenario_results=results_df,
@@ -429,7 +480,7 @@ def run_slippage_pipeline(
         compliance_table=compliance_table,
         pis_data=pd.DataFrame(),
         rbs_data=pd.DataFrame(),
-        num_consignments=num_consignments,
+        num_consignments=total_cons,
     )
 
 

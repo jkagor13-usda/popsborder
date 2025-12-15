@@ -458,6 +458,7 @@ def select_random_indexes_rbs(unit, consignment, n_units_to_inspect):
             indexes_to_inspect = indexes_to_inspect + indexes_to_inspect_temp
             inspection_unit_counter += 1
             print('')
+
     else:
         raise RuntimeError(f"Inspection process unit specified in config is: {unit}.  "
                            f"For Sampling Strategy = RBS, only supports that parameter being = sampling_units")

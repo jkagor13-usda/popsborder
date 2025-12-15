@@ -158,7 +158,10 @@ def run_pipeline(experiment_dir):
             "compliance_lookup": compliance_path if compliance_path and compliance_path.exists() else paths.__dict__.get("compliance_lookup"),
         }
     )
-    
+
+    # Track num_consignments even on failure (best-effort)
+    state["num_consignments"] = None
+
     try:
         result = run_slippage_pipeline(
             exp_paths,
@@ -166,6 +169,31 @@ def run_pipeline(experiment_dir):
             num_simulations=engine_options.get("num_simulations", 1),
         )
     except Exception as exc:  # pylint: disable=broad-except
+        # Best-effort inference of num_consignments for debugging
+        try:
+            import pandas as pd  # pylint: disable=import-outside-toplevel
+            cons_guess = exp_paths.consignment
+            if cons_guess and cons_guess.exists():
+                df = pd.read_csv(cons_guess)
+                if "INSPECTION_NUMBER" in df.columns:
+                    state["num_consignments"] = int(df["INSPECTION_NUMBER"].nunique())
+                elif "INSPECTION_ID" in df.columns:
+                    state["num_consignments"] = int(df["INSPECTION_ID"].nunique())
+            else:
+                scen_df = pd.read_csv(exp_paths.scenario_table)
+                val = scen_df.get("consignment/input_file/file_name", pd.Series()).dropna()
+                if not val.empty:
+                    cons_path = Path(str(val.iloc[0]))
+                    if not cons_path.is_absolute():
+                        cons_path = exp_paths.experiment_dir / cons_path.name
+                    if cons_path.exists():
+                        df = pd.read_csv(cons_path)
+                        if "INSPECTION_NUMBER" in df.columns:
+                            state["num_consignments"] = int(df["INSPECTION_NUMBER"].nunique())
+                        elif "INSPECTION_ID" in df.columns:
+                            state["num_consignments"] = int(df["INSPECTION_ID"].nunique())
+        except Exception:
+            pass
         raise RuntimeError(
             f"Pipeline failed. Check scenario table and inputs in {experiment_dir}: {exc}"
         ) from exc
