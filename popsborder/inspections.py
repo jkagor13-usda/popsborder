@@ -261,7 +261,8 @@ def sample_rbs(config, consignment, compliance_table_dict):
     unit = config["inspection"]["unit"]
     num_sample_units = consignment.num_sample_units
     num_inspection_units = consignment.num_inspection_units
-    detection_level, confidence_level = get_detection_and_confidence(consignment, compliance_table_dict)
+    inspection_unit = consignment.inspection_units[0] if consignment.inspection_units else None
+    detection_level, confidence_level = get_detection_and_confidence(inspection_unit or consignment, compliance_table_dict)
     if unit in ["sample_unit", "sample_units", "item", "items"]:
         n_units_to_inspect = compute_hypergeometric(
             detection_level, confidence_level, num_sample_units
@@ -433,10 +434,21 @@ def select_random_indexes_rbs(unit, consignment, n_units_to_inspect):
         current_idx = 0
         inspection_unit_counter = 0
         inspection_units_to_inspect = {}
-        for inspection_unit in consignment.inspection_units:
-            indexes_to_inspect_temp = random.sample(
-                list(range(len(inspection_unit.sample_unit_objects))), n_units_to_inspect
-            )
+        # Distribute requested samples across inspection units proportional to their size
+        unit_sizes = [len(iu.sample_unit_objects) for iu in consignment.inspection_units]
+        total_size = sum(unit_sizes)
+        for inspection_unit, population_size in zip(consignment.inspection_units, unit_sizes):
+            if population_size <= 0:
+                inspection_units_to_inspect[inspection_unit_counter] = []
+                inspection_unit_counter += 1
+                continue
+            # Proportional allocation, at least 1 when a positive total is requested
+            k_raw = (n_units_to_inspect * population_size / total_size) if total_size else 0
+            k = int(round(k_raw))
+            if k <= 0 and n_units_to_inspect > 0:
+                k = 1
+            k = min(k, population_size)
+            indexes_to_inspect_temp = random.sample(list(range(population_size)), k) if k > 0 else []
             inspection_units_to_inspect[inspection_unit_counter] = indexes_to_inspect_temp
             print(f'   Inspecting {len(inspection_unit.sample_unit_objects)} sampling units of '
                   f'inspection unit {inspection_unit_counter}.  Inspecting the following sampling unit indices.')
@@ -837,7 +849,7 @@ def consignment_contamination_rate(consignment):
     return count / consignment.num_sample_units
 
 
-def get_detection_and_confidence(consignment,
+def get_detection_and_confidence(source_obj,
                                  compliance_table_dict,
                                  default_detection=0.01,
                                  default_confidence=0.8
@@ -856,7 +868,16 @@ def get_detection_and_confidence(consignment,
         print(f"      Default Confidence Level: {default_confidence}")
         return (default_detection, default_confidence)
     else:
-        values = {attr: consignment.get(attr) for attr in rbs_variables}
+        values = {}
+        for attr in rbs_variables:
+            if hasattr(source_obj, attr):
+                values[attr] = getattr(source_obj, attr)
+            elif isinstance(source_obj, dict) and attr in source_obj:
+                values[attr] = source_obj.get(attr)
+            elif hasattr(source_obj, "get"):
+                values[attr] = source_obj.get(attr)
+            else:
+                values[attr] = None
         if any(v is None for v in values.values()):
             # If not all variable specified in compliance table not detected in consignment, then default to low compliance
             none_attrs = [k for k, v in values.items() if v is None]

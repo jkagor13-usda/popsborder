@@ -332,7 +332,7 @@ def run_slippage_pipeline(
         raise FileNotFoundError(f"Compliance table not found for experiment {experiment_dir}. Expected {COMPLIANCE_FILENAME}.")
     comp_lookup_str = str(comp_lookup_path).replace("\\", "/")
 
-    # Normalize scenario inspection and contamination parameters to avoid over-sampling / missing rates
+    # Normalize scenario inspection parameters (do not inject contamination defaults)
     norm_scenarios = []
     for rec in scenarios:
         rec = rec.copy()
@@ -347,26 +347,6 @@ def run_slippage_pipeline(
         rec["inspection/proportion/value"] = prop_val
         if not rec.get("inspection/sample_strategy"):
             rec["inspection/sample_strategy"] = "rbs"
-        # Contamination rate handling
-        cont_rate_key = "contamination/contamination_rate/value"
-        if cont_rate_key in rec and rec.get(cont_rate_key) not in ("", None, "None", "nan"):
-            try:
-                rec[cont_rate_key] = float(rec[cont_rate_key])
-            except Exception:
-                rec[cont_rate_key] = rec[cont_rate_key]
-        else:
-            # If no explicit rate, leave it to config or beta-binomial params
-            pass
-        alpha_key = "contamination/contamination_rate/beta_binomial_parameters/alpha"
-        beta_key = "contamination/contamination_rate/beta_binomial_parameters/beta"
-        for k, default in ((alpha_key, 0.01), (beta_key, 5.0)):
-            if k in rec:
-                try:
-                    rec[k] = float(rec.get(k) or default)
-                except Exception:
-                    rec[k] = default
-        if "contamination/contamination_unit" not in rec or not rec.get("contamination/contamination_unit"):
-            rec["contamination/contamination_unit"] = "plant"
         norm_scenarios.append(rec)
     scenarios = norm_scenarios
 
@@ -408,7 +388,7 @@ def run_slippage_pipeline(
             cfg_retry = copy.deepcopy(config)
             cfg_retry.setdefault("inspection", {}).setdefault("proportion", {})
             current_prop = cfg_retry["inspection"]["proportion"].get("value", 0.02) or 0.02
-            cfg_retry["inspection"]["proportion"]["value"] = min(float(current_prop), 0.01)
+            cfg_retry["inspection"]["proportion"]["value"] = min(float(current_prop), 0.001)
             cfg_retry["inspection"]["min_inspection_units"] = 0
             try:
                 scenario_results_raw = _run_with_config(cfg_retry)

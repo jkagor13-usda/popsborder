@@ -70,6 +70,7 @@ if st.session_state.get("_trigger_run_pipeline"):
     exp_dir = state.pop("run_request_experiment", None)
     with st.spinner("Running slippage pipeline..."):
         try:
+            st.info(f"Running experiment at: {exp_dir}")
             results = run_pipeline(exp_dir)
             state["run_error"] = None
             state.pop("run_error_message", None)
@@ -95,6 +96,7 @@ if run_error:
             "rbs_data": str(getattr(paths_obj, "rbs_data", None)) if paths_obj else None,
             "compliance_lookup": str(getattr(paths_obj, "compliance_lookup", None)) if paths_obj else None,
             "config": str(getattr(paths_obj, "config", None)) if paths_obj else None,
+            "num_consignments": state.get("num_consignments"),
         }
     )
 
@@ -126,8 +128,6 @@ summary_cols = [
     "total_missed_contaminants",
     "total_intercepted_contaminants",
 ]
-if "contaminated_sample_units" in results_df.columns:
-    summary_cols.insert(1, "contaminated_sample_units")
 summary = results_df.groupby("name")[summary_cols].sum().reset_index()
 denom = summary["total_intercepted_contaminants"] + summary["total_missed_contaminants"]
 summary["detection_rate"] = (
@@ -149,12 +149,8 @@ overall_slippage = (
     / max(1, summary["total_intercepted_contaminants"].sum() + summary["total_missed_contaminants"].sum())
 )
 kpi_cols[4].metric("Overall slippage rate", f"{100 * overall_slippage:.1f}%")
-kpi_row = st.columns(2)
+kpi_row = st.columns(1)
 kpi_row[0].metric("Missing contaminants", f"{int(summary['missing'].sum()):,}")
-kpi_row[1].metric(
-    "Contaminated sample units",
-    f"{int(summary['contaminated_sample_units'].sum()):,}" if "contaminated_sample_units" in summary.columns else "n/a",
-)
 st.markdown("### Slippage and detection by scenario")
 
 st.bar_chart(

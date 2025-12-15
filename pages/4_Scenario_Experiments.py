@@ -363,6 +363,12 @@ with tabs[1]:
             cont_rate_col = "contamination/contamination_rate/value"
             if cont_rate_col in rows_df.columns:
                 rows_df[cont_rate_col] = rows_df[cont_rate_col].fillna("None")
+            # Default contamination unit to plant unless explicitly set
+            cont_unit_col = "contamination/contamination_unit"
+            if cont_unit_col in rows_df.columns:
+                rows_df[cont_unit_col] = rows_df[cont_unit_col].replace("", "plant").fillna("plant")
+            else:
+                rows_df[cont_unit_col] = "plant"
 
             rows_df = _normalize_rows(rows_df)
             scenario_table = rows_df.reindex(columns=template_cols, fill_value="")
