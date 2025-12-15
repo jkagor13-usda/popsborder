@@ -118,20 +118,17 @@ except Exception as exc:  # pylint: disable=broad-except
     st.warning(f"Could not save results to experiment folder: {exc}")
 
 st.markdown("### Overall summary")
-summary = (
-    results_df.groupby("name")[
-        [
-            "num_inspections",
-            "intercepted",
-            "false_neg",
-            "missing",
-            "total_missed_contaminants",
-            "total_intercepted_contaminants",
-        ]
-    ]
-    .sum()
-    .reset_index()
-)
+summary_cols = [
+    "num_inspections",
+    "intercepted",
+    "false_neg",
+    "missing",
+    "total_missed_contaminants",
+    "total_intercepted_contaminants",
+]
+if "contaminated_sample_units" in results_df.columns:
+    summary_cols.insert(1, "contaminated_sample_units")
+summary = results_df.groupby("name")[summary_cols].sum().reset_index()
 denom = summary["total_intercepted_contaminants"] + summary["total_missed_contaminants"]
 summary["detection_rate"] = (
     summary["total_intercepted_contaminants"] / denom.replace(0, pd.NA)
@@ -152,6 +149,12 @@ overall_slippage = (
     / max(1, summary["total_intercepted_contaminants"].sum() + summary["total_missed_contaminants"].sum())
 )
 kpi_cols[4].metric("Overall slippage rate", f"{100 * overall_slippage:.1f}%")
+kpi_row = st.columns(2)
+kpi_row[0].metric("Missing contaminants", f"{int(summary['missing'].sum()):,}")
+kpi_row[1].metric(
+    "Contaminated sample units",
+    f"{int(summary['contaminated_sample_units'].sum()):,}" if "contaminated_sample_units" in summary.columns else "n/a",
+)
 st.markdown("### Slippage and detection by scenario")
 
 st.bar_chart(
@@ -181,6 +184,29 @@ scatter_source = summary[["name", "num_inspections", "slippage_rate"]].rename(
     columns={"num_inspections": "Inspected Units", "slippage_rate": "Slippage Rate"}
 )
 st.scatter_chart(scatter_source, x="Inspected Units", y="Slippage Rate", size=None, color="name")
+
+# Extended inspection/contamination statistics
+stat_cols = [
+    "num_inspection_units",
+    "num_sample_units",
+    "num_plants",
+    "avg_inspection_units_opened_completion",
+    "avg_inspection_units_opened_detection",
+    "pct_inspection_units_opened_completion",
+    "pct_inspection_units_opened_detection",
+    "avg_sample_units_inspected_completion",
+    "avg_sample_units_inspected_detection",
+    "pct_sample_units_inspected_completion",
+    "pct_sample_units_inspected_detection",
+    "pct_contaminant_unreported_if_detection",
+    "true_contamination_rate",
+]
+existing_cols = [c for c in stat_cols if c in results_df.columns]
+if existing_cols:
+    st.markdown("### Inspection and contamination stats")
+    st.dataframe(results_df[["name"] + existing_cols], use_container_width=True)
+else:
+    st.info("No detailed inspection/contamination stats available in results.")
 
 st.markdown("### Scenario Results Output")
 st.dataframe(results_df, use_container_width=True)

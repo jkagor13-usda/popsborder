@@ -359,6 +359,10 @@ with tabs[1]:
                 rows_df["inspection/compliance_table/file_name"] = rows_df["inspection/compliance_table/file_name"].apply(
                     lambda v: f"{base_prefix}/{Path(str(v)).name}".replace("\\", "/") if v else v
                 )
+            # Keep explicit "None" marker for contamination rate so downstream can detect missing value
+            cont_rate_col = "contamination/contamination_rate/value"
+            if cont_rate_col in rows_df.columns:
+                rows_df[cont_rate_col] = rows_df[cont_rate_col].fillna("None")
 
             rows_df = _normalize_rows(rows_df)
             scenario_table = rows_df.reindex(columns=template_cols, fill_value="")
