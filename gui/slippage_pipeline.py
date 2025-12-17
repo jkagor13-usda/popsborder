@@ -510,7 +510,16 @@ def run_slippage_pipeline(
 
     # Per-replication output
     if run_rows:
-        runs_records = [{"replication": rep_idx, **result} for rep_idx, _details, result, _cfg in run_rows]
+        runs_records = []
+        for rep_idx, _details, result, cfg in run_rows:
+            record = {"replication": rep_idx}
+            try:
+                record.update(vars(result))
+            except Exception:
+                pass
+            if isinstance(cfg, dict) and "name" in cfg:
+                record.setdefault("name", cfg.get("name"))
+            runs_records.append(record)
         pd.DataFrame(runs_records).to_csv(output_dir / "all_runs.csv", index=False)
 
     fit = ClarkeFit(alpha=0.0, beta=0.0, theta=float("inf"), raw_result={"source": "scenario_table"})
