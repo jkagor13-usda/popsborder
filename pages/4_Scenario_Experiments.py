@@ -206,7 +206,7 @@ with tabs[1]:
     with col_left:
         scenario_label = st.text_input(
             "Scenario label",
-            value=f"scenario_{len(state['experiment_rows']) + 1}",
+            value=f"scenario_{len(state.get('experiment_rows', [])) + 1}",
         )
 
         consignment_choice = (
@@ -287,8 +287,18 @@ with tabs[1]:
                 "inspection/within_box_proportion": 1,
             }
         )
-        state["experiment_rows"].append(scenario_row)
-        st.success(f"Added scenario row '{scenario_label}'")
+        # If a scenario with this label exists, replace it; otherwise append
+        replaced = False
+        for idx, row in enumerate(state["experiment_rows"]):
+            if row.get("name") == scenario_label:
+                state["experiment_rows"][idx] = scenario_row
+                replaced = True
+                break
+        if not replaced:
+            state["experiment_rows"].append(scenario_row)
+            st.success(f"Added scenario row '{scenario_label}'")
+        else:
+            st.success(f"Updated scenario row '{scenario_label}'")
 
     rows_df = pd.DataFrame(state["experiment_rows"])
     if not rows_df.empty:

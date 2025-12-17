@@ -104,7 +104,7 @@ with tabs[1]:
         except Exception:  # pylint: disable=broad-except
             rbs_cols = []
     if not rbs_cols:
-        rbs_cols = ["COUNTRY_OF_ORIGIN_NAME", "PROPAGATIVE_MATERIAL_TYPE", "PATHWAY", "INSPECTION_LOCATION_NAME"]
+        rbs_cols = ["Origin Location Country Name", "Propagative Material type", "Pathway", "Inspection Location"]
 
     multi_cols = st.multiselect("Select feature columns to combine", options=rbs_cols, default=rbs_cols[:2])
     selections = []
@@ -119,6 +119,24 @@ with tabs[1]:
         selections.append({"column": col_name, "values": selected_vals})
 
     level_choice = st.selectbox("Compliance level for the new rows", ["Low", "Medium", "High"])
+
+    detection_value = st.slider(
+        "Detection Level",
+        min_value=0.0,
+        max_value=1.,
+        step=.01,
+        value=0.1,          
+        help="Detection Level for Hypergeometric Sampling."
+    )
+
+    confidence_value = st.slider(
+        "Confidence Level",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.95,
+        step=0.01,
+        help="Confidence Level for Hypergeometric Sampling."
+    )
 
     if st.button("Add rows to compliance table", type="primary"):
         rows = []
@@ -139,7 +157,9 @@ with tabs[1]:
                 row = {c: "" for c in selected_cols}
                 for col, val in zip(selected_cols, combo):
                     row[col] = val
-                row["COMPLIANCE_LEVEL"] = level_choice
+                row["Compliance"] = level_choice
+                row["Detection Level"] = detection_value
+                row["Confidence Levels"] = confidence_value
                 rows.append(row)
             manual_df = state.get("manual_compliance_df")
             new_df = pd.DataFrame(rows)

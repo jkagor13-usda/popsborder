@@ -83,6 +83,7 @@ Backward Compatibility:
 """
 
 import math
+import os
 import random
 import types
 
@@ -450,14 +451,21 @@ def select_random_indexes_rbs(unit, consignment, n_units_to_inspect):
             k = min(k, population_size)
             indexes_to_inspect_temp = random.sample(list(range(population_size)), k) if k > 0 else []
             inspection_units_to_inspect[inspection_unit_counter] = indexes_to_inspect_temp
-            print(f'   Inspecting {len(inspection_unit.sample_unit_objects)} sampling units of '
-                  f'inspection unit {inspection_unit_counter}.  Inspecting the following sampling unit indices.')
-            print(f'      {indexes_to_inspect_temp}\n')
+            if os.environ.get("SLIPPAGE_DEBUG_RBS"):
+                print(
+                    f"   Inspecting {len(inspection_unit.sample_unit_objects)} sampling units of "
+                    f"inspection unit {inspection_unit_counter}."
+                )
+                # Avoid flooding stdout: only show a preview of indexes
+                preview = indexes_to_inspect_temp[:20]
+                suffix = "" if len(indexes_to_inspect_temp) <= 20 else f"... (total {len(indexes_to_inspect_temp)})"
+                print(f"      {preview}{suffix}\n")
             indexes_to_inspect_temp = [x+ current_idx for x in indexes_to_inspect_temp]
             current_idx += len(inspection_unit.sample_unit_objects)
             indexes_to_inspect = indexes_to_inspect + indexes_to_inspect_temp
             inspection_unit_counter += 1
-            print('')
+            if os.environ.get("SLIPPAGE_DEBUG_RBS"):
+                print('')
 
     else:
         raise RuntimeError(f"Inspection process unit specified in config is: {unit}.  "
@@ -594,6 +602,8 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
         inspection_units_opened_detection=0,
         sample_units_inspected_completion=0,
         sample_units_inspected_detection=0,
+        plant_units_inspected_completion=0,
+        plant_units_inspected_detection=0,
         contaminated_sample_units_completion=0,
         contaminated_sample_units_detection=0,
         number_sample_units_missed=0,
@@ -621,15 +631,31 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                     if detailed:
                         ret.inspected_sample_unit_indexes.append(sample_unit_index)
                     ret.sample_units_inspected_completion += 1
+                    # Count plant units inspected (all plants in this sample unit)
+                    iu_idx = math.floor(sample_unit_index / sample_units_per_inspection_unit)
+                    su_local_idx = sample_unit_index % sample_units_per_inspection_unit
+                    try:
+                        su_obj = consignment.inspection_units[iu_idx].sample_unit_objects[su_local_idx]
+                        ret.plant_units_inspected_completion += len(su_obj.plants)
+                    except Exception:
+                        pass
                     # Compute inspection_unit index number
                     inspection_units_opened_completion.append(
                         math.floor(sample_unit_index / sample_units_per_inspection_unit))
                     if not detected:
                         ret.sample_units_inspected_detection += 1
+                        try:
+                            su_obj = consignment.inspection_units[iu_idx].sample_unit_objects[su_local_idx]
+                            ret.plant_units_inspected_detection += len(su_obj.plants)
+                        except Exception:
+                            pass
                         # Compute inspection_unit index number
                         inspection_units_opened_detection.append(
                             math.floor(sample_unit_index / sample_units_per_inspection_unit)
                         )
+                    # Debug hook to confirm we are inspecting individual sample units
+                    if os.environ.get("SLIPPAGE_DEBUG_INSPECTION"):
+                        print(f"Inspecting sample unit {sample_unit_index}")
                     if inspect_sample_unit(consignment.sample_units[sample_unit_index], effectiveness):
                         # Count every contaminated sample_unit in sample
                         ret.contaminated_sample_units_completion += 1

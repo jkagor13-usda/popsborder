@@ -169,9 +169,8 @@ with fit_tab:
         stats[0].metric("Rows", f"{n_rows}")
         stats[1].metric("Unique inspections", f"{unique_inspections}")
         stats[2].metric("Rows with action = 1", f"{action_ones}")
-        stats2 = st.columns(2)
+        stats2 = st.columns(1)
         stats2[0].metric("Total sampling units", f"{total_sampling:,}")
-        stats2[1].metric("Total plant quantity", f"{total_plants}")
 
     st.subheader("Select RBS calculator file")
     rbs_candidates = sorted(
@@ -266,8 +265,20 @@ with assign_tab:
     if mode == "Beta-binomial (alpha/beta)":
         st.caption("Adjust alpha/beta directly. Theta is fixed to infinity by default.")
         col_a, col_b, col_t = st.columns(3)
-        alpha_val = col_a.number_input("Alpha", min_value=0.000001, value=float(assigned_state["alpha"]), step=0.01)
-        beta_val = col_b.number_input("Beta", min_value=0.000001, value=float(assigned_state["beta"]), step=0.01)
+        alpha_val = col_a.number_input(
+            "Alpha",
+            min_value=0.000001,
+            value=float(assigned_state["alpha"]),
+            step=0.0005,
+            format="%.4f",
+        )
+        beta_val = col_b.number_input(
+            "Beta",
+            min_value=0.000001,
+            value=float(assigned_state["beta"]),
+            step=0.0005,
+            format="%.4f",
+        )
         theta_str = col_t.text_input("Theta", value="inf")
         try:
             theta_val = float("inf") if theta_str.lower() == "inf" else float(theta_str)
@@ -308,14 +319,17 @@ with assign_tab:
             1e-6,
         )
         stored_mean = st.session_state.get("manual_mean_rate", float(assigned_state.get("sample_unit_rate", 0.01)))
-        sample_unit_rate = st.number_input(
-            "Average percentage of plants contaminated (mean)",
-            min_value=0.001,
-            max_value=0.999,
-            value=float(stored_mean),
-            step=0.01,
+        pct_default = float(stored_mean) * 100.0
+        pct_input = st.number_input(
+            "Average percentage of plants contaminated (mean) [%]",
+            min_value=0.1,
+            max_value=99.9,
+            value=pct_default,
+            step=0.05,
+            format="%.2f",
             key="manual_mean_input",
         )
+        sample_unit_rate = pct_input / 100.0
         stored_conc = st.session_state.get(
             "manual_concentration",
             float(max(2.0, assigned_state.get("alpha", FALLBACK_ALPHA) + assigned_state.get("beta", FALLBACK_BETA))),
@@ -436,4 +450,3 @@ with nav_cols[1]:
 with nav_cols[2]:
     if st.button("Next Page", type="primary", key="nav_forward_page4"):
         st.switch_page("pages/3_Inspection_Process.py")
-

@@ -17,6 +17,7 @@ with hero_cols[0]:
 with hero_cols[1]:
     st.empty()
 
+
 st.success(
     "Start with **Consignment Generation** to upload curated PIS/RBS files and generate synthetic consignments "
     "or define consignments from scratch."
@@ -61,7 +62,9 @@ st.warning(
     "PRODUCED THEREBY, INCLUDING USE IN COMPLIANCE WITH ANY THIRD PARTY RIGHTS. JHU/APL SHALL NOT BE LIABLE FOR ANY "
     "ACTUAL, INDIRECT, CONSEQUENTIAL, SPECIAL OR OTHER DAMAGES ARISING FROM THE USE OF, OR INABILITY TO USE, THIS "
     "SOFTWARE OR THE DATA PRODUCED THEREBY, INCLUDING, BUT NOT LIMITED TO, ANY DAMAGES FOR LOST PROFITS, BUSINESS "
-    "INTERRUPTION OR LOSS OF DATA EVEN IF JHU/APL HAS BEEN ADVISED OF THE PROBABILITY OF SUCH DAMAGES."
+    "INTERRUPTION OR LOSS OF DATA EVEN IF JHU/APL HAS BEEN ADVISED OF THE PROBABILITY OF SUCH DAMAGES.\n\n" 
+
+    "© 2025 Johns Hopkins University Applied Physics Laboratory"
 )
 
 

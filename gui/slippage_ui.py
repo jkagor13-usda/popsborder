@@ -163,9 +163,14 @@ def run_pipeline(experiment_dir):
     state["num_consignments"] = None
 
     try:
+        run_seed = engine_options.get("seed")
+        if run_seed in (None, "", 0):
+            from time import time  # pylint: disable=import-outside-toplevel
+
+            run_seed = int(time())
         result = run_slippage_pipeline(
             exp_paths,
-            seed=engine_options.get("seed", 42),
+            seed=run_seed,
             num_simulations=engine_options.get("num_simulations", 1),
         )
     except Exception as exc:  # pylint: disable=broad-except
@@ -194,9 +199,9 @@ def run_pipeline(experiment_dir):
                             state["num_consignments"] = int(df["INSPECTION_ID"].nunique())
         except Exception:
             pass
-        raise RuntimeError(
-            f"Pipeline failed. Check scenario table and inputs in {experiment_dir}: {exc}"
-        ) from exc
+        # Surface the underlying error directly
+        print(f"Pipeline failed: {exc}")
+        raise
     # Persist results so Page 5 can render visuals
     state["results"] = result.scenario_results
     state["num_consignments"] = result.num_consignments

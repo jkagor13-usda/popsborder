@@ -18,31 +18,12 @@ from popsborder.inputs import (
     text_to_value,
 )
 from popsborder.outputs import save_scenario_result_to_pandas
-from popsborder.scenarios import run_scenarios as run_scenarios_fn
+from popsborder.scenarios import run_scenarios
 from slippage_model_utils.clarke_model_support_functions import gen_clarke_model_inputs
 from slippage_model_utils.clarke_r_script_wrapper import run_clarke_bb_group_model
 
 
-@dataclass
-class SyntheticOptions:
-    """Placeholder for interface compatibility (not used in simplified pipeline)."""
-
-    n_samples: int = 10
-    sampling_method: str = "sequential"
-
-
-DEFAULT_DATA_DIR = Path("data_input")
-RESULT_COLUMNS = [
-    "num_inspections",
-    "intercepted",
-    "false_neg",
-    "missing",
-    "true_contamination_rate",
-    "avg_missed_contamination_rate",
-    "max_missed_contamination_rate",
-    "total_missed_contaminants",
-    "total_intercepted_contaminants",
-]
+# Default config columns to persist into results
 CONFIG_COLUMNS = [
     "contamination/contamination_unit",
     "contamination/contamination_rate/distribution",
@@ -54,6 +35,44 @@ CONFIG_COLUMNS = [
     "name",
 ]
 
+# Default result columns to persist into outputs
+RESULT_COLUMNS = [
+    "num_inspections",
+    "intercepted",
+    "false_neg",
+    "missing",
+    "num_inspection_units",
+    "num_sample_units",
+    "num_plants",
+    "avg_inspection_units_opened_completion",
+    "avg_inspection_units_opened_detection",
+    "pct_inspection_units_opened_completion",
+    "pct_inspection_units_opened_detection",
+    "avg_sample_units_inspected_completion",
+    "avg_sample_units_inspected_detection",
+    "pct_sample_units_inspected_completion",
+    "pct_sample_units_inspected_detection",
+    "avg_plant_units_inspected_completion",
+    "avg_plant_units_inspected_detection",
+    "total_missed_contaminants",
+    "total_intercepted_contaminants",
+    "total_slipped_units",
+    "avg_slipped_units_per_consignment",
+    "avg_slipped_sample_units_per_consignment",
+    "total_contaminated_units",
+    "total_contaminated_sample_units",
+    "total_contaminated_inspection_units",
+]
+
+@dataclass
+class SyntheticOptions:
+    """Placeholder for interface compatibility (not used in simplified pipeline)."""
+
+    n_samples: int = 10
+    sampling_method: str = "sequential"
+
+
+DEFAULT_DATA_DIR = Path("data_input")
 CONS_FILENAME = "consignment_uploaded_rbs_data.csv"
 COMPLIANCE_FILENAME = "compliance_table.csv"
 CONFIG_FILENAME = "config.yml"
@@ -281,173 +300,190 @@ def run_slippage_pipeline(
 
     experiment_dir = exp_paths.experiment_dir
     scenario_table = exp_paths.scenario_table
-    consignment_path = exp_paths.consignment
-    compliance_path = exp_paths.compliance
-    config_path = exp_paths.config or DEFAULT_DATA_DIR / "config.yml"
+    config_path = exp_paths.config or (DEFAULT_DATA_DIR / CONFIG_FILENAME)
 
+    # --- Load scenarios ---
     scenarios = load_scenario_dataframe(scenario_table)
     if isinstance(scenarios, pd.DataFrame):
         scenarios = scenarios.to_dict(orient="records")
     if not isinstance(scenarios, list) or not scenarios:
         raise ValueError("Scenario table is empty or unreadable.")
 
-    def _resolve_first_path(records: List[Dict[str, Any]], key: str) -> Optional[Path]:
-        for rec in records:
-            val = rec.get(key)
-            if val not in (None, "", "None", "nan"):
-                return Path(str(val))
+    # --- Small helpers ---
+    def _is_missing(v: Any) -> bool:
+        return v in (None, "", "None", "nan")
+
+    def _maybe_path(v: Any) -> Optional[Path]:
+        return None if _is_missing(v) else Path(str(v))
+
+    def _in_exp_dir(p: Path) -> Path:
+        # If given a relative path or a missing path, prefer experiment_dir/<filename>
+        if p.is_absolute():
+            return p
+        if p.exists():
+            return p
+        return experiment_dir / p.name
+
+    def _first_existing_path(values: List[Optional[Path]]) -> Optional[Path]:
+        for p in values:
+            if p and Path(p).exists():
+                return Path(p)
         return None
 
-    def _with_experiment_dir(p: Path) -> Path:
-        return p if p.is_absolute() else (experiment_dir / p.name if not p.exists() else p)
+    def _scenario_path(rec: Dict[str, Any], key: str) -> Optional[Path]:
+        p = _maybe_path(rec.get(key))
+        return _in_exp_dir(p) if p else None
 
-    # Resolve consignment/compliance paths (prefer explicit exp_paths, else first scenario reference)
+    def _apply_contam_defaults(rec: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
+        rec = rec.copy()
+        base = cfg.get("contamination", {}).get("contamination_rate", {})
+        if _is_missing(rec.get("contamination/contamination_rate/distribution")):
+            rec["contamination/contamination_rate/distribution"] = base.get("distribution", "beta_binomial")
+
+        bb_defaults = base.get("beta_binomial_parameters", {})
+        for key in ("alpha", "beta", "theta", "N_bar", "I", "J"):
+            col = f"contamination/contamination_rate/beta_binomial_parameters/{key}"
+            if _is_missing(rec.get(col)):
+                rec[col] = bb_defaults.get(key)
+        return rec
+
+    def _normalize_inspection(rec: Dict[str, Any]) -> Dict[str, Any]:
+        rec = rec.copy()
+        try:
+            prop = float(rec.get("inspection/proportion/value", 0) or 0)
+        except Exception:
+            prop = 0.0
+        if prop <= 0:
+            prop = 0.02
+        rec["inspection/proportion/value"] = min(prop, 1.0)
+        rec.setdefault("inspection/sample_strategy", "rbs")
+        return rec
+
+    def _build_cfg_for_scenario(
+        base_cfg: Dict[str, Any],
+        cons_path: Optional[Path],
+        comp_path: Optional[Path],
+    ) -> Dict[str, Any]:
+        cfg = copy.deepcopy(base_cfg)
+
+        if cons_path and cons_path.exists():
+            cons_str = str(cons_path).replace("\\", "/")
+            cfg.setdefault("consignment", {}).setdefault("input_file", {})
+            cfg["consignment"]["input_file"]["rbs_file_name"] = cons_str
+            cfg["consignment"]["input_file"]["file_name"] = cons_str
+
+        if comp_path and comp_path.exists():
+            comp_str = str(comp_path).replace("\\", "/")
+            cfg.setdefault("inspection", {}).setdefault("compliance_table", {})
+            cfg["inspection"]["compliance_table"]["file_name"] = comp_str
+
+        return cfg
+
+    # --- Resolve base files (consignment / compliance / config) ---
+    # Candidate consignment paths: explicit, plus any scenario references that exist
     cons_candidates: List[Path] = []
-    if consignment_path and consignment_path.exists():
-        cons_candidates.append(consignment_path)
+    if exp_paths.consignment and exp_paths.consignment.exists():
+        cons_candidates.append(exp_paths.consignment)
+
     for rec in scenarios:
-        cand_val = rec.get("consignment/input_file/file_name")
-        if cand_val not in (None, "", "None", "nan"):
-            cand = _with_experiment_dir(Path(str(cand_val)))
-            if cand.exists():
-                cons_candidates.append(cand)
-    cons_path = cons_candidates[0] if cons_candidates else None
+        p = _scenario_path(rec, "consignment/input_file/file_name")
+        if p and p.exists():
+            cons_candidates.append(p)
+
+    cons_path = _first_existing_path(cons_candidates)
     if not cons_path:
         raise FileNotFoundError(f"Consignment file missing in experiment folder {experiment_dir}.")
 
-    comp_path = compliance_path if compliance_path and compliance_path.exists() else None
-    if not comp_path:
-        cand = _resolve_first_path(scenarios, "inspection/compliance_table/file_name")
-        if cand:
-            cand = _with_experiment_dir(cand)
-            comp_path = cand if cand.exists() else None
+    # Compliance: explicit, else first scenario reference, else default dir fallback (must exist)
+    comp_path = None
+    if exp_paths.compliance and exp_paths.compliance.exists():
+        comp_path = exp_paths.compliance
+    else:
+        for rec in scenarios:
+            p = _scenario_path(rec, "inspection/compliance_table/file_name")
+            if p and p.exists():
+                comp_path = p
+                break
 
     if not config_path or not Path(config_path).exists():
-        raise FileNotFoundError(f"Config file missing in experiment folder {experiment_dir} (expected {CONFIG_FILENAME}).")
+        raise FileNotFoundError(
+            f"Config file missing in experiment folder {experiment_dir} (expected {CONFIG_FILENAME})."
+        )
     config = load_configuration(config_path)
 
-    cons_path_str = str(cons_path).replace("\\", "/")
-    comp_lookup_path = comp_path if comp_path and comp_path.exists() else DEFAULT_DATA_DIR / "compliance_table.csv"
-    if not comp_lookup_path or not Path(comp_lookup_path).exists():
-        raise FileNotFoundError(f"Compliance table not found for experiment {experiment_dir}. Expected {COMPLIANCE_FILENAME}.")
-    comp_lookup_str = str(comp_lookup_path).replace("\\", "/")
+    comp_lookup_path = comp_path if (comp_path and comp_path.exists()) else (DEFAULT_DATA_DIR / COMPLIANCE_FILENAME)
+    if not comp_lookup_path.exists():
+        raise FileNotFoundError(
+            f"Compliance table not found for experiment {experiment_dir}. Expected {COMPLIANCE_FILENAME}."
+        )
 
-    # Normalize scenario inspection parameters (do not inject contamination defaults)
-    norm_scenarios = []
-    for rec in scenarios:
-        rec = rec.copy()
-        try:
-            prop_val = float(rec.get("inspection/proportion/value", 0) or 0)
-        except Exception:
-            prop_val = 0.0
-        if prop_val <= 0:
-            prop_val = 0.02
-        if prop_val > 1:
-            prop_val = 1.0
-        rec["inspection/proportion/value"] = prop_val
-        if not rec.get("inspection/sample_strategy"):
-            rec["inspection/sample_strategy"] = "rbs"
-        norm_scenarios.append(rec)
-    scenarios = norm_scenarios
-
-    # Ensure config points to the experiment consignment and compliance
-    config.setdefault("consignment", {}).setdefault("input_file", {})
-    config["consignment"]["input_file"]["rbs_file_name"] = cons_path_str
-    config["consignment"]["input_file"]["file_name"] = cons_path_str
-    config.setdefault("inspection", {}).setdefault("compliance_table", {})
-    config["inspection"]["compliance_table"]["file_name"] = comp_lookup_str
-
-    # Use the minimum available consignments across referenced files to avoid over-requesting
-    unique_cons_files = []
-    seen = set()
-    for p in cons_candidates:
-        key = str(Path(p))
-        if key not in seen:
-            seen.add(key)
-            unique_cons_files.append(p)
-    counts = [_infer_num_consignments(p) for p in unique_cons_files] if unique_cons_files else []
-    num_consignments = min(counts) if counts else 1
     compliance_table = load_compliance_lookup_csv(comp_lookup_path)
 
-    def _run_with_config(cfg, scenario_subset, consignment_count):
-        return run_scenarios_fn(
+    # Ensure base config points to base consignment/compliance (scenario overrides still apply later)
+    config = copy.deepcopy(config)
+    config.setdefault("consignment", {}).setdefault("input_file", {})
+    config["consignment"]["input_file"]["rbs_file_name"] = str(cons_path).replace("\\", "/")
+    config["consignment"]["input_file"]["file_name"] = str(cons_path).replace("\\", "/")
+    config.setdefault("inspection", {}).setdefault("compliance_table", {})
+    config["inspection"]["compliance_table"]["file_name"] = str(comp_lookup_path).replace("\\", "/")
+
+    # Estimate consignments conservatively across unique consignment files
+    unique_cons_files = list({str(Path(p)): p for p in cons_candidates}.values())
+    counts = [_infer_num_consignments(p) for p in unique_cons_files] if unique_cons_files else []
+    num_consignments_default = min(counts) if counts else 1
+
+    def _run(cfg: Dict[str, Any], rec: Dict[str, Any], cons_count: int, *, num_sims: int):
+        return run_scenarios(
             config=cfg,
-            scenario_table=scenario_subset,
+            scenario_table=[rec],
             seed=seed,
-            num_simulations=num_simulations,
-            num_consignments=consignment_count,
+            num_simulations=num_sims,
+            num_consignments=cons_count,
             compliance_table=compliance_table,
             detailed=True,
         )
 
-    scenario_results_raw = []
-    consignment_counts = []
-    try:
-        for rec in scenarios:
-            # Resolve per-scenario consignment and count
-            rec_cons_path = None
-            cons_val = rec.get("consignment/input_file/file_name")
-            if cons_val not in (None, "", "None", "nan"):
-                p = Path(str(cons_val))
-                rec_cons_path = p if p.exists() else (experiment_dir / p.name if not p.is_absolute() else p)
+    # --- Core executor (supports a single retry config) ---
+    def _execute_all(base_cfg: Dict[str, Any]) -> Tuple[List[Tuple[Any, Dict, Dict]], List[int], List[Tuple[int, Any, Dict, Dict]]]:
+        scenario_results_raw: List[Tuple[Any, Dict, Dict]] = []
+        consignment_counts: List[int] = []
+        run_rows: List[Tuple[int, Any, Dict, Dict]] = []
+
+        for rec0 in scenarios:
+            rec = _normalize_inspection(_apply_contam_defaults(rec0, base_cfg))
+
+            rec_cons_path = _scenario_path(rec, "consignment/input_file/file_name")
+            rec_comp_path = _scenario_path(rec, "inspection/compliance_table/file_name")
             rec_num_consignments = _infer_num_consignments(rec_cons_path) if rec_cons_path else 1
             consignment_counts.append(rec_num_consignments)
 
-            # Build per-scenario config with correct consignment/compliance paths
-            cfg_local = copy.deepcopy(config)
-            if rec_cons_path:
-                rec_cons_str = str(rec_cons_path).replace("\\", "/")
-                cfg_local.setdefault("consignment", {}).setdefault("input_file", {})
-                cfg_local["consignment"]["input_file"]["rbs_file_name"] = rec_cons_str
-                cfg_local["consignment"]["input_file"]["file_name"] = rec_cons_str
-            # Per-scenario compliance override if provided
-            rec_comp_path = None
-            comp_val = rec.get("inspection/compliance_table/file_name")
-            if comp_val not in (None, "", "None", "nan"):
-                cp = Path(str(comp_val))
-                rec_comp_path = cp if cp.exists() else (experiment_dir / cp.name if not cp.is_absolute() else cp)
-            if rec_comp_path and rec_comp_path.exists():
-                cfg_local.setdefault("inspection", {}).setdefault("compliance_table", {})
-                cfg_local["inspection"]["compliance_table"]["file_name"] = str(rec_comp_path).replace("\\", "/")
+            cfg_local = _build_cfg_for_scenario(base_cfg, rec_cons_path, rec_comp_path)
 
-            scenario_results_raw.extend(_run_with_config(cfg_local, [rec], rec_num_consignments))
+            # Aggregated run
+            scenario_results_raw.extend(_run(cfg_local, rec, rec_num_consignments, num_sims=num_simulations))
+
+            # Per-replication runs
+            if num_simulations > 1:
+                for rep in range(num_simulations):
+                    results = _run(copy.deepcopy(cfg_local), rec, rec_num_consignments, num_sims=1)
+                    run_rows.extend((rep, *tup) for tup in results)
+
+        return scenario_results_raw, consignment_counts, run_rows
+
+    # --- Run with one retry path for "Sample larger than population" ---
+    try:
+        scenario_results_raw, consignment_counts, run_rows = _execute_all(config)
     except ValueError as exc:
-        msg = str(exc)
-        if "Sample larger than population" in msg:
-            cfg_retry = copy.deepcopy(config)
-            cfg_retry.setdefault("inspection", {}).setdefault("proportion", {})
-            current_prop = cfg_retry["inspection"]["proportion"].get("value", 0.02) or 0.02
-            cfg_retry["inspection"]["proportion"]["value"] = min(float(current_prop), 0.001)
-            cfg_retry["inspection"]["min_inspection_units"] = 0
-            scenario_results_raw = []
-            consignment_counts = []
-            for rec in scenarios:
-                rec_cons_path = None
-                cons_val = rec.get("consignment/input_file/file_name")
-                if cons_val not in (None, "", "None", "nan"):
-                    p = Path(str(cons_val))
-                    rec_cons_path = p if p.exists() else (experiment_dir / p.name if not p.is_absolute() else p)
-                rec_num_consignments = _infer_num_consignments(rec_cons_path) if rec_cons_path else 1
-                consignment_counts.append(rec_num_consignments)
-
-                cfg_local = copy.deepcopy(cfg_retry)
-                if rec_cons_path:
-                    rec_cons_str = str(rec_cons_path).replace("\\", "/")
-                    cfg_local.setdefault("consignment", {}).setdefault("input_file", {})
-                    cfg_local["consignment"]["input_file"]["rbs_file_name"] = rec_cons_str
-                    cfg_local["consignment"]["input_file"]["file_name"] = rec_cons_str
-                rec_comp_path = None
-                comp_val = rec.get("inspection/compliance_table/file_name")
-                if comp_val not in (None, "", "None", "nan"):
-                    cp = Path(str(comp_val))
-                    rec_comp_path = cp if cp.exists() else (experiment_dir / cp.name if not cp.is_absolute() else cp)
-                if rec_comp_path and rec_comp_path.exists():
-                    cfg_local.setdefault("inspection", {}).setdefault("compliance_table", {})
-                    cfg_local["inspection"]["compliance_table"]["file_name"] = str(rec_comp_path).replace("\\", "/")
-
-                scenario_results_raw.extend(_run_with_config(cfg_local, [rec], rec_num_consignments))
-        else:
+        if "Sample larger than population" not in str(exc):
             raise
+
+        cfg_retry = copy.deepcopy(config)
+        cfg_retry.setdefault("inspection", {}).setdefault("proportion", {})
+        current_prop = cfg_retry["inspection"]["proportion"].get("value", 0.02) or 0.02
+        cfg_retry["inspection"]["proportion"]["value"] = min(float(current_prop), 0.001)
+        cfg_retry["inspection"]["min_inspection_units"] = 0
+
+        scenario_results_raw, consignment_counts, run_rows = _execute_all(cfg_retry)
     except ZeroDivisionError as exc:
         raise ValueError(
             "Division by zero during scenario run. Check inspection proportion, sampling units, and config values."
@@ -458,20 +494,27 @@ def run_slippage_pipeline(
             "Ensure the consignment file has valid inspection identifiers."
         ) from exc
 
+    # --- Convert results and write outputs ---
     scenario_results = [(result, cfg) for _details, result, cfg in scenario_results_raw]
+
     output_dir = experiment_dir / "output"
     output_dir.mkdir(parents=True, exist_ok=True)
+
     results_df = save_scenario_result_to_pandas(
         scenario_results,
         config_columns=CONFIG_COLUMNS,
         result_columns=RESULT_COLUMNS,
     )
-    results_path = output_dir / "pis_contamination_scenario_results.csv"
-    results_df.to_csv(results_path, index=False)
+
+    results_df.to_csv(output_dir / "pis_contamination_scenario_results.csv", index=False)
+
+    # Per-replication output
+    if run_rows:
+        runs_records = [{"replication": rep_idx, **result} for rep_idx, _details, result, _cfg in run_rows]
+        pd.DataFrame(runs_records).to_csv(output_dir / "all_runs.csv", index=False)
 
     fit = ClarkeFit(alpha=0.0, beta=0.0, theta=float("inf"), raw_result={"source": "scenario_table"})
-
-    total_cons = sum(consignment_counts) if consignment_counts else num_consignments
+    total_cons = sum(consignment_counts) if consignment_counts else num_consignments_default
 
     return PipelineResult(
         contamination_fit=fit,
