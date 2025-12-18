@@ -125,18 +125,27 @@ class InspectionUnit:
     only be accessed but also modifed through the InspectionUnit.
     """
 
-    def __init__(self, sample_units, material_type=None, origin=None, producer=None):
+    def __init__(self,
+                 sample_units,
+                 material_type=None,
+                 producer=None,
+                 origin=None,
+                 port=None,
+                 pathway=None):
         """Store reference to associated sample_units
 
         :param sample_units: Array-like object of sample_units
         :param material_type: Material type for this inspection unit
+        :param producer: Producer name for this inspection unit
         """
         self.sample_units = sample_units
         self.sample_unit_objects = []  # For hierarchical structure - list of SampleUnit objects
         self.material_type = material_type
-        self.origin = origin
         self.producer = producer
- 
+        self.origin = origin
+        self.port = port
+        self.pathway = pathway
+
     @property
     def num_sample_units(self):
         """Number of sample_units in the InspectionUnit"""
@@ -163,12 +172,22 @@ class SampleUnit:
     only be accessed but also modifed through the InspectionUnit.
     """
 
-    def __init__(self, plants):
+    def __init__(self,
+                 plants=None,
+                 producer=None,
+                 origin=None,
+                 port=None,
+                 pathway=None):
         """Store reference to associated plants
 
         :param plants: Array-like object of plants
+        :param producer: Producer name for this sample unit
         """
         self.plants = plants
+        self.producer = producer
+        self.origin = origin
+        self.port = port
+        self.pathway = pathway
 
     @property
     def num_plants(self):
@@ -483,7 +502,11 @@ class PISConsignmentGenerator:
             # Use the actual quantities from the PIS data
             inspection_unit_sample_units = int(record["TOTAL_SAMPLING_UNITS"])
             inspection_unit_plants = int(record["TOTAL_PLANT_QUANTITY"])
-            
+            inspection_unit_producer = record["PRODUCER_NAME"]
+            inspection_unit_origin = record["COUNTRY_OF_ORIGIN_NAME"]
+            inspection_unit_port = record["INSPECTION_LOCATION_NAME"]
+            inspection_unit_pathway = record["PATHWAY"]
+
             # Calculate plants per sample_unit for this inspection unit
             if inspection_unit_sample_units > 0:
                 base_plants_per_sample_unit = inspection_unit_plants // inspection_unit_sample_units
@@ -512,17 +535,21 @@ class PISConsignmentGenerator:
                 
                 # Create slice for this sample unit
                 sample_unit_plants = plants_array[plant_index:plant_index + plants_in_this_unit]
-                sample_unit_objects.append(SampleUnit(sample_unit_plants))
-                
+                sample_unit_objects.append(SampleUnit(sample_unit_plants,
+                                                      producer=inspection_unit_producer,
+                                                      origin=inspection_unit_origin,
+                                                      port=inspection_unit_port,
+                                                      pathway=inspection_unit_pathway))
                 plant_index += plants_in_this_unit
 
             # Create InspectionUnit
-            inspection_unit = InspectionUnit(
-                sample_units_array,
-                material_type=material_type,
-                origin=record.get("COUNTRY_OF_ORIGIN_NAME"),
-                producer=record.get("PRODUCER"),
-            )
+            inspection_unit = InspectionUnit(sample_units_array,
+                                             material_type=material_type,
+                                             producer=inspection_unit_producer,
+                                             origin=inspection_unit_origin,
+                                             port=inspection_unit_port,
+                                             pathway=inspection_unit_pathway)
+
             inspection_unit.sample_unit_objects = sample_unit_objects
             inspection_units.append(inspection_unit)
             

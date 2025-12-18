@@ -18,26 +18,36 @@ from popsborder.inspections import normalize_rbs_variables_against_consignment
 # Import utility functions for contamination module
 from slippage_model_utils.clarke_r_script_wrapper import *
 from slippage_model_utils.clarke_model_support_functions import *
+from slippage_model_utils.paths import BoxPaths, DefaultPaths
 
 
 def main():
     # Set up data folder and file names
-    data_dir = Path("slippage_data")
+    box_paths = BoxPaths()
+    default_paths = DefaultPaths()
+    #data_dir = Path("slippage_data")
+    data_dir = default_paths.slippage_data_dir()
     config_file = data_dir / "config.yml"
     #compliance_file = data_dir / "compliance_table_test.csv"
     compliance_file = data_dir / "compliance_table.csv"
     scenario_file = data_dir / "test_scenario.csv"
     #scenario_file = data_dir / "pis_contaminate_scenarios.csv"
     pis_data = data_dir / 'synthetic_pis_data.csv'
-    rbs_calc_data = data_dir / 'synthetic_rbs_calc_data.csv'
+    #rbs_calc_data = data_dir / 'synthetic_rbs_calc_data.csv'
+    rbs_calc_data = data_dir / 'synthetic_rbs_calc_data2.csv'
 
     # Load configuration and compliance table
     config = load_configuration(config_file)
 
     # Synthetic data generation
-    synthetic_data_generator = SyntheticConsignmentDataGenerator(data_dir / "fake_pis_data.csv")
-    synth_data = synthetic_data_generator.generate_from_input_data(n_samples=10, sampling_method="sequential")
-    save_to_csv(synth_data, filename= data_dir / "synth_data.csv")
+    num_consignments_to_simulate = 10 # Added input parameter to be the number of consignments you want simulated
+    #synthetic_data_generator = SyntheticConsignmentDataGenerator(box_paths.rbs_calc_data())
+    synthetic_data_generator = SyntheticConsignmentDataGenerator(data_dir / "synthetic_rbs_calc_data2.csv")
+    #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="naive")
+    synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=num_consignments_to_simulate, sampling_method="sequential")
+    #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="gmm")
+
+    #save_to_csv(synth_data, filename= data_dir / "synth_data.csv")
 
     config["consignment"]["input_file"]["rbs_file_name"] = str(data_dir / "synth_data.csv")
 
@@ -160,7 +170,7 @@ def main():
         #scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = res["alpha"]
         #scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] =  res["beta"]
         scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = 0.194628
-        scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] = 4.7609372 #20.12345
+        scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] = 4.1 #20.12345
         #scenario["contamination/contamination_rate/beta_binomial_parameters/theta"] = inputs.theta
         scenario["contamination/contamination_rate/value"] = None
 
@@ -179,8 +189,8 @@ def main():
         config=config,
         scenario_table=scenarios,
         seed=42,
-        num_simulations=1,            # Only one simulation
-        num_consignments=3,           # You can change this number if needed
+        num_simulations=2,            # Only one simulation
+        num_consignments=num_consignments_to_simulate,
         compliance_table=compliance_table,
         detailed=detailed_bool
     )
@@ -203,8 +213,9 @@ def main():
     results_df = save_scenario_result_to_pandas(scenario_results,
                                                 config_columns=config_columns,
                                                 result_columns=result_columns)
-    results_df.to_csv(output_dir / "pis_contamination_scenario_results.csv", index=False)
-    print("Results saved to output/pis_contamination_scenario_results.csv")
+    results_df.to_csv(output_dir / "pis_contamination_scenario_results2.csv", index=False)
+    print("Results saved to output/pis_contamination_scenario_results2.csv")
+    print('')
 
 if __name__ == "__main__":
     main()
