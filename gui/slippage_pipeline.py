@@ -160,7 +160,7 @@ def generate_synthetic_data(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     generator = SyntheticConsignmentDataGenerator(seed_path)
     synth_data = generator.generate_from_input_data(
-        n_samples=options.n_samples,
+        n_consignments=options.n_samples,
         sampling_method=options.sampling_method,
     )
     save_to_csv(synth_data, filename=output_path)
