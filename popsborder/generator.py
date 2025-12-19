@@ -59,6 +59,7 @@ import chardet
 from scipy import stats
 import warnings
 import re
+from typing import Optional, Union
 from scipy import stats
 
 
@@ -292,7 +293,7 @@ class SyntheticConsignmentDataGenerator:
             df: pd.DataFrame,
             input_col: str = "PRODUCER_NAME",
             output_col: str = "PRODUCER_NAME_RESOLVED",
-            alias_map: dict | None = None,
+            alias_map: Optional[dict] = None,
     ) -> pd.DataFrame:
         """
         Simple producer entity resolution.
@@ -306,7 +307,7 @@ class SyntheticConsignmentDataGenerator:
 
         df = df.copy()
 
-        def _normalize(name: str | float):
+        def _normalize(name: Union[str, float]):
             if pd.isna(name):
                 return name
             name = str(name)
@@ -355,7 +356,7 @@ class SyntheticConsignmentDataGenerator:
 
     def identify_num_inspection_units_conditional(self, df, n_consignments=1,
                                                   cols=None,
-                                                  producer_alias_map: dict | None = None):
+                                                  producer_alias_map: Optional[dict] = None):
         """
         Build a nested dictionary keyed by:
           - Case1 ("Miami PIS"):
