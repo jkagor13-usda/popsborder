@@ -437,35 +437,25 @@ def select_random_indexes_rbs(unit, consignment, n_units_to_inspect):
     :param consignment: Consignment to be inspected
     :param n_units_to_inspect: Number of units to inspect defined in sample functions.
     """
-    print('test2')
+    
     indexes_to_inspect = []
     if unit in ["sample_unit", "sample_units", "item", "items"]:
         current_idx = 0
         inspection_unit_counter = 0
         inspection_units_to_inspect = {}
-        print('test3')
-        print(f'Number of inspection units: {len(consignment.inspection_units)}')
         for inspection_unit in consignment.inspection_units:
-            print('test4')
             indexes_to_inspect_temp = random.sample(
                 list(range(len(inspection_unit.sample_unit_objects))), n_units_to_inspect[inspection_unit_counter]
             )
-            print('test5')
             inspection_units_to_inspect[inspection_unit_counter] = indexes_to_inspect_temp
-            # print(f'   Inspecting {len(inspection_unit.sample_unit_objects)} sampling units of '
-            #       f'inspection unit {inspection_unit_counter}.  Inspecting the following sampling unit indices.')
-            # print(f'      {indexes_to_inspect_temp}\n')
             indexes_to_inspect_temp = [x+ current_idx for x in indexes_to_inspect_temp]
             current_idx += len(inspection_unit.sample_unit_objects)
             indexes_to_inspect = indexes_to_inspect + indexes_to_inspect_temp
             inspection_unit_counter += 1
-            #print('')
-            print('test6')
     else:
         raise RuntimeError(f"Inspection process unit specified in config is: {unit}.  "
                            f"For Sampling Strategy = RBS, only supports that parameter being = sampling_units")
     indexes_to_inspect.sort()
-    print('test7')
     return indexes_to_inspect, inspection_units_to_inspect
 
 
@@ -571,7 +561,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     # pylint: disable=too-many-locals,too-many-statements
     # pylint: disable=too-many-branches,too-many-nested-blocks
 
-    print('test1')
+    
     unit = config["inspection"]["unit"]
     selection_strategy = config["inspection"]["selection_strategy"]
     sample_strategy = config["inspection"]["sample_strategy"]
