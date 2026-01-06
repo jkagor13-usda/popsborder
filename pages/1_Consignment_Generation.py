@@ -293,16 +293,23 @@ with ingest_tab:
         st.markdown("### Synthetic consignment generation")
         gen_cols = st.columns(2)
         n_samples = gen_cols[0].number_input("Number of consignments to generate", min_value=1, max_value=10000, value=20, step=10)
-        method = gen_cols[1].selectbox(
+        method_dict = {
+            "multinomial sequential": "sequential",
+            "gaussian mixture": "gmm",
+        }
+        method_selection = gen_cols[1].selectbox(
             "Sampling method",
-            options=[ "sequential", "gmm"],
+            options=list(method_dict),
             index=1,
         )
+        method = method_dict[method_selection]
         if st.button("Generate synthetic consignments", type="primary", use_container_width=True):
             set_synthetic_options(SyntheticOptions(n_samples=int(n_samples), sampling_method=method))
             set_paths(synthetic_seed=_consignment_paths()["uploaded_rbs"])
             ok, msg = _save_rbs_to_tmp(current_rbs, pending_manual_rbs, state.get("pending_rbs_upload"))
             if ok:
+                if state["paths"].rbs_data:
+                    current_rbs = Path(state["paths"].rbs_data)
                 st.success(f"Generated and saved synthetic consignments: {msg}")
             else:
                 st.warning(msg)
@@ -314,6 +321,8 @@ with ingest_tab:
         if st.button("Save uploaded consignments", type="primary", key="save_consignment_ingest", use_container_width=True):
             ok, msg = _save_historical_rbs(current_rbs, state.get("pending_rbs_upload"), base_name=current_base)
             if ok:
+                if state["paths"].rbs_data:
+                    current_rbs = Path(state["paths"].rbs_data)
                 st.success(msg)
             else:
                 st.warning(msg)

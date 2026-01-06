@@ -224,7 +224,7 @@ with fit_tab:
         metrics[1].metric("Beta", f"{fit_to_show.beta:.6f}")
         metrics[2].metric("Theta", f"{fit_to_show.theta}")
         st.altair_chart(
-            _beta_chart(fit_to_show.alpha, fit_to_show.beta, "Beta PDF (fitted)"),
+            _beta_chart(fit_to_show.alpha, fit_to_show.beta, "Beta-Binomial Probability Density Function"),
             use_container_width=True,
         )
 
@@ -293,7 +293,7 @@ with assign_tab:
         }
 
         st.altair_chart(
-            _beta_chart(alpha_val, beta_val, "Beta PDF (manual alpha/beta)"),
+            _beta_chart(alpha_val, beta_val, "Beta-Binomial Probability Density Function"),
             use_container_width=True,
         )
         manual_name = st.text_input(
@@ -361,7 +361,7 @@ with assign_tab:
         st.session_state["manual_mean_rate"] = sample_unit_rate
 
         st.altair_chart(
-            _beta_chart(adj_alpha, adj_beta, "Beta PDF (manual, from sample-unit rate)"),
+            _beta_chart(adj_alpha, adj_beta, "Beta-Binomial Probability Density Function"),
             use_container_width=True,
         )
         st.metric("Implied beta-binomial variance (n=100)", f"{variance:.4f}")
@@ -411,7 +411,7 @@ with saved_tab:
             if sample_unit_rate is not None:
                 st.metric("Plant unit contamination rate", f"{sample_unit_rate}")
             st.altair_chart(
-                _beta_chart(alpha, beta, f"Beta PDF for {sel}"),
+                _beta_chart(alpha, beta, f"Beta-binomial PDF for {sel}"),
                 use_container_width=True,
             )
             st.info("Sets are stored in tmp/contamination/contamination_parameter_sets.json.")
