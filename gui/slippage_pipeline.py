@@ -432,14 +432,21 @@ def run_slippage_pipeline(
     counts = [_infer_num_consignments(p) for p in unique_cons_files] if unique_cons_files else []
     num_consignments_default = min(counts) if counts else 1
 
-    def _run(cfg: Dict[str, Any], rec: Dict[str, Any], cons_count: int, *, num_sims: int):
+    def _run(
+        cfg: Dict[str, Any],
+        rec: Dict[str, Any],
+        cons_count: int,
+        *,
+        num_sims: int,
+        comp_table: Dict[str, Any],
+    ):
         return run_scenarios(
             config=cfg,
             scenario_table=[rec],
             seed=seed,
             num_simulations=num_sims,
             num_consignments=cons_count,
-            compliance_table=compliance_table,
+            compliance_table=comp_table,
             detailed=True,
         )
 
@@ -458,14 +465,23 @@ def run_slippage_pipeline(
             consignment_counts.append(rec_num_consignments)
 
             cfg_local = _build_cfg_for_scenario(base_cfg, rec_cons_path, rec_comp_path)
+            comp_table = load_compliance_lookup_csv(rec_comp_path) if rec_comp_path else compliance_table
 
             # Aggregated run
-            scenario_results_raw.extend(_run(cfg_local, rec, rec_num_consignments, num_sims=num_simulations))
+            scenario_results_raw.extend(
+                _run(cfg_local, rec, rec_num_consignments, num_sims=num_simulations, comp_table=comp_table)
+            )
 
             # Per-replication runs
             if num_simulations > 1:
                 for rep in range(num_simulations):
-                    results = _run(copy.deepcopy(cfg_local), rec, rec_num_consignments, num_sims=1)
+                    results = _run(
+                        copy.deepcopy(cfg_local),
+                        rec,
+                        rec_num_consignments,
+                        num_sims=1,
+                        comp_table=comp_table,
+                    )
                     run_rows.extend((rep, *tup) for tup in results)
 
         return scenario_results_raw, consignment_counts, run_rows

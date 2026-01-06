@@ -219,6 +219,12 @@ with tabs[1]:
             else None
         )
 
+        param_choice = (
+            st.selectbox("Contamination parameter set", param_keys)
+            if param_keys
+            else None
+        )
+
         compliance_choice = (
             st.selectbox(
                 "Compliance table",
@@ -229,12 +235,6 @@ with tabs[1]:
             else None
         )
 
-        param_choice = (
-            st.selectbox("Contamination parameter set", param_keys)
-            if param_keys
-            else None
-        )
-
     with col_right:
         with st.expander("Files available", expanded=True):
             st.write(
@@ -242,12 +242,12 @@ with tabs[1]:
                 f"{', '.join(p.name for p in consignment_files) if consignment_files else 'none'}"
             )
             st.write(
-                f"**Compliance tables ({len(compliance_files)}):** "
-                f"{', '.join(p.name for p in compliance_files) if compliance_files else 'none'}"
+                f"**Contamination ({len(param_keys)}):** "
+                f"{', '.join(param_keys) if param_keys else 'none'}"
             )
             st.write(
-                f"**Param sets ({len(param_keys)}):** "
-                f"{', '.join(param_keys) if param_keys else 'none'}"
+                f"**Inspection Process ({len(compliance_files)}):** "
+                f"{', '.join(p.name for p in compliance_files) if compliance_files else 'none'}"
             )
 
     add_ready = all([scenario_label, consignment_choice, compliance_choice, param_choice])

@@ -110,3 +110,5 @@ inspection:
   within_box_proportion: 1
   compliance_table:
     file_name: data/compliance_table.csv
+debug:
+  print_compliance_levels: true

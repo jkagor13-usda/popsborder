@@ -255,64 +255,14 @@ with assign_tab:
     mode = st.selectbox(
         "Choose assignment mode",
         ["Beta-binomial (alpha/beta)", "Plant-unit contamination rate"],
-        index=0,
+        index=1,
     )
     assigned_state = st.session_state.get(
         "page2_assigned_fit",
         {"alpha": FALLBACK_ALPHA, "beta": FALLBACK_BETA, "theta": FALLBACK_THETA, "sample_unit_rate": 0.01},
     )
 
-    if mode == "Beta-binomial (alpha/beta)":
-        st.caption("Adjust alpha/beta directly. Theta is fixed to infinity by default.")
-        col_a, col_b, col_t = st.columns(3)
-        alpha_val = col_a.number_input(
-            "Alpha",
-            min_value=0.000001,
-            value=float(assigned_state["alpha"]),
-            step=0.0005,
-            format="%.4f",
-        )
-        beta_val = col_b.number_input(
-            "Beta",
-            min_value=0.000001,
-            value=float(assigned_state["beta"]),
-            step=0.0005,
-            format="%.4f",
-        )
-        theta_str = col_t.text_input("Theta", value="inf")
-        try:
-            theta_val = float("inf") if theta_str.lower() == "inf" else float(theta_str)
-        except ValueError:
-            theta_val = float("inf")
-
-        st.session_state["page2_assigned_fit"] = {
-            "alpha": alpha_val,
-            "beta": beta_val,
-            "theta": theta_val,
-            "sample_unit_rate": assigned_state.get("sample_unit_rate", 0.01),
-        }
-
-        st.altair_chart(
-            _beta_chart(alpha_val, beta_val, "Beta-Binomial Probability Density Function"),
-            use_container_width=True,
-        )
-        manual_name = st.text_input(
-            "Parameter set name for manual values",
-            value=st.session_state.get("last_saved_param_set", ""),
-            key="manual_save_name_alpha_beta",
-        )
-        if st.button("Save current parameters", key="save_manual_params_alpha_beta"):
-            saved_name = _save_param_set(
-                manual_name or _next_param_name(_read_param_store()),
-                alpha_val,
-                beta_val,
-                theta_val,
-                assigned_state.get("sample_unit_rate", None),
-            )
-            st.success(
-                f"Saved '{saved_name}' with alpha={alpha_val:.6f}, beta={beta_val:.6f}, theta={theta_val}"
-            )
-    else:
+    if mode == "Plant-unit contamination rate":
         st.caption("Set a target mean contamination rate at the plant/sample-unit level and tune width via concentration.")
         default_conc = max(
             assigned_state.get("alpha", FALLBACK_ALPHA) + assigned_state.get("beta", FALLBACK_BETA),
@@ -385,6 +335,57 @@ with assign_tab:
                 f"Saved '{saved_name}' with alpha={adj_alpha:.6f}, beta={adj_beta:.6f}, "
                 f"theta={theta_val}, sample unit rate={sample_unit_rate}"
             )
+    else:
+        st.caption("Adjust alpha/beta directly. Theta is fixed to infinity by default.")
+        col_a, col_b, col_t = st.columns(3)
+        alpha_val = col_a.number_input(
+            "Alpha",
+            min_value=0.000001,
+            value=float(assigned_state["alpha"]),
+            step=0.0005,
+            format="%.4f",
+        )
+        beta_val = col_b.number_input(
+            "Beta",
+            min_value=0.000001,
+            value=float(assigned_state["beta"]),
+            step=0.0005,
+            format="%.4f",
+        )
+        theta_str = col_t.text_input("Theta", value="inf")
+        try:
+            theta_val = float("inf") if theta_str.lower() == "inf" else float(theta_str)
+        except ValueError:
+            theta_val = float("inf")
+
+        st.session_state["page2_assigned_fit"] = {
+            "alpha": alpha_val,
+            "beta": beta_val,
+            "theta": theta_val,
+            "sample_unit_rate": assigned_state.get("sample_unit_rate", 0.01),
+        }
+
+        st.altair_chart(
+            _beta_chart(alpha_val, beta_val, "Beta-Binomial Probability Density Function"),
+            use_container_width=True,
+        )
+        manual_name = st.text_input(
+            "Parameter set name for manual values",
+            value=st.session_state.get("last_saved_param_set", ""),
+            key="manual_save_name_alpha_beta",
+        )
+        if st.button("Save current parameters", key="save_manual_params_alpha_beta"):
+            saved_name = _save_param_set(
+                manual_name or _next_param_name(_read_param_store()),
+                alpha_val,
+                beta_val,
+                theta_val,
+                assigned_state.get("sample_unit_rate", None),
+            )
+            st.success(
+                f"Saved '{saved_name}' with alpha={alpha_val:.6f}, beta={beta_val:.6f}, theta={theta_val}"
+            )
+    
 
 # Saved sets tab
 with saved_tab:

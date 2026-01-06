@@ -262,7 +262,10 @@ def sample_rbs(config, consignment, compliance_table_dict):
     unit = config["inspection"]["unit"]
     num_sample_units = consignment.num_sample_units
     num_inspection_units = consignment.num_inspection_units
-    detection_confidence_levels = get_detection_and_confidence(consignment, compliance_table_dict)
+    debug_print = config.get("debug", {}).get("print_compliance_levels", False)
+    detection_confidence_levels = get_detection_and_confidence(
+        consignment, compliance_table_dict, print_compliance_levels=debug_print
+    )
     n_units_to_inspect = {}
     if unit in ["sample_unit", "sample_units", "item", "items"]:
         for inspect_number in detection_confidence_levels.keys():
@@ -862,11 +865,13 @@ def consignment_contamination_rate(consignment):
     return count / consignment.num_sample_units
 
 
-def get_detection_and_confidence(consignment,
-                                 compliance_table_dict,
-                                 default_detection=0.01,
-                                 default_confidence=0.8
-    ):
+def get_detection_and_confidence(
+    consignment,
+    compliance_table_dict,
+    default_detection=0.01,
+    default_confidence=0.8,
+    print_compliance_levels: bool = False,
+):
     """
     Fetch detection and confidence levels for specified rbs variables.
     If not found, defaults to low compliance values.
@@ -885,8 +890,25 @@ def get_detection_and_confidence(consignment,
             n_units_to_inspect[inspection_unit] = (default_detection, default_confidence)
     else:
         inspection_unit_idx = 0
+        # TODO: Better variable matching approach
+        attr_map = {
+            "PATHWAY": "pathway",
+            "COUNTRY_OF_ORIGIN_NAME": "origin",
+            "PROPAGATIVE_MATERIAL_TYPE": "material_type",
+            "INSPECTION_LOCATION_NAME": "port",
+            "PRODUCER_NAME": "producer",
+        }
         for inspection_unit in consignment.inspection_units:
-            values = {attr: getattr(inspection_unit, attr, None) for attr in rbs_variables}
+            values = {}
+            for attr in rbs_variables:
+                attr_key = str(attr)
+                mapped = attr_map.get(attr_key.upper())
+                if mapped and hasattr(inspection_unit, mapped):
+                    values[attr_key] = getattr(inspection_unit, mapped, None)
+                elif hasattr(inspection_unit, attr_key):
+                    values[attr_key] = getattr(inspection_unit, attr_key, None)
+                else:
+                    values[attr_key] = getattr(inspection_unit, attr_key.lower(), None)
             if any(v is None for v in values.values()):
                 # If not all variable specified in compliance table not detected in consignment, then default to low compliance
                 none_attrs = [k for k, v in values.items() if v is None]
@@ -897,6 +919,7 @@ def get_detection_and_confidence(consignment,
                 # print(f"      Default Detection Level: {default_detection}")
                 # print(f"      Default Confidence Level: {default_confidence}")
                 result = (default_detection, default_confidence)
+                key = None
                 #return n_units_to_inspect
             else:
                 # If variables found in consignment, attempt to look up in table
@@ -905,6 +928,12 @@ def get_detection_and_confidence(consignment,
             if result is not None:
                 # If a reference found, then return the associated detection and confidence levels
                 n_units_to_inspect[inspection_unit_idx] = result
+                if print_compliance_levels:
+                    key_str = key if key is not None else "<missing>"
+                    print(
+                        f"Compliance level for inspection unit {inspection_unit_idx}: "
+                        f"key={key_str} detection={result[0]} confidence={result[1]}"
+                    )
                 inspection_unit_idx+=1
             else:
                 # If no reference found, print warning and use low compliance defaults.
@@ -913,6 +942,12 @@ def get_detection_and_confidence(consignment,
                 # print(f"      Default Detection Level: {default_detection}")
                 # print(f"      Default Confidence Level: {default_confidence}")
                 n_units_to_inspect[inspection_unit_idx] = (default_detection, default_confidence)
+                if print_compliance_levels:
+                    key_str = key if key is not None else "<missing>"
+                    print(
+                        f"Compliance default for inspection unit {inspection_unit_idx}: "
+                        f"key={key_str} detection={default_detection} confidence={default_confidence}"
+                    )
                 inspection_unit_idx+=1
     return n_units_to_inspect
 

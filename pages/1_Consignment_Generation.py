@@ -36,8 +36,8 @@ def _consignment_paths(base_name: Optional[str] = None) -> dict[str, Path]:
     base = _consignment_dir()
     base_name = base_name or st.session_state.get("consignment_base_name", "consignment") or "consignment"
     return {
-        "uploaded_rbs": base / f"{base_name}_built_consignments.csv",
-        "manual_rbs": base / f"{base_name}_built_consignments.csv",
+        "uploaded_rbs": base / f"{base_name}.csv",
+        "manual_rbs": base / f"{base_name}.csv",
     }
 
 
@@ -285,7 +285,7 @@ with ingest_tab:
         "Consignment input file base name",
         value=current_base,
         key="consignment_base_name",
-        help="Used to name RBS files in tmp/consignments (e.g., <name>_built_consignments.csv).",
+        help="Used to name RBS files in tmp/consignments (e.g., <name>.csv).",
     )
     state["consignment_base_name"] = st.session_state.get("consignment_base_name", current_base) or default_base
 
@@ -300,7 +300,7 @@ with ingest_tab:
         method_selection = gen_cols[1].selectbox(
             "Sampling method",
             options=list(method_dict),
-            index=1,
+            index=0,
         )
         method = method_dict[method_selection]
         if st.button("Generate synthetic consignments", type="primary", use_container_width=True):
@@ -475,7 +475,7 @@ with manual_tab:
         "Consignment input file base name (manual)",
         value=st.session_state.get("consignment_base_name_manual", "Manual"),
         key="consignment_base_name_manual",
-        help="Used to name RBS files in tmp/consignments (e.g., <name>_built_consignments.csv).",
+        help="Used to name RBS files in tmp/consignments (e.g., <name>.csv).",
     ) or "Manual"
     if st.button("Save manual consignments", type="primary", key="save_consignment_manual", use_container_width=True):
         ok, msg = _save_manual_rbs(pending_manual_rbs, base_name=manual_base)
