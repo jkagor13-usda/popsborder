@@ -107,7 +107,7 @@ def simulation(
     if seed is not None:
         random_seed(seed)
 
-    simData = SimData()
+    sim_data = SimData()
 
     # allow for an empty disposition code specification
     disposition_codes = config.get("disposition_codes", {})
@@ -187,7 +187,7 @@ def simulation(
             print(f'   Proportion of Contaminated Inspection Units (total # inspection units = {len(consignment.inspection_units)}): {total_contaminated_inspection_units/len(consignment.inspection_units)}')
 
 
-            #simData.add_consignment(consignment)
+            sim_data.add_consignment(consignment)
             if detailed:
                 for inspection_unit in consignment.inspection_units:
                     sample_unit_details.append(inspection_unit.sample_units)
@@ -202,7 +202,7 @@ def simulation(
                 print(f'\n\n==== INSPECTION OF CONSIGNMENT {i + 1} NOW BEING EXECUTED ====')
                 n_units_to_inspect = sample(consignment)
                 ret = inspect(config, consignment, n_units_to_inspect, detailed)
-                #simData.add_to_synthetic_data(ret, consignment, n_units_to_inspect)
+                sim_data.add_to_synthetic_data(ret, consignment, n_units_to_inspect)
                 consignment_checked_ok = ret.consignment_checked_ok
                 num_inspections += 1
                 total_num_inspection_units += consignment.num_inspection_units
@@ -265,7 +265,7 @@ def simulation(
             pass
 
     # Write out simulated data
-    #simData.write_synthetic_data_to_csv()
+    sim_data.write_synthetic_data_to_csv()
 
     num_contaminated = num_consignments - success_rates.ok
     if num_contaminated:
