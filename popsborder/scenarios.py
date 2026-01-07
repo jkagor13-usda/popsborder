@@ -38,7 +38,10 @@ Modified Functions:
 
 from .inputs import update_config
 from .simulation import run_simulation
+from datetime import datetime
+from pathlib import Path
 
+from slippage_model_utils.clarke_r_script_wrapper import _find_repo_root
 
 def run_scenarios(
     config, scenario_table, seed, num_simulations, num_consignments, compliance_table=None, 
@@ -68,10 +71,19 @@ def run_scenarios(
         result and configuration for that scenario.
     """
     results = []
+    # Define output directory for the simulated data
+    run_ts = datetime.now().strftime("%m_%d_%Y_%H_%M_%S")
+    run_dir = _find_repo_root() / "output" / f"pops_border_scenario_data_{run_ts}"
+    run_dir = Path(run_dir)
     for record in scenario_table:
         scenario_name = record["name"]
         print(f"Running scenario: {scenario_name}")
         scenario_config = update_config(config, record)
+
+        # Create the output scenario directory
+        output_dir = run_dir / str(scenario_name)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
         result = run_simulation(
             config=scenario_config,
             num_simulations=num_simulations,
@@ -79,6 +91,7 @@ def run_scenarios(
             compliance_table = compliance_table,
             seed=seed,
             detailed=detailed,
+            output_dir=output_dir,
         )
         if detailed:
             # The result is tuple of details ([0]) and simulation totals ([1]).

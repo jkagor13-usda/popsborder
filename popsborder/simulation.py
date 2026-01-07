@@ -94,6 +94,7 @@ def simulation(
     verbose=False,
     pretty=None,
     detailed=False,
+    output_dir_rep=None,
 ):
     """Simulate consignments, their contamination, and their inspection
 
@@ -107,7 +108,7 @@ def simulation(
     if seed is not None:
         random_seed(seed)
 
-    sim_data = SimData()
+    sim_data = SimData(output_dir_rep=output_dir_rep)
 
     # allow for an empty disposition code specification
     disposition_codes = config.get("disposition_codes", {})
@@ -384,6 +385,7 @@ def run_simulation(
     verbose=False,
     pretty=None,
     detailed=False,
+    output_dir=None,
 ):
     """Run the simulation function specified number of times
 
@@ -446,6 +448,11 @@ def run_simulation(
         print(f'\n\n======================================================================')
         print(f'======= RUNNING REPLICATION {i + 1} OUT OF {num_simulations} =========')
         print(f'======================================================================')
+
+        # Define output replication directory for the simulated data
+        output_dir_rep = output_dir / f"rep_{i}"
+        output_dir_rep.mkdir(parents=True, exist_ok=True)
+
         result = simulation(
             config=config,
             num_consignments=num_consignments,
@@ -455,6 +462,7 @@ def run_simulation(
             verbose=verbose,
             pretty=pretty,
             detailed=detailed,
+            output_dir_rep=output_dir_rep,
         )
 
         ##############################
