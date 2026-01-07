@@ -1,0 +1,17 @@
+PATHWAY,COUNTRY_OF_ORIGIN_NAME,Compliance,Detection Level,Confidence Levels
+Air,India,High Compliance,0.3,0.95
+Sea,India,High Compliance,0.3,0.95
+Train,India,High Compliance,0.3,0.95
+Truck,India,High Compliance,0.3,0.95
+Sea,Japan,High Compliance,0.3,0.95
+Air,Japan,High Compliance,0.3,0.95
+Train,Japan,Medium Compliance,0.2,0.95
+Truck,Japan,Medium Compliance,0.2,0.95
+Sea,Netherlands,Medium Compliance,0.2,0.95
+Air,Netherlands,Medium Compliance,0.2,0.95
+Train,Netherlands,Medium Compliance,0.2,0.95
+Truck,Netherlands,Medium Compliance,0.2,0.95
+Air,New Zeland,Medium Compliance,0.2,0.95
+Train,New Zeland,Medium Compliance,0.2,0.95
+Sea,New Zeland,Medium Compliance,0.2,0.95
+Truck,New Zeland,Medium Compliance,0.2,0.95

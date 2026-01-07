@@ -1,0 +1,9 @@
+COUNTRY_OF_ORIGIN_NAME,PROPAGATIVE_MATERIAL_TYPE,Compliance,Detection Level,Confidence Levels
+New Zeland,Budwood/Graftwood (scion),Medium Compliance,0.2,0.95
+India,Budwood/Graftwood (scion),High Compliance,0.3,0.95
+Netherlands,Budwood/Graftwood (scion),High Compliance,0.3,0.95
+Japan,Budwood/Graftwood (scion),High Compliance,0.3,0.95
+Japan,"Bulb, Corm, Rhizome, Tuberous Stem",High Compliance,0.3,0.95
+Netherlands,"Bulb, Corm, Rhizome, Tuberous Stem",High Compliance,0.3,0.95
+India,"Bulb, Corm, Rhizome, Tuberous Stem",Medium Compliance,0.2,0.95
+New Zeland,"Bulb, Corm, Rhizome, Tuberous Stem",Medium Compliance,0.2,0.95

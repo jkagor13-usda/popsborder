@@ -2,7 +2,7 @@ import streamlit as st
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
-from gui.slippage_ui import export_state_snapshot, init_slippage_state
+from gui.slippage_ui import init_slippage_state
 
 
 st.set_page_config(page_title="Home", layout="wide")
@@ -16,6 +16,7 @@ with hero_cols[0]:
     st.caption("Use this workspace to upload or generate consignments, fit contamination, and run inspection simulations.")
 with hero_cols[1]:
     st.empty()
+
 
 st.success(
     "Start with **Consignment Generation** to upload curated PIS/RBS files and generate synthetic consignments "
@@ -52,7 +53,7 @@ st.warning(
     "This is a private system and is only to be used by authorized users. By continuing, the user is stating "
     "that they are the indicated user.\n\n"
     "NO WARRANTY\n\n"
-    'THE JOHNS HOPKINS UNIVERSITY APPLIED PHYSICS LABORATORY (JHU/APL) PROVIDES THIS ESSENCE SOFTWARE "AS IS" '
+    'THE JOHNS HOPKINS UNIVERSITY APPLIED PHYSICS LABORATORY (JHU/APL) PROVIDES THIS SOFTWARE "AS IS" '
     "WITHOUT WARRANTY OF ANY KIND. JHU/APL DOES NOT WARRANT THAT (i) THE SOFTWARE WILL BE UNINTERRUPTED OR ERROR "
     "FREE, OR (ii) THE DATA PRODUCED BY THE SOFTWARE WILL BE ERROR FREE. JHU/APL DISCLAIMS ALL WARRANTIES, WHETHER "
     "EXPRESS OR IMPLIED, INCLUDING (BUT NOT LIMITED TO) ANY AND ALL IMPLIED WARRANTIES OF PERFORMANCE, "
@@ -61,7 +62,9 @@ st.warning(
     "PRODUCED THEREBY, INCLUDING USE IN COMPLIANCE WITH ANY THIRD PARTY RIGHTS. JHU/APL SHALL NOT BE LIABLE FOR ANY "
     "ACTUAL, INDIRECT, CONSEQUENTIAL, SPECIAL OR OTHER DAMAGES ARISING FROM THE USE OF, OR INABILITY TO USE, THIS "
     "SOFTWARE OR THE DATA PRODUCED THEREBY, INCLUDING, BUT NOT LIMITED TO, ANY DAMAGES FOR LOST PROFITS, BUSINESS "
-    "INTERRUPTION OR LOSS OF DATA EVEN IF JHU/APL HAS BEEN ADVISED OF THE PROBABILITY OF SUCH DAMAGES."
+    "INTERRUPTION OR LOSS OF DATA EVEN IF JHU/APL HAS BEEN ADVISED OF THE PROBABILITY OF SUCH DAMAGES.\n\n" 
+
+    "© 2025 Johns Hopkins University Applied Physics Laboratory"
 )
 
 

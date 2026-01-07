@@ -284,25 +284,6 @@ def gen_clarke_model_inputs(
     return clarke_inputs
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def lambda_of_theta(theta, Nbar=100):
     """
     Compute lambda(theta) = Nbar / (1 + sum_{k=1}^{Nbar-1} theta/(theta+k)).

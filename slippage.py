@@ -90,6 +90,10 @@ def main():
     print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
     print(f'   Alpha = {res["alpha"]}')
     print(f'   Beta = {res["beta"]}')
+    print(f'   Theta (from inputs) = {inputs.theta}')
+    print('\nFull Clarke model result payload:')
+    for k, v in res.items():
+        print(f'   {k}: {v}')
     print('')
 
     # Update original parameters of config
