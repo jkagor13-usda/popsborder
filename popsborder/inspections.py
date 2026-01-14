@@ -83,6 +83,7 @@ Backward Compatibility:
 """
 
 import math
+import os
 import random
 import types
 
@@ -261,7 +262,10 @@ def sample_rbs(config, consignment, compliance_table_dict):
     unit = config["inspection"]["unit"]
     num_sample_units = consignment.num_sample_units
     num_inspection_units = consignment.num_inspection_units
-    detection_confidence_levels = get_detection_and_confidence(consignment, compliance_table_dict)
+    debug_print = config.get("debug", {}).get("print_compliance_levels", False)
+    detection_confidence_levels = get_detection_and_confidence(
+        consignment, compliance_table_dict, print_compliance_levels=debug_print
+    )
     n_units_to_inspect = {}
     if unit in ["sample_unit", "sample_units", "item", "items"]:
         for inspect_number in detection_confidence_levels.keys():
@@ -436,6 +440,7 @@ def select_random_indexes_rbs(unit, consignment, n_units_to_inspect):
     :param consignment: Consignment to be inspected
     :param n_units_to_inspect: Number of units to inspect defined in sample functions.
     """
+    
     indexes_to_inspect = []
     if unit in ["sample_unit", "sample_units", "item", "items"]:
         current_idx = 0
@@ -446,14 +451,10 @@ def select_random_indexes_rbs(unit, consignment, n_units_to_inspect):
                 list(range(len(inspection_unit.sample_unit_objects))), n_units_to_inspect[inspection_unit_counter]
             )
             inspection_units_to_inspect[inspection_unit_counter] = indexes_to_inspect_temp
-            # print(f'   Inspecting {len(inspection_unit.sample_unit_objects)} sampling units of '
-            #       f'inspection unit {inspection_unit_counter}.  Inspecting the following sampling unit indices.')
-            # print(f'      {indexes_to_inspect_temp}\n')
             indexes_to_inspect_temp = [x+ current_idx for x in indexes_to_inspect_temp]
             current_idx += len(inspection_unit.sample_unit_objects)
             indexes_to_inspect = indexes_to_inspect + indexes_to_inspect_temp
             inspection_unit_counter += 1
-            #print('')
     else:
         raise RuntimeError(f"Inspection process unit specified in config is: {unit}.  "
                            f"For Sampling Strategy = RBS, only supports that parameter being = sampling_units")
@@ -563,6 +564,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     # pylint: disable=too-many-locals,too-many-statements
     # pylint: disable=too-many-branches,too-many-nested-blocks
 
+    
     unit = config["inspection"]["unit"]
     selection_strategy = config["inspection"]["selection_strategy"]
     sample_strategy = config["inspection"]["sample_strategy"]
@@ -589,6 +591,8 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
         inspection_units_opened_detection=0,
         sample_units_inspected_completion=0,
         sample_units_inspected_detection=0,
+        plant_units_inspected_completion=0,
+        plant_units_inspected_detection=0,
         contaminated_sample_units_completion=0,
         contaminated_sample_units_detection=0,
         number_sample_units_missed=0,
@@ -596,6 +600,10 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     )
 
     if sample_strategy == "rbs":
+
+        """
+        TODO: Investigate min guard and impact on oversampling
+        """
         if unit in ["sample_unit", "sample_units", "item", "items"]:
             detected = False
             if selection_strategy == "cluster":
@@ -612,15 +620,31 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                     if detailed:
                         ret.inspected_sample_unit_indexes.append(sample_unit_index)
                     ret.sample_units_inspected_completion += 1
+                    # Count plant units inspected (all plants in this sample unit)
+                    iu_idx = math.floor(sample_unit_index / sample_units_per_inspection_unit)
+                    su_local_idx = sample_unit_index % sample_units_per_inspection_unit
+                    try:
+                        su_obj = consignment.inspection_units[iu_idx].sample_unit_objects[su_local_idx]
+                        ret.plant_units_inspected_completion += len(su_obj.plants)
+                    except Exception:
+                        pass
                     # Compute inspection_unit index number
                     inspection_units_opened_completion.append(
                         math.floor(sample_unit_index / sample_units_per_inspection_unit))
                     if not detected:
                         ret.sample_units_inspected_detection += 1
+                        try:
+                            su_obj = consignment.inspection_units[iu_idx].sample_unit_objects[su_local_idx]
+                            ret.plant_units_inspected_detection += len(su_obj.plants)
+                        except Exception:
+                            pass
                         # Compute inspection_unit index number
                         inspection_units_opened_detection.append(
                             math.floor(sample_unit_index / sample_units_per_inspection_unit)
                         )
+                    # Debug hook to confirm we are inspecting individual sample units
+                    if os.environ.get("SLIPPAGE_DEBUG_INSPECTION"):
+                        print(f"Inspecting sample unit {sample_unit_index}")
                     if inspect_sample_unit(consignment.sample_units[sample_unit_index], effectiveness):
                         # Count every contaminated sample_unit in sample
                         ret.contaminated_sample_units_completion += 1
@@ -841,11 +865,13 @@ def consignment_contamination_rate(consignment):
     return count / consignment.num_sample_units
 
 
-def get_detection_and_confidence(consignment,
-                                 compliance_table_dict,
-                                 default_detection=0.01,
-                                 default_confidence=0.8
-    ):
+def get_detection_and_confidence(
+    consignment,
+    compliance_table_dict,
+    default_detection=0.01,
+    default_confidence=0.8,
+    print_compliance_levels: bool = False,
+):
     """
     Fetch detection and confidence levels for specified rbs variables.
     If not found, defaults to low compliance values.
@@ -864,8 +890,25 @@ def get_detection_and_confidence(consignment,
             n_units_to_inspect[inspection_unit] = (default_detection, default_confidence)
     else:
         inspection_unit_idx = 0
+        # TODO: Better variable matching approach
+        attr_map = {
+            "PATHWAY": "pathway",
+            "COUNTRY_OF_ORIGIN_NAME": "origin",
+            "PROPAGATIVE_MATERIAL_TYPE": "material_type",
+            "INSPECTION_LOCATION_NAME": "port",
+            "PRODUCER_NAME": "producer",
+        }
         for inspection_unit in consignment.inspection_units:
-            values = {attr: getattr(inspection_unit, attr, None) for attr in rbs_variables}
+            values = {}
+            for attr in rbs_variables:
+                attr_key = str(attr)
+                mapped = attr_map.get(attr_key.upper())
+                if mapped and hasattr(inspection_unit, mapped):
+                    values[attr_key] = getattr(inspection_unit, mapped, None)
+                elif hasattr(inspection_unit, attr_key):
+                    values[attr_key] = getattr(inspection_unit, attr_key, None)
+                else:
+                    values[attr_key] = getattr(inspection_unit, attr_key.lower(), None)
             if any(v is None for v in values.values()):
                 # If not all variable specified in compliance table not detected in consignment, then default to low compliance
                 none_attrs = [k for k, v in values.items() if v is None]
@@ -875,7 +918,9 @@ def get_detection_and_confidence(consignment,
                 #     f" Using low compliance defaults:")
                 # print(f"      Default Detection Level: {default_detection}")
                 # print(f"      Default Confidence Level: {default_confidence}")
-                return (default_detection, default_confidence)
+                result = (default_detection, default_confidence)
+                key = None
+                #return n_units_to_inspect
             else:
                 # If variables found in consignment, attempt to look up in table
                 key = tuple(values[attr] for attr in rbs_variables)
@@ -883,6 +928,12 @@ def get_detection_and_confidence(consignment,
             if result is not None:
                 # If a reference found, then return the associated detection and confidence levels
                 n_units_to_inspect[inspection_unit_idx] = result
+                if print_compliance_levels:
+                    key_str = key if key is not None else "<missing>"
+                    print(
+                        f"Compliance level for inspection unit {inspection_unit_idx}: "
+                        f"key={key_str} detection={result[0]} confidence={result[1]}"
+                    )
                 inspection_unit_idx+=1
             else:
                 # If no reference found, print warning and use low compliance defaults.
@@ -891,6 +942,12 @@ def get_detection_and_confidence(consignment,
                 # print(f"      Default Detection Level: {default_detection}")
                 # print(f"      Default Confidence Level: {default_confidence}")
                 n_units_to_inspect[inspection_unit_idx] = (default_detection, default_confidence)
+                if print_compliance_levels:
+                    key_str = key if key is not None else "<missing>"
+                    print(
+                        f"Compliance default for inspection unit {inspection_unit_idx}: "
+                        f"key={key_str} detection={default_detection} confidence={default_confidence}"
+                    )
                 inspection_unit_idx+=1
     return n_units_to_inspect
 

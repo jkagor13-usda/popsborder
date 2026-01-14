@@ -22,77 +22,82 @@ render_sidebar_navigation()
 engine_options = state["engine_options"]
 run_error = state.get("run_error")
 paths = state["paths"]
+TMP_DIR = Path("tmp")
 
-
-def _rbs_ready() -> tuple[bool, str]:
-    """Check that the RBS input exists and has key columns before running."""
-    # Use defaults if state is missing paths
-    default_paths = create_default_paths()
-    if paths.rbs_data is None and default_paths.rbs_data:
-        state["paths"] = paths.__class__(**{**paths.__dict__, "rbs_data": default_paths.rbs_data})
-    current_paths = state["paths"]
-    try:
-        if current_paths.rbs_data is None:
-            return False, "No RBS calculator file selected. Upload on Page 1."
-        rbs_path = Path(current_paths.rbs_data)
-        if not rbs_path.exists():
-            return False, f"RBS calculator file not found at {rbs_path}."
-        df = pd.read_csv(rbs_path, nrows=200)
-        required = {"TOTAL_SAMPLING_UNITS", "TOTAL_PLANT_QUANTITY"}
-        missing = required - set(df.columns)
-        if missing:
-            return False, f"RBS calculator file is missing required columns: {', '.join(sorted(missing))}"
-        if df[["TOTAL_SAMPLING_UNITS", "TOTAL_PLANT_QUANTITY"]].dropna().empty:
-            return False, "RBS calculator file has no non-empty sampling/plant quantity rows."
-        return True, ""
-    except Exception as exc:  # pylint: disable=broad-except
-        return False, f"Unable to validate RBS calculator file: {exc}"
 
 st.title("Page 5 - Run Simulation")
 st.caption("Execute the slippage pipeline and compare policies based on slippage metrics.")
 
 with st.sidebar:
     st.subheader("Execution options")
-    seed = st.number_input("Random seed", value=int(engine_options.get("seed", 42)), step=1)
     simulations = st.number_input(
-        "Simulation repetitions",
+        "Simulation replications",
         min_value=1,
         max_value=500,
         value=int(engine_options.get("num_simulations", 1)),
         step=1,
     )
-    if (
-        seed != engine_options.get("seed")
-        or simulations != engine_options.get("num_simulations")
-    ):
-        set_engine_options(seed=int(seed), num_simulations=int(simulations))
-    consignment_count = state.get("num_consignments")
-    if consignment_count is None:
-        synth_total = state.get("synthetic_data")
-        if synth_total is not None:
-            consignment_count = len(synth_total)
-    st.caption(
-        "Consignments per scenario are derived from the available data: "
-        f"{consignment_count if consignment_count is not None else 'generate data on Page 1'}."
-    )
+    if simulations != engine_options.get("num_simulations"):
+        set_engine_options(num_simulations=int(simulations))
 
-    st.divider()
-    rbs_ok, rbs_msg = _rbs_ready()
-    if not rbs_ok:
-        st.warning(rbs_msg)
-    run_now = st.button("Run pipeline", use_container_width=True, disabled=not rbs_ok)
-    if run_now:
-        with st.spinner("Running slippage pipeline..."):
+    experiment_sets = sorted(Path("tmp/experiments").glob("*/scenario_table.csv"))
+    if experiment_sets:
+        labels = [p.parent.name for p in experiment_sets]
+        selected_label = st.selectbox("Experiment to run", labels, index=0)
+        selected_experiment = dict(zip(labels, experiment_sets)).get(selected_label)
+        if selected_experiment:
             try:
-                run_pipeline()
-                st.success("Pipeline finished.")
+                scenario_df = pd.read_csv(selected_experiment)
+                state["scenario_df"] = scenario_df
+                state["paths"] = state["paths"].__class__(**{**state["paths"].__dict__, "scenario_table": selected_experiment})
+                st.caption(f"Loaded experiment: {selected_experiment}")
+       
             except Exception as exc:  # pylint: disable=broad-except
-                st.error(f"Pipeline failed: {exc!r}")
+                st.warning(f"Unable to load selected experiment: {exc}")
+    else:
+        st.info("No experiments saved yet on Page 4.")
+    st.divider()
+    run_disabled = not experiment_sets  # only disable when no experiments
+    if st.button("Run pipeline", use_container_width=True, disabled=run_disabled):
+        # Defer execution to main pane to show spinner there
+        state["run_request_experiment"] = selected_experiment.parent if selected_experiment else None
+        st.session_state["_trigger_run_pipeline"] = True
+
+# Main-pane run handler with spinner
+run_placeholder = st.empty()
+if st.session_state.get("_trigger_run_pipeline"):
+    st.session_state["_trigger_run_pipeline"] = False
+    exp_dir = state.pop("run_request_experiment", None)
+    with st.spinner("Running slippage pipeline..."):
+        try:
+            st.info(f"Running experiment at: {exp_dir}")
+            results = run_pipeline(exp_dir)
+            state["run_error"] = None
+            state.pop("run_error_message", None)
+            st.success("Pipeline finished.")
+        except Exception as exc:  # pylint: disable=broad-except
+            state["run_error"] = exc
+            detail = getattr(exc, "stderr", None) or getattr(exc, "output", None)
+            state["run_error_message"] = f"{exc}\n{detail}" if detail else str(exc)
 
 if run_error:
-    st.error(f"Last pipeline error: {run_error}")
+    msg = state.get("run_error_message") or str(run_error)
+    st.error("Pipeline failed")
+    st.code(msg, language="text")
     st.caption(
-        "Verify that Page 1 has RBS data (or synthetic seed) and Page 2 has PIS action data uploaded before running."
+        "Common fixes: confirm the selected experiment folder has a scenario_table.csv with non-empty inspection fields, "
+        "RBS data in tmp/consignments, and PIS action data on Page 2. Check the full message above for the failing file."
+    )
+    # Surface current paths to help debugging
+    paths_obj = state.get("paths")
+    st.write(
+        {
+            "scenario_table": str(paths_obj.scenario_table) if paths_obj else None,
+            "rbs_data": str(getattr(paths_obj, "rbs_data", None)) if paths_obj else None,
+            "compliance_lookup": str(getattr(paths_obj, "compliance_lookup", None)) if paths_obj else None,
+            "config": str(getattr(paths_obj, "config", None)) if paths_obj else None,
+            "num_consignments": state.get("num_consignments"),
+        }
     )
 
 results_df = state.get("results")
@@ -101,97 +106,146 @@ if results_df is None or results_df.empty:
     st.info("Run the pipeline to generate scenario results.")
     st.stop()
 
-st.markdown("### Overall summary")
-summary = (
-    results_df.groupby("name")[
-        [
-            "num_inspections",
-            "intercepted",
-            "false_neg",
-            "missing",
-            "total_missed_contaminants",
-            "total_intercepted_contaminants",
-        ]
-    ]
-    .sum()
-    .reset_index()
-)
-summary["detection_rate"] = summary["total_intercepted_contaminants"] / (
-    summary["total_intercepted_contaminants"] + summary["total_missed_contaminants"]
-)
-summary["slippage_rate"] = 1 - summary["detection_rate"]
-summary = summary.fillna(0)
+# Persist results into the selected experiment folder for convenience
+try:
+    scenario_table = state["paths"].scenario_table if hasattr(state["paths"], "scenario_table") else None
+    if scenario_table:
+        exp_dir = Path(scenario_table).parent
+        out_dir = exp_dir / "output"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / "pis_contamination_scenario_results.csv"
+        results_df.to_csv(out_path, index=False)
+        st.caption(f"Results saved to {out_path}")
+except Exception as exc:  # pylint: disable=broad-except
+    st.warning(f"Could not save results to experiment folder: {exc}")
 
-kpi_cols = st.columns(5)
+st.markdown("### Overall summary")
+summary = results_df.copy()
+
+kpi_cols = st.columns(3)
 kpi_cols[0].metric("Scenarios", len(summary))
 kpi_cols[1].metric("Total inspections", f"{int(summary['num_inspections'].sum()):,}")
-kpi_cols[2].metric(
-    "Interceptions",
-    f"{int(summary['total_intercepted_contaminants'].sum()):,}",
-)
-kpi_cols[3].metric("False negatives", f"{int(summary['false_neg'].sum()):,}")
-overall_slippage = (
-    summary["total_missed_contaminants"].sum()
-    / max(1, summary["total_intercepted_contaminants"].sum() + summary["total_missed_contaminants"].sum())
-)
-kpi_cols[4].metric("Overall slippage rate", f"{100 * overall_slippage:.1f}%")
-st.markdown("### Slippage and detection by scenario")
+slipped_total = int(summary["total_slipped_units"].sum()) if "total_slipped_units" in summary.columns else 0
+kpi_cols[2].metric("Slipped plant units", f"{slipped_total:,}")
 
-st.bar_chart(
-    summary[["name", "total_intercepted_contaminants", "total_missed_contaminants"]].set_index("name"),
-    use_container_width=True,
-)
-
-rate_chart = (
-    alt.Chart(summary)
-    .transform_calculate(slippage_pct="1 - datum.detection_rate")
-    .mark_bar()
-    .encode(
-        x=alt.X("name:N", title="Scenario"),
-        y=alt.Y("slippage_pct:Q", title="Slippage rate"),
-        tooltip=[
-            alt.Tooltip("detection_rate:Q", format=".2%", title="Detection rate"),
-            alt.Tooltip("slippage_pct:Q", format=".2%", title="Slippage rate"),
-            alt.Tooltip("num_inspections:Q", title="Inspections"),
-        ],
-        color=alt.Color("slippage_pct:Q", scale=alt.Scale(scheme="reds")),
+# Slippage across scenarios (contaminated plant units that slipped)
+if "total_slipped_units" in results_df.columns and "name" in results_df.columns:
+    st.markdown("### Slippage by scenario (contaminated plant units missed)")
+    slip_df = results_df[["name", "total_slipped_units"]]
+    slip_chart = (
+        alt.Chart(slip_df)
+        .mark_bar()
+        .encode(
+            y=alt.Y("name:N", title="Scenario"),
+            x=alt.X("total_slipped_units:Q", title="Slipped plant units"),
+            tooltip=["name", "total_slipped_units"],
+        )
     )
-)
-st.altair_chart(rate_chart, use_container_width=True)
+    st.altair_chart(slip_chart, use_container_width=True)
 
-st.markdown("### Slippage vs inspected units")
-scatter_source = summary[["name", "num_inspections", "slippage_rate"]].rename(
-    columns={"num_inspections": "Inspected Units", "slippage_rate": "Slippage Rate"}
-)
-st.scatter_chart(scatter_source, x="Inspected Units", y="Slippage Rate", size=None, color="name")
+# Inspected quantities by level
+if all(
+    col in results_df.columns
+    for col in [
+        "name",
+        "avg_plant_units_inspected_completion",
+        "avg_sample_units_inspected_completion",
+        "avg_inspection_units_opened_completion",
+    ]
+):
+    st.markdown("### Inspected quantities (completion) by scenario")
+    inspected_df = results_df[
+        [
+            "name",
+            "avg_plant_units_inspected_completion",
+            "avg_sample_units_inspected_completion",
+            "avg_inspection_units_opened_completion",
+        ]
+    ]
+    inspected_long = inspected_df.rename(
+        columns={
+            "avg_plant_units_inspected_completion": "Plants inspected (avg)",
+            "avg_sample_units_inspected_completion": "Sample units inspected (avg)",
+            "avg_inspection_units_opened_completion": "Inspection units opened (avg)",
+        }
+    ).melt(id_vars="name", var_name="level", value_name="count")
 
-st.markdown("### Scenario Results Output")
-st.dataframe(results_df, use_container_width=True)
-st.download_button(
-    "Download scenario results (CSV)",
-    data=results_df.to_csv(index=False).encode("utf-8"),
-    file_name="pis_contamination_scenario_results.csv",
-    use_container_width=True,
-)
+    st.dataframe(
+        inspected_long.pivot(index="name", columns="level", values="count"),
+        use_container_width=True,
+    )
 
-st.markdown("### Raw configuration output")
-# config_cols = [
-#     "contamination/contamination_unit",
-#     "contamination/contamination_rate/distribution",
-#     "contamination/arrangement",
-#     "inspection/sample_strategy",
-#     "inspection/proportion/value",
-# ]
-# existing_cols = [col for col in config_cols if col in scenario_df.columns]
-# if existing_cols:
-#     st.dataframe(scenario_df[existing_cols], use_container_width=True)
+# Contamination totals by level (plant, sample, inspection)
+required_cols = [
+    "name",
+    "total_contaminated_units",
+    "total_contaminated_sample_units",
+    "total_contaminated_inspection_units",
+    "num_plants",
+    "num_sample_units",
+    "num_inspection_units",
+]
+if all(col in results_df.columns for col in required_cols):
+    st.markdown("### Contamination totals by level")
+
+    def level_chart(level_label, contam_col, total_col):
+        data = results_df[["name", contam_col, total_col]].copy()
+        data = data.rename(columns={contam_col: "contaminated", total_col: "total"})
+        data["not_contaminated"] = data["total"] - data["contaminated"]
+        data = data.melt(id_vars="name", value_vars=["contaminated", "not_contaminated"], var_name="metric", value_name="value")
+        return (
+            alt.Chart(data)
+            .mark_bar()
+            .encode(
+                y=alt.Y("name:N", title="Scenario"),
+                x=alt.X("value:Q", title="Count"),
+                color=alt.Color("metric:N", title="Metric"),
+                tooltip=["name", "metric", "value"],
+            )
+            .properties(title=level_label)
+        )
+
+    st.altair_chart(
+        level_chart("Plant units", "total_contaminated_units", "num_plants"),
+        use_container_width=True,
+    )
+    st.altair_chart(
+        level_chart(
+            "Sample units", "total_contaminated_sample_units", "num_sample_units"
+        ),
+        use_container_width=True,
+    )
+    st.altair_chart(
+        level_chart(
+            "Inspection units",
+            "total_contaminated_inspection_units",
+            "num_inspection_units",
+        ),
+        use_container_width=True,
+    )
+else:
+    st.info("Contamination totals by level are unavailable in the current results.")
+
+st.markdown("### Raw Output")
+st.dataframe(state["results"], use_container_width=True)
 
 st.divider()
-nav_cols = st.columns(2)
+nav_cols = st.columns(3)
 with nav_cols[0]:
-    if st.button("Back to Page 4", type="primary", key="nav_back_page5"):
-        st.switch_page("pages/4_Scenario_Experiments.py")
+    if st.button("Reset and Return Home", type="secondary", key="nav_reset_page5"):
+        try:
+            if TMP_DIR.exists():
+                import shutil  # pylint: disable=import-outside-toplevel
+                shutil.rmtree(TMP_DIR)
+            TMP_DIR.mkdir(parents=True, exist_ok=True)
+            st.session_state.clear()
+            state["paths"] = create_default_paths()
+            st.switch_page("frontend.py")
+        except Exception as exc:  # pylint: disable=broad-except
+            st.error(f"Unable to reset temporary files: {exc}")
 with nav_cols[1]:
+    if st.button("Previous Page", type="primary", key="nav_back_page5"):
+        st.switch_page("pages/4_Scenario_Experiments.py")
+with nav_cols[2]:
     if st.button("Finish and Return Home", type="primary", key="nav_finish"):
         st.switch_page("frontend.py")
-

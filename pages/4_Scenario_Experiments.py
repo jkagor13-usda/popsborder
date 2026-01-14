@@ -1,170 +1,444 @@
 from pathlib import Path
-import shutil
+from typing import Optional, Union
+import json
 import re
+import shutil
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
-from gui.slippage_ui import get_slippage_state, set_engine_options, create_default_paths
+from gui.slippage_ui import get_slippage_state
 
+# --- Constants / setup --------------------------------------------------------
+TMP_DIR = Path("tmp")
+SCENARIO_ROOT = TMP_DIR / "experiments"
+TEMPLATE_SCENARIO = Path("data_input") / "pis_contaminate_scenarios.csv"
+CONTAM_PARAM_PATH = TMP_DIR / "contamination" / "contamination_parameter_sets.json"
+SCENARIO_FILENAME = "scenario_table.csv"
+CONS_FILENAME = "consignment_uploaded_rbs_data.csv"
+COMPLIANCE_FILENAME = "compliance_table.csv"
+CONFIG_FILENAME = "config.yml"
+
+TMP_DIR.mkdir(exist_ok=True)
+SCENARIO_ROOT.mkdir(parents=True, exist_ok=True)
 
 st.set_page_config(
     page_title="Scenario & Experiment Builder",
     page_icon=":test_tube:",
     layout="wide",
 )
-init_state()
 
+init_state()
 state = get_slippage_state()
 render_sidebar_navigation()
-scenario_df = state["scenario_df"]
-engine_options = state["engine_options"]
-tmp_dir = Path("tmp")
-tmp_dir.mkdir(exist_ok=True)
 
-
+# --- Helpers ------------------------------------------------------------------
 def _slugify(name: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9_-]+", "_", name.strip())
     return slug or "scenario"
 
 
-def _compliance_options() -> list[tuple[str, Path]]:
-    seen = {}
-    candidates = []
-    current = Path(state["paths"].compliance_lookup)
-    if current.exists():
-        candidates.append(current)
-    manual = tmp_dir / "manual_compliance_table.csv"
-    if manual.exists():
-        candidates.append(manual)
-    upload = tmp_dir / "compliance_table.csv"
-    if upload.exists():
-        candidates.append(upload)
-    for path in (tmp_dir / "experiments").glob("*/compliance_table.csv"):
-        candidates.append(path)
-    options: list[tuple[str, Path]] = []
-    for path in candidates:
-        key = str(path.resolve())
-        if key in seen:
-            continue
-        seen[key] = True
-        label = path.name
-        if path.parent.name != "tmp":
-            label = f"{path.parent.name}/{path.name}"
-        options.append((label, path))
-    return options
+def _list_files(folder: Path, pattern: str) -> list[Path]:
+    return sorted(folder.glob(pattern)) if folder.exists() else []
 
-st.title("Page 4 - Scenario & Experiment Builder")
-st.caption(
-    "Summarize configured scenarios and decide on the experiment setup "
-    "(number of simulations and expected time). Consignments per run "
-    "now mirror however many synthetic records were generated on Page 1. Choose the compliance table to bundle "
-    "with your scenario file created here."
-)
 
-st.subheader("Create scenario package & experimental setup")
-with st.form("scenario_package_form"):
-    col_name, col_comp = st.columns(2)
-    scenario_name = col_name.text_input("Scenario/experiment name", value="scenario_1")
-    available_compliance = _compliance_options()
-    if available_compliance:
-        labels = [lbl for lbl, _ in available_compliance]
-        selected_label = col_comp.selectbox("Compliance table", labels)
-        selected_path = dict(available_compliance)[selected_label]
-    else:
-        selected_label = None
-        selected_path = None
-        col_comp.warning("No compliance tables found. Create one on Page 3 first.")
-
-    scenario_note = st.text_input("Optional note/description", value="")
-    num_simulations = st.number_input(
-        "Simulation repetitions",
-        min_value=1,
-        max_value=500,
-        value=int(engine_options.get("num_simulations", 1)),
-        step=1,
-    )
-    submit_package = st.form_submit_button(
-        "Save scenario package and experimental setup",
-        use_container_width=True,
-        disabled=scenario_df.empty or not selected_path,
-    )
-
-if submit_package:
-    slug = _slugify(scenario_name)
-    scenario_dir = tmp_dir / "experiments" / slug
+def _load_param_sets() -> dict:
+    if not CONTAM_PARAM_PATH.exists():
+        return {}
     try:
-        scenario_dir.mkdir(parents=True, exist_ok=True)
-        scenario_path = scenario_dir / "scenario_table.csv"
-        scenario_df.to_csv(scenario_path, index=False)
-        if selected_path:
-            shutil.copy(selected_path, scenario_dir / "compliance_table.csv")
-        if scenario_note:
-            (scenario_dir / "README.txt").write_text(scenario_note)
-        set_engine_options(num_simulations=int(num_simulations))
-        st.success(f"Scenario package saved to {scenario_dir} and experimental setup recorded.")
-    except Exception as exc:  # pylint: disable=broad-except
-        st.error(f"Failed to save scenario package: {exc}")
+        return json.loads(CONTAM_PARAM_PATH.read_text())
+    except Exception:  # pylint: disable=broad-except
+        return {}
 
-scenario_count = max(1, len(scenario_df))
-consignments_per_run = state.get("num_consignments")
-if consignments_per_run is None:
-    synthetic_preview = state.get("synthetic_data")
-    consignments_per_run = None if synthetic_preview is None else len(synthetic_preview)
-estimated_minutes = (
-    num_simulations * (consignments_per_run or 100) * scenario_count / 120.0
-)  # simple heuristic
+def _copy_inputs(rows_df: pd.DataFrame, scenario_dir: Path) -> None:
+    """Copy consignment/compliance files and contamination params/config into scenario_dir with standard names."""
+    missing: list[str] = []
+    copied_files: list[str] = []
+    # Copy consignment file as CONS_FILENAME
+    cons_col = "consignment/input_file/file_name"
+    if cons_col in rows_df.columns:
+        vals = [v for v in rows_df[cons_col].dropna().tolist() if v]
+        if vals:
+            for val in vals:
+                name = Path(str(val)).name
+                src_candidates = [
+                    Path(str(val)),
+                    Path("tmp") / "consignments" / name,
+                    Path(name),
+                ]
+                src = next((p for p in src_candidates if p.exists()), None)
+                if src:
+                    dest = scenario_dir / name
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(src.read_bytes())
+                    copied_files.append(dest.name)
+                else:
+                    missing.append(f"consignment file '{name}'")
+        else:
+            missing.append("consignment file (none listed)")
+    else:
+        missing.append("consignment file column missing")
 
-st.markdown("#### Estimated simulation time")
-st.info(
-    f"Based on the selected setup, {scenario_count} scenarios, and "
-    f"{consignments_per_run or 'unknown'} consignments per run (derived from synthetic data), "
-    f"expect approximately {estimated_minutes:.1f} minutes of compute time per full run (heuristic)."
+    # Copy compliance file as COMPLIANCE_FILENAME
+    comp_col = "inspection/compliance_table/file_name"
+    if comp_col in rows_df.columns:
+        vals = [v for v in rows_df[comp_col].dropna().tolist() if v]
+        if vals:
+            for val in vals:
+                name = Path(str(val)).name
+                src_candidates = [
+                    Path(str(val)),
+                    Path("tmp") / "compliance" / name,
+                    Path(name),
+                ]
+                src = next((p for p in src_candidates if p.exists()), None)
+                if src:
+                    dest = scenario_dir / name
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(src.read_bytes())
+                    copied_files.append(dest.name)
+                else:
+                    missing.append(f"compliance file '{name}'")
+        else:
+            missing.append("compliance file (none listed)")
+    else:
+        missing.append("compliance file column missing")
+
+    # Copy contamination parameter sets snapshot
+    if CONTAM_PARAM_PATH.exists():
+        (scenario_dir / "contamination_parameter_sets.json").write_bytes(
+            CONTAM_PARAM_PATH.read_bytes()
+        )
+
+    # Copy config
+    config_candidates = []
+    if state.get("paths") and getattr(state["paths"], "config", None):
+        config_candidates.append(Path(state["paths"].config))
+    config_candidates.append(Path("tmp") / "config.yml")
+    config_candidates.append(Path("data_input") / "config.yml")
+    config_src = next((p for p in config_candidates if p.exists()), None)
+    if config_src:
+        (scenario_dir / CONFIG_FILENAME).write_bytes(config_src.read_bytes())
+        copied_files.append(CONFIG_FILENAME)
+    else:
+        missing.append("config.yml")
+    if missing:
+        raise FileNotFoundError("; ".join(missing))
+    return copied_files
+
+
+def _normalize_rows(rows_df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize scenario rows so downstream RBS run does not fail."""
+    df = rows_df.copy()
+    if "inspection/unit" in df.columns:
+        df["inspection/unit"] = "sample_units"
+    if "inspection/sample_strategy" in df.columns:
+        df["inspection/sample_strategy"] = df["inspection/sample_strategy"].replace("", "rbs").fillna("rbs")
+    if "inspection/proportion/value" in df.columns:
+        def _norm_prop(val):
+            try:
+                v = float(val)
+            except Exception:
+                v = 0.0
+            return 0.02 if v <= 0 else v
+        df["inspection/proportion/value"] = df["inspection/proportion/value"].apply(_norm_prop)
+    alpha_col = "contamination/contamination_rate/beta_binomial_parameters/alpha"
+    beta_col = "contamination/contamination_rate/beta_binomial_parameters/beta"
+    if alpha_col in df.columns:
+        df[alpha_col] = df[alpha_col].apply(lambda v: 0.01 if pd.isna(v) or float(v) <= 0 else float(v))
+    if beta_col in df.columns:
+        df[beta_col] = df[beta_col].apply(lambda v: 5.0 if pd.isna(v) or float(v) <= 0 else float(v))
+    return df
+
+
+# --- Page header --------------------------------------------------------------
+st.title("Page 4 - Experiment Builder")
+st.caption(
+    "Assemble scenarios using outputs from Pages 1-3: pick consignments (RBS), contamination parameter set, "
+    "and compliance table. Saved experiment packages are written to tmp/experiments."
 )
 
-st.divider()
-if scenario_df.empty:
-    st.warning("The scenario table is empty. Build consignments on Page 1 first.")
-else:
-    st.subheader("Scenario overview")
-    overview_cols = st.columns(4)
-    overview_cols[0].metric("Scenario rows", len(scenario_df))
-    if "inspection/compliance_level" in scenario_df.columns:
-        overview_cols[1].metric(
-            "Compliance levels",
-            ", ".join(sorted(scenario_df["inspection/compliance_level"].dropna().unique().tolist())),
-        )
-    else:
-        overview_cols[1].metric("Compliance levels", "n/a")
-    if "inspection/sample_strategy" in scenario_df.columns:
-        overview_cols[2].metric(
-            "Sample strategies",
-            scenario_df["inspection/sample_strategy"].nunique(),
-        )
-    else:
-        overview_cols[2].metric("Sample strategies", "n/a")
-    if "inspection/proportion/value" in scenario_df.columns:
-        avg_prop = pd.to_numeric(scenario_df["inspection/proportion/value"], errors="coerce").mean()
-        overview_cols[3].metric("Avg inspection proportion", f"{avg_prop:.3f}" if pd.notna(avg_prop) else "n/a")
-    else:
-        overview_cols[3].metric("Avg inspection proportion", "n/a")
+tabs = st.tabs(["Upload custom scenario", "Build experiments", "Saved experiments"])
 
-    st.dataframe(scenario_df, use_container_width=True, height=320)
-    st.download_button(
-        "Download scenario table (CSV)",
-        data=scenario_df.to_csv(index=False).encode("utf-8"),
-        file_name="scenario_table.csv",
-        use_container_width=True,
-    )
+# --- Tab 1: Upload custom scenario -------------------------------------------
+with tabs[0]:
+    st.subheader("Upload custom scenario table")
+    uploaded = st.file_uploader("Upload scenario CSV", type=["csv"], key="custom_scenario_upload")
+    custom_name = st.text_input("Save as experiment set name", value="custom_experiment")
 
+    if uploaded:
+        try:
+            uploaded.seek(0)
+            df_preview = pd.read_csv(uploaded)
+            st.dataframe(df_preview.head(50), use_container_width=True)
+        except Exception:  # pylint: disable=broad-except
+            st.info("Unable to preview upload.")
+
+    if uploaded and st.button("Save custom scenario table", type="primary"):
+        try:
+            uploaded.seek(0)
+            df = pd.read_csv(uploaded)
+            set_slug = _slugify(custom_name)
+            scenario_dir = SCENARIO_ROOT / set_slug
+            scenario_dir.mkdir(parents=True, exist_ok=True)
+            dest = scenario_dir / "scenario_table.csv"
+            df.to_csv(dest, index=False)
+            state["paths"] = state["paths"].__class__(
+                **{**state["paths"].__dict__, "scenario_table": dest}
+            )
+            st.success(f"Saved custom scenario table to {dest}")
+        except Exception as exc:  # pylint: disable=broad-except
+            st.error(f"Failed to save custom scenario table: {exc}")
+
+# --- Tab 2: Build experiments -------------------------------------------------
+with tabs[1]:
+    state.setdefault("experiment_rows", [])
+    col_left, col_right = st.columns([2, 1])
+
+    consignment_files = _list_files(TMP_DIR / "consignments", "*.csv")
+    compliance_files = _list_files(TMP_DIR / "compliance", "*.csv")
+    param_sets = _load_param_sets()
+    param_keys = list(param_sets.keys())
+
+    with col_left:
+        scenario_label = st.text_input(
+            "Scenario label",
+            value=f"scenario_{len(state.get('experiment_rows', [])) + 1}",
+        )
+
+        consignment_choice = (
+            st.selectbox(
+                "Consignment (RBS) file",
+                consignment_files,
+                format_func=lambda p: p.name,
+            )
+            if consignment_files
+            else None
+        )
+
+        param_choice = (
+            st.selectbox("Contamination parameter set", param_keys)
+            if param_keys
+            else None
+        )
+
+        compliance_choice = (
+            st.selectbox(
+                "Compliance table",
+                compliance_files,
+                format_func=lambda p: p.name,
+            )
+            if compliance_files
+            else None
+        )
+
+    with col_right:
+        with st.expander("Files available", expanded=True):
+            st.write(
+                f"**Consignments ({len(consignment_files)}):** "
+                f"{', '.join(p.name for p in consignment_files) if consignment_files else 'none'}"
+            )
+            st.write(
+                f"**Contamination ({len(param_keys)}):** "
+                f"{', '.join(param_keys) if param_keys else 'none'}"
+            )
+            st.write(
+                f"**Inspection Process ({len(compliance_files)}):** "
+                f"{', '.join(p.name for p in compliance_files) if compliance_files else 'none'}"
+            )
+
+    add_ready = all([scenario_label, consignment_choice, compliance_choice, param_choice])
+    if st.button("Add scenario row", type="primary", disabled=not add_ready):
+        template_cols = (
+            pd.read_csv(TEMPLATE_SCENARIO, nrows=0).columns.tolist()
+            if TEMPLATE_SCENARIO.exists()
+            else []
+        )
+        param_snapshot = param_sets.get(param_choice, {})
+        scenario_row = {col: "" for col in template_cols} if template_cols else {}
+        scenario_row.update(
+            {
+                "name": scenario_label,
+                "consignment/input_file/file_name": consignment_choice.name,
+                "inspection/compliance_table/file_name": compliance_choice.name,
+                "consignment/generation_method": "RBS",
+                "consignment/input_file/file_type": "RBS",
+                "contamination/contamination_unit": "plant",
+                "contamination/contamination_rate/distribution": "beta-binomial",
+                "contamination/contamination_rate/value": "",
+                "contamination/contamination_rate/beta_binomial_parameters/alpha": param_snapshot.get(
+                    "alpha"
+                ),
+                "contamination/contamination_rate/beta_binomial_parameters/beta": param_snapshot.get(
+                    "beta"
+                ),
+                "contamination/contamination_rate/beta_binomial_parameters/theta": param_snapshot.get(
+                    "theta"
+                ),
+                "contamination/arrangement": "random",
+                "inspection/sample_strategy": "rbs",
+                "inspection/proportion/value": 0.02,
+                "inspection/unit": "sample_units",
+                "inspection/min_boxes": 0,
+                "inspection/selection_strategy": "random",
+                "inspection/within_box_proportion": 1,
+            }
+        )
+        # If a scenario with this label exists, replace it; otherwise append
+        replaced = False
+        for idx, row in enumerate(state["experiment_rows"]):
+            if row.get("name") == scenario_label:
+                state["experiment_rows"][idx] = scenario_row
+                replaced = True
+                break
+        if not replaced:
+            state["experiment_rows"].append(scenario_row)
+            st.success(f"Added scenario row '{scenario_label}'")
+        else:
+            st.success(f"Updated scenario row '{scenario_label}'")
+
+    rows_df = pd.DataFrame(state["experiment_rows"])
+    if not rows_df.empty:
+        st.dataframe(rows_df, use_container_width=True)
+    else:
+        st.info("Add at least one scenario row.")
+
+    col_actions = st.columns(2)
+    with col_actions[0]:
+        if st.button("Clear current rows", type="secondary", disabled=rows_df.empty):
+            state["experiment_rows"] = []
+            st.rerun()
+    with col_actions[1]:
+        if st.button("Remove last row", type="secondary", disabled=rows_df.empty):
+            if state["experiment_rows"]:
+                state["experiment_rows"].pop()
+            st.rerun()
+
+    scenario_set = st.text_input("Experiment set name (CSV)", value="experiment_set_1")
+    can_save = bool(scenario_set) and not rows_df.empty
+
+    if st.button("Save experiment package", type="primary", disabled=not can_save):
+        set_slug = _slugify(scenario_set)
+        scenario_dir = SCENARIO_ROOT / set_slug
+        try:
+            scenario_dir.mkdir(parents=True, exist_ok=True)
+            scenario_path = scenario_dir / SCENARIO_FILENAME
+            # Always use forward-slash tmp-relative paths in the saved scenario table
+            base_prefix = f"tmp/experiments/{set_slug}"
+
+            # Template columns
+            raw_rows_df = rows_df.copy()
+            template_cols = (
+                pd.read_csv(TEMPLATE_SCENARIO, nrows=0).columns.tolist()
+                if TEMPLATE_SCENARIO.exists()
+                else rows_df.columns.tolist()
+            )
+            # Normalize legacy names
+            if "consignment name" in template_cols and "consignment/input_file/file_name" not in template_cols:
+                template_cols = [c for c in template_cols if c != "consignment name"]
+                template_cols.append("consignment/input_file/file_name")
+            if "inspection name" in template_cols and "inspection/compliance_table/file_name" not in template_cols:
+                template_cols = [c for c in template_cols if c != "inspection name"]
+                template_cols.append("inspection/compliance_table/file_name")
+
+            # Keep file path columns together before unnamed columns
+            ordered_targets = [
+                "consignment/input_file/file_name",
+                "inspection/compliance_table/file_name",
+            ]
+            filtered_cols = [c for c in template_cols if c not in ordered_targets]
+            anchor = next(
+                (i for i, c in enumerate(filtered_cols) if str(c).startswith("Unnamed")),
+                len(filtered_cols),
+            )
+            template_cols = (
+                filtered_cols[:anchor]
+                + [c for c in ordered_targets if c in template_cols]
+                + filtered_cols[anchor:]
+            )
+
+            # Make file paths portable (within scenario_dir, forward slashes)
+            if "consignment/input_file/file_name" in rows_df.columns:
+                rows_df["consignment/input_file/file_name"] = rows_df["consignment/input_file/file_name"].apply(
+                    lambda v: f"{base_prefix}/{Path(str(v)).name}".replace("\\", "/") if v else v
+                )
+            if "inspection/compliance_table/file_name" in rows_df.columns:
+                rows_df["inspection/compliance_table/file_name"] = rows_df["inspection/compliance_table/file_name"].apply(
+                    lambda v: f"{base_prefix}/{Path(str(v)).name}".replace("\\", "/") if v else v
+                )
+            # Keep explicit "None" marker for contamination rate so downstream can detect missing value
+            cont_rate_col = "contamination/contamination_rate/value"
+            if cont_rate_col in rows_df.columns:
+                rows_df[cont_rate_col] = rows_df[cont_rate_col].fillna("None")
+            # Default contamination unit to plant unless explicitly set
+            cont_unit_col = "contamination/contamination_unit"
+            if cont_unit_col in rows_df.columns:
+                rows_df[cont_unit_col] = rows_df[cont_unit_col].replace("", "plant").fillna("plant")
+            else:
+                rows_df[cont_unit_col] = "plant"
+
+            rows_df = _normalize_rows(rows_df)
+            scenario_table = rows_df.reindex(columns=template_cols, fill_value="")
+            scenario_table.to_csv(scenario_path, index=False)
+
+            copied = _copy_inputs(raw_rows_df, scenario_dir)
+            st.caption(f"Copied files to {scenario_dir}: {', '.join(copied)}")
+
+            state["paths"] = state["paths"].__class__(
+                **{**state["paths"].__dict__, "scenario_table": scenario_path}
+            )
+            st.success(f"Experiment saved to {scenario_path}")
+        except Exception as exc:  # pylint: disable=broad-except
+            st.error(f"Failed to save experiment: {exc}")
+
+# --- Tab 3: Saved experiments -------------------------------------------------
+with tabs[2]:
+    st.subheader("Saved experiments (tmp/experiments)")
+    saved_files = list(SCENARIO_ROOT.glob("*/scenario_table.csv"))
+
+    if not saved_files:
+        st.info("No experiments saved yet.")
+    else:
+        sel = st.selectbox(
+            "Select an experiment set", saved_files, format_func=lambda p: p.parent.name
+        )
+        try:
+            preview = pd.read_csv(sel)
+            st.dataframe(preview, use_container_width=True)
+            st.caption(f"Path: {sel}")
+            if st.button("Delete this experiment set", type="secondary"):
+                try:
+                    shutil.rmtree(sel.parent)
+                    st.success(f"Deleted {sel.parent}")
+                    st.rerun()
+                except Exception as exc:  # pylint: disable=broad-except
+                    st.error(f"Unable to delete experiment: {exc}")
+        except Exception as exc:  # pylint: disable=broad-except
+            st.error(f"Unable to preview experiment: {exc}")
+
+# --- Bottom navigation --------------------------------------------------------
 st.divider()
 nav_cols = st.columns(2)
-with nav_cols[0]:
-    if st.button("Back to Page 3", type="primary", key="nav_back_page3"):
-        st.switch_page("pages/3_Inspection_Process.py")
-with nav_cols[1]:
-    if st.button("Continue to Page 5", type="primary", key="nav_forward_page5"):
-        st.switch_page("pages/5_Run_Simulation.py")
 
+with nav_cols[0]:
+    if st.button("Reset and Return Home", type="secondary"):
+        try:
+            shutil.rmtree(TMP_DIR)
+        except Exception:
+            pass
+        TMP_DIR.mkdir(parents=True, exist_ok=True)
+        st.session_state.clear()
+        init_state()
+        st.switch_page("frontend.py")
+
+with nav_cols[1]:
+    prev_next = st.columns(2)
+    with prev_next[0]:
+        if st.button("Previous Page", type="primary", key="nav_back_page4"):
+            st.switch_page("pages/3_Inspection_Process.py")
+    with prev_next[1]:
+        if st.button("Next Page", type="primary", key="nav_forward_page5"):
+            st.switch_page("pages/5_Run_Simulation.py")

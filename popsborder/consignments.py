@@ -146,13 +146,6 @@ class InspectionUnit:
         self.port = port
         self.pathway = pathway
 
-
-
-
-
-
-
- 
     @property
     def num_sample_units(self):
         """Number of sample_units in the InspectionUnit"""
@@ -389,88 +382,6 @@ class ParameterConsignmentGenerator:
             pathway=pathway,
         )
 
-
-class RBSConsignmentGenerator:
-    """Generate a consignments with hierarchal packaging"""
-
-    def __init__(self, parameters, sample_units_per_inspection_unit, plants_per_sample_unit, start_date):
-        """Set parameters for consignment generation
-
-        :param parameters: Consignment parameters
-        :param ports: List of ports to choose from
-        :param sample_units_per_inspection_unit: Configuration driving number of sample_units per inspection_unit
-        :param start_date: Date to start consignment dates from
-        """
-        self.params = parameters
-        self.sample_units_per_inspection_unit = sample_units_per_inspection_unit
-        self.plants_per_sample_unit = plants_per_sample_unit
-        self.num_generated = 0
-        if isinstance(start_date, str):
-            start_date = datetime.strptime(start_date, "%Y-%m-%d")
-        self.date = start_date
-
-    def generate_consignment(self):
-        """Generate a new consignment"""
-        port = random.choice(self.params["ports"])
-        # propagative materials or commodities
-        material_type = random.choice(self.params["material_types"])
-        origin = random.choice(self.params["origins"])
-        # Handle backward compatibility for old "boxes" terminology
-        inspection_units_config = self.params.get("inspection_units", self.params.get("boxes", {}))
-        num_inspection_units_min = inspection_units_config.get("min", 0)
-        num_inspection_units_max = inspection_units_config.get("max", 1)
-        pathway = "None"
-        sample_units_per_inspection_unit = self.sample_units_per_inspection_unit
-        sample_units_per_inspection_unit = get_sample_units_per_inspection_unit(sample_units_per_inspection_unit, pathway)
-        plants_per_sample_unit = self.plants_per_sample_unit
-        plants_per_sample_unit = get_plants_per_sample_unit(plants_per_sample_unit, pathway)
-        num_inspection_units = random.randint(num_inspection_units_min, num_inspection_units_max)
-        num_sample_units = sample_units_per_inspection_unit * num_inspection_units
-        sample_units = np.zeros(num_sample_units, dtype=np.int64)
-        num_plants = plants_per_sample_unit * num_sample_units
-        plants = np.zeros(num_plants, dtype=np.int64)
-        inspection_units = []
-        for inspection_unit_index in range(num_inspection_units):
-            # Each inspection_unit gets a slice of the sample_units array
-            start_idx = inspection_unit_index * sample_units_per_inspection_unit
-            end_idx = start_idx + sample_units_per_inspection_unit
-            inspection_unit_sample_units = sample_units[start_idx:end_idx]
-            
-            # Create SampleUnit objects for hierarchical access if needed
-            sample_unit_objects = []
-            for item_index in range(sample_units_per_inspection_unit):
-                plant_start = (start_idx + item_index) * plants_per_sample_unit
-                plant_end = plant_start + plants_per_sample_unit
-                sample_unit_objects.append(SampleUnit(plants[plant_start:plant_end]))
-
-            # Create InspectionUnit with the numpy array slice
-            inspection_unit = InspectionUnit(inspection_unit_sample_units, material_type=material_type)
-            # Also store the SampleUnit objects for hierarchical access
-            inspection_unit.sample_unit_objects = sample_unit_objects
-            inspection_units.append(inspection_unit)
-        self.num_generated += 1
-
-        # two consignments every nth day
-        if self.num_generated % 3:
-            self.date += timedelta(days=1)
-
-        return Consignment(
-            num_sample_units=num_sample_units,
-            sample_units=sample_units,
-            sample_units_per_inspection_unit=sample_units_per_inspection_unit,
-            num_inspection_units=num_inspection_units,
-            date=self.date,
-            inspection_units=inspection_units,
-            origin=origin,
-            port=port,
-            pathway=pathway,
-            material_type=material_type,
-            num_plants=num_plants,
-            plants=plants,
-            plants_per_sample_unit=plants_per_sample_unit,
-        )
-
-
 class F280ConsignmentGenerator:
     """Generate a consignments based on existing F280 records"""
 
@@ -595,7 +506,7 @@ class PISConsignmentGenerator:
             inspection_unit_origin = record["COUNTRY_OF_ORIGIN_NAME"]
             inspection_unit_port = record["INSPECTION_LOCATION_NAME"]
             inspection_unit_pathway = record["PATHWAY"]
-            
+
             # Calculate plants per sample_unit for this inspection unit
             if inspection_unit_sample_units > 0:
                 base_plants_per_sample_unit = inspection_unit_plants // inspection_unit_sample_units
