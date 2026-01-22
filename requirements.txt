@@ -10,6 +10,11 @@ typing-extensions>=4.5.0
 
 # Development / testing utilities
 pytest>=7.0.0
+flake8
+pylint
+black
+pytest-datadir
 
 # GUI Packages
 streamlit
+chardet
