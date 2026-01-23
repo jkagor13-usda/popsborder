@@ -156,6 +156,10 @@ def _normalize_rows(rows_df: pd.DataFrame) -> pd.DataFrame:
 
 # --- Page header --------------------------------------------------------------
 st.title("Page 4 - Experiment Builder")
+st.warning(
+    "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
+    "Features may be incomplete and subject to change. Results have not been validated.**"
+)
 st.caption(
     "Assemble scenarios using outputs from Pages 1-3: pick consignments (RBS), contamination parameter set, "
     "and compliance table. Saved experiment packages are written to tmp/experiments."

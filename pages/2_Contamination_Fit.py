@@ -102,6 +102,10 @@ paths = slippage_state["paths"]
 render_sidebar_navigation()
 
 st.title("Page 2 - Contamination Fit")
+st.warning(
+    "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
+    "Features may be incomplete and subject to change. Results have not been validated.**"
+)
 st.caption(
     "Fit, assign, and manage contamination parameters. PIS upload and RBS selection live in the Fit tab. "
     "All outputs are written to tmp/contamination."

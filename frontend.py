@@ -10,12 +10,14 @@ init_state()
 state = init_slippage_state()
 render_sidebar_navigation()
 
-hero_cols = st.columns([2, 1])
-with hero_cols[0]:
-    st.title("PoPS Border Risk Based Sampling (RBS) Inspection Simulation")
-    st.caption("Use this workspace to upload or generate consignments, fit contamination, and run inspection simulations.")
-with hero_cols[1]:
-    st.empty()
+
+st.title("PoPS Border Risk Based Sampling (RBS) Inspection Simulation")
+st.warning(
+    "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
+    "Features may be incomplete and subject to change. Results have not been validated.**"
+)
+st.caption("Use this workspace to upload or generate consignments, fit contamination, and run inspection simulations.")
+
 
 
 st.success(
