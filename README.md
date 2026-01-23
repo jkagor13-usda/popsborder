@@ -69,6 +69,7 @@ You will be using **Command prompt** only if you decide to update the code repos
    - Under "download source code" select "zip"
    - open the downloaded archive file and copy the contents in your "User" folder 
      - e.g., `"C:\Users\<your-username>"`
+   - Ensure that the top level directory folder name after <your-username> is "plant-inspection-station-simulation". If the folder name include "-main" at the end, you should remove it by renaming the folder.
 
 2. Using GitHub
    - Open the GitLab repository link in your web browser
