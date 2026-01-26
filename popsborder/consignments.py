@@ -115,6 +115,51 @@ from datetime import datetime, timedelta
 import numpy as np
 
 
+class RiskUnit:
+    """Risk Unit
+
+    RiskUnit is a view into array of sample_units, i.e. a slice of that array. The
+    assumption is that the original, and possibly modifed, sample_units can not
+    only be accessed but also modifed through the RiskUnit.
+    """
+
+    def __init__(self,
+                 sample_units,
+                 material_type=None,
+                 producer=None,
+                 origin=None,
+                 port=None,
+                 pathway=None):
+        """Store reference to associated sample_units
+
+        :param sample_units: Array-like object of sample_units
+        :param material_type: Material type for this inspection unit
+        :param producer: Producer name for this inspection unit
+        """
+        self.sample_units = sample_units
+        self.sample_unit_objects = []  # For hierarchical structure - list of SampleUnit objects
+        self.material_type = material_type
+        self.producer = producer
+        self.origin = origin
+        self.port = port
+        self.pathway = pathway
+
+    @property
+    def num_sample_units(self):
+        """Number of sample_units in the InspectionUnit"""
+        if hasattr(self.sample_units, 'shape'):
+            return self.sample_units.shape[0]
+        else:
+            return len(self.sample_units)
+
+    def __bool__(self):
+        if isinstance(self.sample_units, np.ndarray):
+            return bool(np.any(self.sample_units > 0))
+        else:
+            # Assuming it's a list of SampleUnit objects
+            return any(bool(su) for su in self.sample_units)
+
+
 class InspectionUnit:
     """Inspection unit (formerly Box)
 
