@@ -13,6 +13,9 @@ class DefaultPaths:
     def slippage_data_dir(self) -> Path:
         return self.root / "slippage_data"
 
+    def input_data_dir(self) -> Path:
+        return self.root / "data_input"
+
 
 class BoxPaths:
 
