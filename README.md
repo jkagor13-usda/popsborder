@@ -127,6 +127,8 @@ In the same **Anaconda Prompt** window, create an R-script virtual environment c
 
 ```
     conda create -n rbb -c conda-forge r-base r-essentials -y
+```
+```
     conda install -n rbb -c conda-forge r-base r-jsonlite r-rmpfr
 ```
 **_Note_**: _You may be prompted to accept the Terms of Service (TOS) again before being allowed to continue. Review these and type "y" and click enter to continue. You may also be prompted to proceed again after the package list is presented; click "y" and enter again to continue._
@@ -141,6 +143,8 @@ In the same **Anaconda Prompt** window, run these scripts to verify that the vir
 2. Verify that the R script runs within the venv virtual environment using conda as a bridge.
 ``` 
     conda run -n rbb Rscript --version
+```
+```
     conda run -n rbb Rscript -e "cat('Rscript is alive\n')"
 ```
 Running this script should respond "Rscript is alive".
