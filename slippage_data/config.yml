@@ -51,8 +51,8 @@ consignment:
       - San Francisco PIS
       - Seattle PIS
   input_file:
-    pis_file_type: NA #TODO Add PIS contamination data
-    rbs_file_name: data/fake_pis_data.csv
+    file_type: PIS
+    file_name: synth_data.csv
 contamination:
   contamination_unit: sample_unit
   contamination_rate:
