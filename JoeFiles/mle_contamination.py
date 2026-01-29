@@ -1,4 +1,4 @@
-
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 from __future__ import annotations
 from typing import Sequence, Tuple, Dict, Optional
 import numpy as np

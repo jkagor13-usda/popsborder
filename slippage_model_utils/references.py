@@ -1,4 +1,4 @@
-
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
 
 """Reference File to Hold Naming Conventions for Slippage Model
