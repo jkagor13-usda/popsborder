@@ -42,14 +42,14 @@ def main():
     # Synthetic data generation
     num_consignments_to_simulate = 10 # Added input parameter to be the number of consignments you want simulated
     #synthetic_data_generator = SyntheticConsignmentDataGenerator(box_paths.rbs_calc_data())
-    synthetic_data_generator = SyntheticConsignmentDataGenerator(data_dir / "synthetic_rbs_calc_data2.csv")
+    #synthetic_data_generator = SyntheticConsignmentDataGenerator(data_dir / "synthetic_rbs_calc_data2.csv")
     #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="naive")
-    synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=num_consignments_to_simulate, sampling_method="sequential")
+    #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=num_consignments_to_simulate, sampling_method="sequential")
     #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="gmm")
 
     #save_to_csv(synth_data, filename= data_dir / "synth_data.csv")
 
-    config["consignment"]["input_file"]["rbs_file_name"] = str(data_dir / "synth_data.csv")
+    #config["consignment"]["input_file"]["file_name"] = str(data_dir / "synth_data.csv")
 
     ####################################################################
     ####################################################################
@@ -64,37 +64,37 @@ def main():
     #############################################################
     ##### TODO: Replace this block with the appropriate data ####
     #############################################################
-    # Load in PIS Data
-    df_pis_data = pd.read_csv(pis_data)
-
-    # Load in RBS Calculator Data
-    df_rbs_calculator = pd.read_csv(rbs_calc_data)
-    #############################################################
-    ##### TODO: Replace this block with the appropriate data ####
-    #############################################################
-
-    ### Generate clarke inputs via input data
-    inputs = gen_clarke_model_inputs(df_pis_data, df_rbs_calculator)
-
-    # Run clarke model
-    res = run_clarke_bb_group_model(inputs.ty,
-                                    inputs.b,
-                                    inputs.B,
-                                    inputs.Nbar,
-                                    inputs.freq,
-                                    inputs.theta,
-                                    inputs.R,
-                                    inputs.start_val,
-                                    inputs.se)
-
-    print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
-    print(f'   Alpha = {res["alpha"]}')
-    print(f'   Beta = {res["beta"]}')
-    print(f'   Theta (from inputs) = {inputs.theta}')
-    print('\nFull Clarke model result payload:')
-    for k, v in res.items():
-        print(f'   {k}: {v}')
-    print('')
+    # # Load in PIS Data
+    # df_pis_data = pd.read_csv(pis_data)
+    #
+    # # Load in RBS Calculator Data
+    # df_rbs_calculator = pd.read_csv(rbs_calc_data)
+    # #############################################################
+    # ##### TODO: Replace this block with the appropriate data ####
+    # #############################################################
+    #
+    # ### Generate clarke inputs via input data
+    # inputs = gen_clarke_model_inputs(df_pis_data, df_rbs_calculator)
+    #
+    # # Run clarke model
+    # res = run_clarke_bb_group_model(inputs.ty,
+    #                                 inputs.b,
+    #                                 inputs.B,
+    #                                 inputs.Nbar,
+    #                                 inputs.freq,
+    #                                 inputs.theta,
+    #                                 inputs.R,
+    #                                 inputs.start_val,
+    #                                 inputs.se)
+    #
+    # print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
+    # print(f'   Alpha = {res["alpha"]}')
+    # print(f'   Beta = {res["beta"]}')
+    # print(f'   Theta (from inputs) = {inputs.theta}')
+    # print('\nFull Clarke model result payload:')
+    # for k, v in res.items():
+    #     print(f'   {k}: {v}')
+    # print('')
 
     # Update original parameters of config
     #config['contamination']['contamination_rate']['parameters'][0] = res["alpha"]
