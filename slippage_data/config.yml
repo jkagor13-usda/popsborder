@@ -1,5 +1,5 @@
 consignment:
-  generation_method: RBS
+  generation_method: input_file
   sample_units_per_inspection_unit:
     default: 200
     air:
@@ -52,7 +52,7 @@ consignment:
       - Seattle PIS
   input_file:
     file_type: PIS
-    file_name: synth_data.csv
+    file_name: synthetic_pis_data_updated.csv
 contamination:
   contamination_unit: sample_unit
   contamination_rate:

@@ -272,6 +272,7 @@ class Consignment(collections.UserDict):
         plants_per_sample_unit=None,
         inspection_number=None,
         producer=None,
+        risk_units=None,
     ):
         """Store reference to associated attributes
 
@@ -305,6 +306,7 @@ class Consignment(collections.UserDict):
             plants_per_sample_unit=plants_per_sample_unit,
             inspection_number=inspection_number,
             producer=producer,
+            risk_units=risk_units,
         )
         self.num_sample_units = num_sample_units
         self.sample_units = sample_units
@@ -321,6 +323,7 @@ class Consignment(collections.UserDict):
         self.plants_per_sample_unit = plants_per_sample_unit
         self.inspection_number = inspection_number
         self.producer = producer
+        self.risk_units = risk_units
 
     def __hasattr__(self, name):
         return name in self
@@ -514,7 +517,8 @@ class PISConsignmentGenerator:
         :param separator: CSV field separator
         """
         import pandas as pd
-        self.df = pd.read_csv(filename, sep=separator)
+        #self.df = pd.read_csv(filename, sep=separator)
+        self.df = pd.read_csv(r'C:\Users\agorjk1\Box\NHH15 - USDA APHIS EDISON\05 PPQ Engagement\PPQ RBS Data (Folder shared with APHIS)\updated_pis_data.csv', sep=separator)
         # Group by inspection number to create consignments
         self.consignment_groups = list(self.df.groupby('INSPECTION_NUMBER'))
         self.current_consignment_index = 0
@@ -528,6 +532,34 @@ class PISConsignmentGenerator:
 
         inspection_number, inspection_units_data = self.consignment_groups[self.current_consignment_index]
         self.current_consignment_index += 1
+
+
+
+
+
+        """
+        Consignment Attributes to be Generated
+        num_sample_units,
+        sample_units,
+        sample_units_per_inspection_unit,
+        num_inspection_units,
+        date,
+        inspection_units,
+        origin,
+        port,
+        pathway,
+        material_type=None,
+        num_plants=None,
+        plants=None,
+        plants_per_sample_unit=None,
+        inspection_number=None,
+        producer=None,
+        risk_units=None,
+        """
+
+        ### Create the Risk Units
+        # Identify unique number of risk units
+        num_risk_units = len(inspection_units_data['risk_unit'].unique())
 
         # Extract common consignment info from first record
         first_record = inspection_units_data.iloc[0]
@@ -770,6 +802,13 @@ def get_consignment_generator(config):
             parameters=config["parameter_based"],
             sample_units_per_inspection_unit=config["items_per_box"],
             start_date=start_date,
+        )
+    elif (generation_method == "input_file") and (
+        config["input_file"]["file_type"] == "PIS"
+    ):
+        consignment_generator = PISConsignmentGenerator(
+            filename=config["input_file"]["file_name"],
+            # TODO: add filename for contamination
         )
     elif generation_method == "RBS":
         if "input_file" in config and "rbs_file_name" in config["input_file"]:
