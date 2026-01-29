@@ -1,3 +1,4 @@
+_© 2026 The Johns Hopkins University Applied Physics Laboratory LLC_
 # Using Updated Contamination Parameterization via Clarke Model
 
 ## Overview

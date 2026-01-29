@@ -1,3 +1,5 @@
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
 # Import pacakges
 from popsborder.contamination import *
 

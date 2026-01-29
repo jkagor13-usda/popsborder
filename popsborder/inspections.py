@@ -1,5 +1,93 @@
 # Simulation of contaminated consignments and their inspections
 # Copyright (C) 2018-2021 Vaclav Petras and others (see below)
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
+"""
+Modifications:
+- 10/3/2025: Modifications described below (Gary Lin and Joseph Agor)
+    New Functions Added
+    ----------------
+    - sample_rbs():
+        * Implements risk-based sampling methodology using compliance-based detection levels
+        * Retrieves country/propagative material specific compliance parameters from lookup table
+        * Calculates sample size using hypergeometric distribution based on risk assessment
+
+    - count_contaminated_inspection_units():
+        * Counts contaminated inspection units in consignment
+        * Supports refactored terminology (inspection_units vs boxes)
+
+    - count_contaminated_sample_units():
+        * Counts contaminated sample units in consignment
+        * Supports refactored terminology (sample_units vs items)
+
+    - get_detection_and_confidence():
+        * Adds ability to process compliance tables beyond just origin and PM Type
+
+    - _norm():
+        * Support function to normalize for matching text: lowercase, strip non-alphanum.
+
+    - normalize_rbs_variables_against_consignment():
+        * Maps free-form field names in rbs_variables to actual attributes on a Consignment
+          instance, using case-insensitive aliasing
+    ----------------
+
+    Following Functions Modified
+    ----------------
+    - select_units_to_inspect():
+        * Unified function for selecting units to inspect based on selection strategy
+        * Supports random, cluster, and convenience selection strategies
+        * Handles both inspection_unit and sample_unit selection
+
+    - get_sample_function():
+        * Added RBS structured consignment inspection
+        * Enhanced to support compliance table parameter passing
+
+    - sample_proportion():
+        * Added backward compatibility for min_inspection_units (formerly min_boxes)
+        * Updated to handle both old and new terminology in configuration
+
+    - sample_n():
+        * Added backward compatibility for within_inspection_unit_proportion (formerly within_box_proportion)
+        * Added backward compatibility for min_inspection_units (formerly min_boxes)
+
+    - convert_items_to_boxes_fixed_proportion() :
+        * Added backward compatibility for within_inspection_unit_proportion
+        * Converted to the convert_sample_units_to_inspection_units_fixed_proportion()
+
+    - compute_max_inspectable_items():
+        * Added backward compatibility for within_sample_unit_proportion
+        * Converted to the function compute_max_inspectable_sample_units()
+
+    - compute_n_clusters_to_inspect():
+        * Added backward compatibility for within_inspection_unit_proportion and min_inspection_units
+
+    - inspect():
+        * Added backward compatibility for within_inspection_unit_proportion
+        * Enhanced detailed tracking with sample_unit_in_inspection_unit_to_sample_unit_index()
+
+    - inspect_item():
+        * Converted to the function inspect_sample_unit()
+
+    - get_detection_and_confidence():
+        * Added ability to process beyond just origin and PM Type
+    ----------------
+
+    Terminology Refactoring
+    ----------------
+    - Systematically refactored: boxes -> inspection_units, items -> sample_units
+    - Updated all class names, method names, and variable names for consistency
+    - Added comprehensive backward compatibility for existing configurations
+    - Maintained dual access patterns for smooth migration from legacy terminology
+    ----------------
+
+    Backward Compatibility
+    ----------------
+    - Added aliases: count_contaminated_boxes() -> count_contaminated_inspection_units()
+    - Added aliases: count_contaminated_items() -> count_contaminated_sample_units()
+    - Configuration parameter mapping: boxes -> inspection_units, items -> sample_units
+    - Maintained support for legacy configuration keys while enabling new terminology
+    ----------------
+"""
 
 # This program is free software; you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
@@ -19,67 +107,8 @@
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
 .. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
-
-=====================================
-JHU/APL Extensions and Modifications:
-=====================================
-
-Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
-
-New Functions Added:
--------------------
-- sample_rbs():
-    * Implements risk-based sampling methodology using compliance-based detection levels
-    * Retrieves country/propagative material specific compliance parameters from lookup table
-    * Calculates sample size using hypergeometric distribution based on risk assessment
-
-- select_units_to_inspect():
-    * Unified function for selecting units to inspect based on selection strategy
-    * Supports random, cluster, and convenience selection strategies
-    * Handles both inspection_unit and sample_unit selection
-
-- count_contaminated_inspection_units():
-    * Counts contaminated inspection units in consignment
-    * Supports refactored terminology (inspection_units vs boxes)
-
-- count_contaminated_sample_units():
-    * Counts contaminated sample units in consignment
-    * Supports refactored terminology (sample_units vs items)
-
-Modified Functions:
-----------------
-- get_sample_function():
-    * Added RBS structured consignment inspection
-    * Enhanced to support compliance table parameter passing
-
-- sample_proportion():
-    * Added backward compatibility for min_inspection_units (formerly min_boxes)
-    * Updated to handle both old and new terminology in configuration
-
-- sample_n():
-    * Added backward compatibility for within_inspection_unit_proportion (formerly within_box_proportion)
-    * Added backward compatibility for min_inspection_units (formerly min_boxes)
-
-- convert_sample_units_to_inspection_units_fixed_proportion():
-    * Added backward compatibility for within_inspection_unit_proportion
-
-- compute_n_clusters_to_inspect():
-    * Added backward compatibility for within_inspection_unit_proportion and min_inspection_units
-
-- inspect():
-    * Added backward compatibility for within_inspection_unit_proportion
-    * Enhanced detailed tracking with sample_unit_in_inspection_unit_to_sample_unit_index()
-
-- get_detection_and_confidence():
-    * Added ability to process beyond just origin and PM Type
-
-Backward Compatibility:
-----------------------
-- Added aliases: count_contaminated_boxes() -> count_contaminated_inspection_units()
-- Added aliases: count_contaminated_items() -> count_contaminated_sample_units()
-- Configuration parameter mapping: boxes -> inspection_units, items -> sample_units
-- Maintained support for legacy configuration keys while enabling new terminology
-
+.. codeauthor:: Gary Lin <Gary.Lin@jhuapl.edu>
+.. codeauthor:: Joseph Agor <Joseph.Agor@jhuapl.edu>
 """
 
 import math

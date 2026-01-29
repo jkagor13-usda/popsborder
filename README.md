@@ -2,6 +2,9 @@
 
 _This software is controlled under the Export Administration Regulations (EAR) (15 CFR 730-744). It has an ECCN EAR99 and may require an export authorization to transfer to foreign persons._
 
+
+_All new files added without license headers pending OSS approval; intended to be GPL-compatible._
+
 Johns Hopkins University Applied Physics Laboratory (APL) has extended
 the simulation framework, PoPS Border, co-developed by North Carolina
 State University and the USDA Animal Plant Health and Inspection
@@ -69,7 +72,9 @@ You will be using **Command prompt** only if you decide to update the code repos
    - Under "download source code" select "zip"
    - open the downloaded archive file and copy the contents in your "User" folder 
      - e.g., `"C:\Users\<your-username>"`
-   - Ensure that the top level directory folder name after <your-username> is "plant-inspection-station-simulation". If the folder name include "-main" at the end, you should remove it by renaming the folder.
+   - Ensure that the top level directory folder name after `<your-username>` is `plant-inspection-station-simulation`. 
+   If the folder name includes any additional text at the end (e.g., `plant-inspection-station-simulation-main`), 
+   you should remove the excess text (e.g., `-main`) by renaming the folder.
 
 2. Using GitHub
    - Open the GitLab repository link in your web browser
