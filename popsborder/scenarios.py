@@ -33,8 +33,8 @@ Modifications:
 """Functionality for running multiple scenarios
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
-.. codeauthor:: Gary Lin <Gary.Lin@jhuapl.edu>
-.. codeauthor:: Joseph Agor <Joseph.Agor@jhuapl.edu>
+.. codeauthor:: Gary Lin <Gary.Lin jhuapl edu>
+.. codeauthor:: Joseph Agor <Joseph.Agor jhuapl edu>
 """
 
 from .inputs import update_config
