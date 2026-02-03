@@ -11,14 +11,13 @@ import numpy as np
 from scipy.optimize import minimize_scalar
 from scipy import stats
 import pandas as pd
+from collections import defaultdict
 
 
 
 
 from dataclasses import dataclass, asdict
 from typing import List, Tuple, Optional
-import numpy as np
-import pandas as pd
 
 
 @dataclass
@@ -136,42 +135,46 @@ def identify_relevant_consignments(
 
 
 def _get_b_B_nbar_inputs(
-        df_pis_data_filtered: pd.DataFrame,
-        df_rbs_calculator_filtered: pd.DataFrame
+        df_pis_data_filtered: pd.DataFrame
 ):
     print(f"   Determining Inputs 'b', 'B' and 'Nbar'")
     # Function to generate b, B, and Nbar input parameters
     # Get applicable and interesected inspection ids
-    df_pis_data_grouped, df_rbs_calculator_grouped = group_by_inspection_id(df_pis_data_filtered, df_rbs_calculator_filtered)
+    df_pis_data_grouped = {k: v for k, v in df_pis_data_filtered.groupby("INSPECTION_ID")}
 
     # Check to ensure if column name for "required number of boxes" exists
     req_boxes_col = None
     for candidate in ["REQUIRED_NUMBER_OF_BOXES", "REQUIRED_NUMBER_OF_BOXES"]:
-        if candidate in next(iter(df_rbs_calculator_grouped.values())).columns:
+        if candidate in next(iter(df_pis_data_grouped.values())).columns:
             req_boxes_col = candidate
             break
 
     if req_boxes_col is None:
-        raise KeyError("Could not find REQUIRED_NUMBER_OF_BOXES in RBS Calculator Data columns.")
+        raise KeyError("Could not find REQUIRED_NUMBER_OF_BOXES in supplied data set.")
 
     # Go through each of the different sets of the inspection ids and calculate the parameters
-    # averaging if there are multiple records per inspection id in the RBS calculator data
+    # averaging if there are multiple records per inspection id in the idealized rbs data set
     per_inspection = {}
-    for insp_id, df in df_rbs_calculator_grouped.items():
+    for insp_id, df in df_pis_data_grouped.items():
+        # Option 1: Aggregate at consignment level
+        # Consignment aggregation
+        #
+
+        # Option 2
         # Ensure numeric, ignore NaNs in means
         req_boxes = pd.to_numeric(df[req_boxes_col], errors="coerce")
-        total_units = pd.to_numeric(df["TOTAL_SAMPLING_UNITS"], errors="coerce")
-        total_plants = pd.to_numeric(df["TOTAL_PLANT_QUANTITY"], errors="coerce")
+        total_sample_units = pd.to_numeric(df["TOTAL_SAMPLING_UNITS"], errors="coerce")
+        total_plants = pd.to_numeric(df["QUANTITY"], errors="coerce")
 
         # b_i = avg required boxes for this inspection_id
         b_i = req_boxes.mean()
 
         # B_i = avg total sampling units for this inspection_id
-        B_i = total_units.mean()
+        B_i = total_sample_units.mean()
 
-        # Nbar_i = avg over rows of (TOTAL_PLANT_QUANTITY / TOTAL_SAMPLING_UNITS) for this inspection_id
+        # Nbar_i = avg over rows of (QUANTITY / TOTAL_SAMPLING_UNITS) for this inspection_id
         with np.errstate(divide="ignore", invalid="ignore"):
-            nbar_rows = total_plants / total_units
+            nbar_rows = total_plants / total_sample_units
         nbar_rows = nbar_rows.replace([np.inf, -np.inf], np.nan)
         Nbar_i = nbar_rows.mean()
 
@@ -196,8 +199,170 @@ def _get_b_B_nbar_inputs(
 
     return round(b,0), round(B,0), round(Nbar,0)
 
+def _get_b_B_nbar_inputs(df_pis_data_filtered: pd.DataFrame):
+    print("   Determining Inputs 'b', 'B' and 'Nbar' (by INSPECTION_ID-risk_unit)")
 
-def calc_ty_freq(df_pis_data_filtered_by_inspection_id: pd.DataFrame):
+    # ---- Required columns ----
+    required_cols = [
+        "INSPECTION_ID",
+        "risk_unit",
+        "action",
+        "Total_Sampling_Units_for_Risk_Unit",
+        "REQUIRED_NUMBER_OF_BOXES",
+        "QUANTITY",
+    ]
+    missing = [c for c in required_cols if c not in df_pis_data_filtered.columns]
+    if missing:
+        raise KeyError(f"Missing required columns: {missing}")
+
+    # Ensure numeric where needed
+    df = df_pis_data_filtered.copy()
+    df["Total_Sampling_Units_for_Risk_Unit"] = pd.to_numeric(
+        df["Total_Sampling_Units_for_Risk_Unit"], errors="coerce"
+    )
+    df["REQUIRED_NUMBER_OF_BOXES"] = pd.to_numeric(
+        df["REQUIRED_NUMBER_OF_BOXES"], errors="coerce"
+    )
+    df["QUANTITY"] = pd.to_numeric(df["QUANTITY"], errors="coerce")
+
+    per_inspection = {}
+
+    # Group by INSPECTION_ID-risk_unit
+    for (insp_id, ru), g in df.groupby(["INSPECTION_ID", "risk_unit"], sort=False):
+
+        # 1) Determine action: if mixed -> 1
+        action_vals = g["action"].dropna().unique()
+        if len(action_vals) == 1:
+            action_out = int(action_vals[0])
+        else:
+            # includes len==0 (all NaN) or mixed values
+            action_out = 1
+
+        # 2) B_i: should be constant within group
+        B_vals = g["Total_Sampling_Units_for_Risk_Unit"].dropna().unique()
+        if len(B_vals) == 0:
+            B_i = np.nan
+        elif len(B_vals) == 1:
+            B_i = float(B_vals[0])
+        else:
+            raise ValueError(
+                "Total_Sampling_Units_for_Risk_Unit not constant for "
+                f"(INSPECTION_ID={insp_id}, risk_unit={ru}). Values={B_vals}"
+            )
+
+        # 3) b_i: should be constant within group
+        b_vals = g["REQUIRED_NUMBER_OF_BOXES"].dropna().unique()
+        if len(b_vals) == 0:
+            b_i = np.nan
+        elif len(b_vals) == 1:
+            b_i = float(b_vals[0])
+        else:
+            raise ValueError(
+                "REQUIRED_NUMBER_OF_BOXES not constant for "
+                f"(INSPECTION_ID={insp_id}, risk_unit={ru}). Values={b_vals}"
+            )
+
+        # 4) Nbar_i = sum(QUANTITY) / B_i
+        qty_sum = g["QUANTITY"].sum(skipna=True)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            Nbar_i = qty_sum / B_i if pd.notna(B_i) else np.nan
+        if np.isinf(Nbar_i):
+            Nbar_i = np.nan
+
+        per_inspection[(insp_id, ru)] = {
+            "b": b_i,
+            "B": B_i,
+            "Nbar": Nbar_i,
+            "action": action_out,
+        }
+
+    # Convert to tidy dataframe (index = (INSPECTION_ID, risk_unit))
+    per_inspection_df = pd.DataFrame.from_dict(per_inspection, orient="index")
+    per_inspection_df.index = pd.MultiIndex.from_tuples(
+        per_inspection_df.index, names=["INSPECTION_ID", "risk_unit"]
+    )
+
+    # Optional: remove outliers
+    per_inspection_df_no_outliers = remove_outliers_iqr(
+        per_inspection_df, ["b", "B", "Nbar"]
+    )
+    per_inspection_df = per_inspection_df_no_outliers.copy()
+
+    # Overall averages across INSPECTION_ID-risk_unit pairs (unweighted)
+    b = per_inspection_df["b"].mean(skipna=True)
+    B = per_inspection_df["B"].mean(skipna=True)
+    Nbar = per_inspection_df["Nbar"].mean(skipna=True)
+
+    print("      Final inputs (averaged across INSPECTION_ID-risk_unit pairs):")
+    print(f"         b = {int(round(b)) if pd.notna(b) else b}")
+    print(f"         B = {int(round(B)) if pd.notna(B) else B}")
+    print(f"         Nbar = {int(round(Nbar)) if pd.notna(Nbar) else Nbar}\n")
+
+    # Return the calculated parameters
+    return round(b, 0), round(B, 0), round(Nbar, 0), per_inspection
+
+
+
+def calc_ty_freq(per_inspection: dict):
+    """
+    Calculate Clarke/BB-group model inputs from per_inspection dict.
+
+    INPUT
+    per_inspection: dict
+        Keys: (INSPECTION_ID, risk_unit)   (or similar pair key)
+        Values: dict with at least {"action": 0/1, ...}
+
+    OUTPUT
+    ty:   List[int]  unique counts of groups testing positive (per inspection)
+    freq: List[int]  frequency per ty
+    """
+    print("   Determining Inputs 'ty' and 'freq' (from per_inspection)")
+
+    # Sum actions across risk_units for each inspection
+    actions_per_insp = defaultdict(int)
+
+    for key, metrics in per_inspection.items():
+        # Expect tuple key (insp_id, risk_unit)
+        try:
+            insp_id, _risk_unit = key
+        except Exception as e:
+            raise ValueError(
+                "Expected per_inspection keys like (INSPECTION_ID, risk_unit). "
+                f"Got key={key!r}"
+            ) from e
+
+        action_val = metrics.get("action", 0)
+
+        # Treat missing/NaN as 0; force binary-ish int
+        if pd.isna(action_val):
+            action_val = 0
+        action_val = int(action_val)
+
+        # If action_val is not 0/1, still counts as positive if >0
+        actions_per_insp[insp_id] += 1 if action_val > 0 else 0
+
+    # Convert to Series and compute value counts
+    action_counts = pd.Series(actions_per_insp, name="n_groups_with_action")
+    value_counts = action_counts.value_counts().sort_index()
+
+    ty = value_counts.index.astype(int).to_list()
+    freq = value_counts.values.astype(int).tolist()
+
+    print("      Final inputs:")
+    print(f"         ty = {ty}")
+    print(f"         freq = {freq}")
+    print("      Represents...")
+    for t, f in zip(ty, freq):
+        print(f"         There is/are {f} consignments with {t} risk_units finding a pest/contaminant.")
+
+    return ty, freq
+
+
+
+
+
+
+def calc_ty_freq_old(df_pis_data_filtered_by_inspection_id: pd.DataFrame):
     """
     Function to calculate the two inputs below for the Clarke/BB-group model:
     ty: List[int]                  # unique counts of groups testing positive
@@ -241,8 +406,7 @@ def calc_ty_freq(df_pis_data_filtered_by_inspection_id: pd.DataFrame):
 
 
 def gen_clarke_model_inputs(
-    df_pis_data: pd.DataFrame,
-    df_rbs_calculator: pd.DataFrame
+    df_pis_data: pd.DataFrame
 ) -> ClarkeModelInputs:
     """
     Function to construct inputs for the Clarke/BB-group model:
@@ -263,7 +427,6 @@ def gen_clarke_model_inputs(
                         - INSPECTION_ID
                         - COUNTRY_OF_ORIGIN_NAME
                         - action (0/1 per group/box)
-    df_rbs_calculator:  Pandas Dataframe with RBS Calculator columns
 
 
     OUTPUTS
@@ -274,14 +437,15 @@ def gen_clarke_model_inputs(
     clarke_inputs = ClarkeModelInputs.default()
 
     # Get applicable and intersected inspection ids (inspection ids common across both data sets)
-    df_pis_data_filtered_by_inspection_id, df_rbs_calculator_filtered_by_inspection_id = identify_relevant_consignments(df_pis_data, df_rbs_calculator)
+    #df_pis_data_filtered_by_inspection_id, df_rbs_calculator_filtered_by_inspection_id = identify_relevant_consignments(df_pis_data)
 
     # Function to generate b, B, and Nbar input parameters
     print(f"Determining All Clarke Model Required Inputs")
-    clarke_inputs.b, clarke_inputs.B, clarke_inputs.Nbar = _get_b_B_nbar_inputs(df_pis_data_filtered_by_inspection_id, df_rbs_calculator_filtered_by_inspection_id)
+    clarke_inputs.b, clarke_inputs.B, clarke_inputs.Nbar, per_inspection_data = _get_b_B_nbar_inputs(df_pis_data)
 
     # Calculate the ty and freq input parameters
-    clarke_inputs.ty, clarke_inputs.freq = calc_ty_freq(df_pis_data_filtered_by_inspection_id)
+    clarke_inputs.ty, clarke_inputs.freq = calc_ty_freq(per_inspection_data)
+    #clarke_inputs.ty, clarke_inputs.freq = calc_ty_freq(df_pis_data)
 
     return clarke_inputs
 
