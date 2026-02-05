@@ -26,6 +26,7 @@ from slippage_model_utils.paths import BoxPaths, DefaultPaths
 def main():
     # Set up data folder and file names
     box_paths = BoxPaths()
+    shared_ppq_data_path = box_paths.shared_ppq_data()
     default_paths = DefaultPaths()
     #data_dir = Path("slippage_data")
     data_dir = default_paths.slippage_data_dir()
@@ -36,7 +37,8 @@ def main():
     #scenario_file = data_dir / "pis_contaminate_scenarios.csv"
     pis_data = data_dir / 'synthetic_pis_data.csv'
     #rbs_calc_data = data_dir / 'synthetic_rbs_calc_data.csv'
-    rbs_calc_data = data_dir / 'synthetic_rbs_calc_data2.csv'
+    #rbs_calc_data = data_dir / 'synthetic_rbs_calc_data2.csv'
+    pis_data_updated = shared_ppq_data_path / 'updated_pis_data.csv'
 
     # Load configuration and compliance table
     config = load_configuration(config_file)
@@ -44,9 +46,9 @@ def main():
     # Synthetic data generation
     num_consignments_to_simulate = 10 # Added input parameter to be the number of consignments you want simulated
     #synthetic_data_generator = SyntheticConsignmentDataGenerator(box_paths.rbs_calc_data())
-    synthetic_data_generator = SyntheticConsignmentDataGenerator(data_dir / "synthetic_rbs_calc_data2.csv")
+    #synthetic_data_generator = SyntheticConsignmentDataGenerator(data_dir / "synthetic_rbs_calc_data2.csv")
     #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="naive")
-    synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=num_consignments_to_simulate, sampling_method="sequential")
+    #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=num_consignments_to_simulate, sampling_method="sequential")
     #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="gmm")
 
     #save_to_csv(synth_data, filename= data_dir / "synth_data.csv")
@@ -67,16 +69,17 @@ def main():
     ##### TODO: Replace this block with the appropriate data ####
     #############################################################
     # Load in PIS Data
-    df_pis_data = pd.read_csv(pis_data)
+    #df_pis_data = pd.read_csv(pis_data)
+    df_pis_data = pd.read_csv(pis_data_updated)
 
     # Load in RBS Calculator Data
-    df_rbs_calculator = pd.read_csv(rbs_calc_data)
+    #df_rbs_calculator = pd.read_csv(rbs_calc_data)
     #############################################################
     ##### TODO: Replace this block with the appropriate data ####
     #############################################################
 
     ### Generate clarke inputs via input data
-    inputs = gen_clarke_model_inputs(df_pis_data, df_rbs_calculator)
+    inputs = gen_clarke_model_inputs(df_pis_data)
 
     # Run clarke model
     res = run_clarke_bb_group_model(inputs.ty,
