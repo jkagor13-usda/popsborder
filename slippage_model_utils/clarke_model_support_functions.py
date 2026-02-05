@@ -134,7 +134,7 @@ def identify_relevant_consignments(
     return df_pis_data_filtered, df_rbs_calculator_filtered
 
 
-def _get_b_B_nbar_inputs(
+def _get_b_B_nbar_inputs_old(
         df_pis_data_filtered: pd.DataFrame
 ):
     print(f"   Determining Inputs 'b', 'B' and 'Nbar'")
@@ -200,14 +200,14 @@ def _get_b_B_nbar_inputs(
     return round(b,0), round(B,0), round(Nbar,0)
 
 def _get_b_B_nbar_inputs(df_pis_data_filtered: pd.DataFrame):
-    print("   Determining Inputs 'b', 'B' and 'Nbar' (by INSPECTION_ID-risk_unit)")
+    print("   Determining Inputs 'b', 'B' and 'Nbar'")
 
     # ---- Required columns ----
     required_cols = [
         "INSPECTION_ID",
-        "risk_unit",
+        "RISK_UNIT",
         "action",
-        "Total_Sampling_Units_for_Risk_Unit",
+        "TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT",
         "REQUIRED_NUMBER_OF_BOXES",
         "QUANTITY",
     ]
@@ -217,8 +217,8 @@ def _get_b_B_nbar_inputs(df_pis_data_filtered: pd.DataFrame):
 
     # Ensure numeric where needed
     df = df_pis_data_filtered.copy()
-    df["Total_Sampling_Units_for_Risk_Unit"] = pd.to_numeric(
-        df["Total_Sampling_Units_for_Risk_Unit"], errors="coerce"
+    df["TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT"] = pd.to_numeric(
+        df["TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT"], errors="coerce"
     )
     df["REQUIRED_NUMBER_OF_BOXES"] = pd.to_numeric(
         df["REQUIRED_NUMBER_OF_BOXES"], errors="coerce"
@@ -228,7 +228,30 @@ def _get_b_B_nbar_inputs(df_pis_data_filtered: pd.DataFrame):
     per_inspection = {}
 
     # Group by INSPECTION_ID-risk_unit
-    for (insp_id, ru), g in df.groupby(["INSPECTION_ID", "risk_unit"], sort=False):
+    num_groups = df.groupby(["INSPECTION_ID", "RISK_UNIT"]).ngroups
+    count = 1
+    for (insp_id, ru), g in df.groupby(["INSPECTION_ID", "RISK_UNIT"], sort=False):
+        if count == int(round(0.1*num_groups,0)):
+            print(f'      10% Complete ({count} out of {num_groups} consignment-risk unit pairs)')
+        elif count == int(round(0.2 * num_groups, 0)):
+            print(f'      20% Complete ({count} out of {num_groups} consignment-risk unit pairs)')
+        elif count == int(round(0.3 * num_groups, 0)):
+            print(f'      30% Complete ({count} out of {num_groups} consignment-risk unit pairs)')
+        elif count == int(round(0.4 * num_groups, 0)):
+            print(f'      40% Complete ({count} out of {num_groups} consignment-risk unit pairs)')
+        elif count == int(round(0.5 * num_groups, 0)):
+            print(f'      50% Complete ({count} out of {num_groups} consignment-risk unit pairs)')
+        elif count == int(round(0.6 * num_groups, 0)):
+            print(f'      60% Complete ({count} out of {num_groups} consignment-risk unit pairs)')
+        elif count == int(round(0.7 * num_groups, 0)):
+            print(f'      70% Complete ({count} out of {num_groups} consignment-risk unit pairs)')
+        elif count == int(round(0.8 * num_groups, 0)):
+            print(f'      80% Complete ({count} out of {num_groups} consignment-risk unit pairs)')
+        elif count == int(round(0.9 * num_groups, 0)):
+            print(f'      90% Complete ({count} out of {num_groups} consignment-risk unit pairs)')
+        elif count == int(round(1 * num_groups, 0)):
+            print(f'      100% Complete ({count} out of {num_groups} consignment-risk unit pairs)')
+        count+=1
 
         # 1) Determine action: if mixed -> 1
         action_vals = g["action"].dropna().unique()
@@ -239,15 +262,15 @@ def _get_b_B_nbar_inputs(df_pis_data_filtered: pd.DataFrame):
             action_out = 1
 
         # 2) B_i: should be constant within group
-        B_vals = g["Total_Sampling_Units_for_Risk_Unit"].dropna().unique()
+        B_vals = g["TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT"].dropna().unique()
         if len(B_vals) == 0:
             B_i = np.nan
         elif len(B_vals) == 1:
             B_i = float(B_vals[0])
         else:
             raise ValueError(
-                "Total_Sampling_Units_for_Risk_Unit not constant for "
-                f"(INSPECTION_ID={insp_id}, risk_unit={ru}). Values={B_vals}"
+                "TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT not constant for "
+                f"(INSPECTION_ID={insp_id}, RISK_UNIT={ru}). Values={B_vals}"
             )
 
         # 3) b_i: should be constant within group
@@ -259,7 +282,7 @@ def _get_b_B_nbar_inputs(df_pis_data_filtered: pd.DataFrame):
         else:
             raise ValueError(
                 "REQUIRED_NUMBER_OF_BOXES not constant for "
-                f"(INSPECTION_ID={insp_id}, risk_unit={ru}). Values={b_vals}"
+                f"(INSPECTION_ID={insp_id}, RISK_UNIT={ru}). Values={b_vals}"
             )
 
         # 4) Nbar_i = sum(QUANTITY) / B_i
@@ -299,7 +322,7 @@ def _get_b_B_nbar_inputs(df_pis_data_filtered: pd.DataFrame):
     print(f"         Nbar = {int(round(Nbar)) if pd.notna(Nbar) else Nbar}\n")
 
     # Return the calculated parameters
-    return round(b, 0), round(B, 0), round(Nbar, 0), per_inspection
+    return int(round(b)), int(round(B)), int(round(Nbar)) , per_inspection
 
 
 
@@ -319,8 +342,8 @@ def calc_ty_freq(per_inspection: dict):
     print("   Determining Inputs 'ty' and 'freq' (from per_inspection)")
 
     # Sum actions across risk_units for each inspection
-    actions_per_insp = defaultdict(int)
-
+    actions_per_insp = defaultdict(float)
+    risk_unit_actions_per_insp = defaultdict(int)
     for key, metrics in per_inspection.items():
         # Expect tuple key (insp_id, risk_unit)
         try:
@@ -339,7 +362,8 @@ def calc_ty_freq(per_inspection: dict):
         action_val = int(action_val)
 
         # If action_val is not 0/1, still counts as positive if >0
-        actions_per_insp[insp_id] += 1 if action_val > 0 else 0
+        risk_unit_actions_per_insp[insp_id] += 1 if action_val > 0 else 0
+        actions_per_insp[insp_id] += metrics['b'] if action_val > 0 else 0
 
     # Convert to Series and compute value counts
     action_counts = pd.Series(actions_per_insp, name="n_groups_with_action")
@@ -353,56 +377,48 @@ def calc_ty_freq(per_inspection: dict):
     print(f"         freq = {freq}")
     print("      Represents...")
     for t, f in zip(ty, freq):
-        print(f"         There is/are {f} consignments with {t} risk_units finding a pest/contaminant.")
+        print(f"         There is/are {f} consignments with {t} sample units finding a pest/contaminant.")
 
     return ty, freq
 
 
+from typing import List, Tuple
 
-
-
-
-def calc_ty_freq_old(df_pis_data_filtered_by_inspection_id: pd.DataFrame):
+def cap_ty_at_B(ty: List[int], freq: List[int], B: int) -> Tuple[List[int], List[int]]:
     """
-    Function to calculate the two inputs below for the Clarke/BB-group model:
-    ty: List[int]                  # unique counts of groups testing positive
-    freq: List[int]                # frequency per ty
-
-    INPUTS
-    df_pis_data_filtered_by_inspection_id:  Pandas Dataframe with columns:
-                                               - INSPECTION_ID
-                                               - COUNTRY_OF_ORIGIN_NAME
-                                               - action (0/1 per group/box)
-    OUTPUTS
-    Two lists ty and freq as defined above.
+    Ensure no ty exceeds B.
+    - Remove all entries with ty > B
+    - Insert/merge a single entry ty == B whose freq is the sum of removed freqs
+    - If ty already contains B, add the removed freq to that existing freq
+    Preserves relative order of the kept entries.
     """
-    print(f"   Determining Inputs 'ty' and 'freq'")
-    # Create a dataframe to store results
-    columns = ['INSPECTION_ID',
-               'COUNTRY_OF_ORIGIN_NAME',
-               'Number of Commodity Lines with Action']
-    action_summary = pd.DataFrame(columns=columns)
+    if len(ty) != len(freq):
+        raise ValueError(f"ty and freq must be same length, got {len(ty)} and {len(freq)}")
 
-    for inspection_id, group_df in df_pis_data_filtered_by_inspection_id.groupby("INSPECTION_ID"):
-        group_df = group_df.reset_index(drop=True)
+    kept_ty: List[int] = []
+    kept_freq: List[int] = []
+    overflow_freq_sum = 0
 
-        action_summary.loc[len(action_summary)] = {
-            'INSPECTION_ID': inspection_id,
-            'COUNTRY_OF_ORIGIN_NAME': group_df['COUNTRY_OF_ORIGIN_NAME'][0],
-            'Number of Commodity Lines with Action': sum(group_df['action']),
-        }
+    for t, f in zip(ty, freq):
+        if t > B:
+            overflow_freq_sum += f
+        else:
+            kept_ty.append(t)
+            kept_freq.append(f)
 
-    value_counts = action_summary["Number of Commodity Lines with Action"].value_counts().sort_index()
-    ty = value_counts.index.to_list()  # Number of boxes that have been identified actions
-    freq = value_counts.values.tolist()  # Frequency of observations/consignments where that many groups tested positive
+    if overflow_freq_sum == 0:
+        return kept_ty, kept_freq
 
-    print("      Final inputs:")
-    print(f"         ty = {ty}")
-    print(f"         freq = {freq}")
-    print("      Represents...")
-    for i in range(len(ty)):
-        print(f"         There is/are {freq[i]} consignments with {ty[i]} inspections finding a pest/contaminant.")
-    return ty, freq
+    # Merge into existing B if present; otherwise append a new (B, overflow_sum).
+    try:
+        idx_B = kept_ty.index(B)
+    except ValueError:
+        kept_ty.append(B)
+        kept_freq.append(overflow_freq_sum)
+    else:
+        kept_freq[idx_B] += overflow_freq_sum
+
+    return kept_ty, kept_freq
 
 
 def gen_clarke_model_inputs(
@@ -445,7 +461,14 @@ def gen_clarke_model_inputs(
 
     # Calculate the ty and freq input parameters
     clarke_inputs.ty, clarke_inputs.freq = calc_ty_freq(per_inspection_data)
-    #clarke_inputs.ty, clarke_inputs.freq = calc_ty_freq(df_pis_data)
+    clarke_inputs.ty, clarke_inputs.freq = cap_ty_at_B(clarke_inputs.ty, clarke_inputs.freq, clarke_inputs.b)
+
+    print("      Final inputs after removal:")
+    print(f"         ty = {clarke_inputs.ty}")
+    print(f"         freq = {clarke_inputs.freq}")
+    print("      Represents...")
+    for t, f in zip(clarke_inputs.ty, clarke_inputs.freq):
+        print(f"         There is/are {f} consignments with {t} sample units finding a pest/contaminant.")
 
     return clarke_inputs
 
