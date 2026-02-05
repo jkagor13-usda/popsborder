@@ -79,27 +79,33 @@ def main():
     #############################################################
 
     ### Generate clarke inputs via input data
-    inputs = gen_clarke_model_inputs(df_pis_data)
+    inputs_by_quantity = gen_clarke_model_inputs(df_pis_data)
 
     # Run clarke model
-    res = run_clarke_bb_group_model(inputs.ty,
-                                    inputs.b,
-                                    inputs.B,
-                                    inputs.Nbar,
-                                    inputs.freq,
-                                    inputs.theta,
-                                    inputs.R,
-                                    inputs.start_val,
-                                    inputs.se)
+    res = {}
+    print(f'\nNow Executing Clarke Model Based on Quantities')
+    for (lower, upper), inputs in inputs_by_quantity.items():
+        print(f'   Calculating for Quantity Range:  {(lower, upper)}')
+        res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
+                                        inputs.b,
+                                        inputs.B,
+                                        inputs.Nbar,
+                                        inputs.freq,
+                                        inputs.theta,
+                                        inputs.R,
+                                        inputs.start_val,
+                                        inputs.se)
 
     print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
-    print(f'   Alpha = {res["alpha"]}')
-    print(f'   Beta = {res["beta"]}')
-    print(f'   Theta (from inputs) = {inputs.theta}')
-    print('\nFull Clarke model result payload:')
-    for k, v in res.items():
-        print(f'   {k}: {v}')
-    print('')
+    for (lower, upper), results in res.items():
+        print(f'   For quantities ranging in {(lower, upper)}:')
+        print(f'      Alpha = {results["alpha"]}')
+        print(f'      Beta = {results["beta"]}')
+        #print(f'      Theta (from inputs) = {results.theta}')
+        #print('\n      Full Clarke model result payload:')
+        # for k, v in results.items():
+        #     print(f'   {k}: {v}')
+        print('')
 
     # Update original parameters of config
     #config['contamination']['contamination_rate']['parameters'][0] = res["alpha"]
