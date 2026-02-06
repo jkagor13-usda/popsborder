@@ -1,3 +1,5 @@
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
 # pip install statsmodels pandas numpy
 import numpy as np
 import pandas as pd

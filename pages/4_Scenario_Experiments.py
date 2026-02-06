@@ -1,3 +1,5 @@
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
 from pathlib import Path
 from typing import Optional, Union
 import json

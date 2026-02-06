@@ -2,6 +2,9 @@
 
 # Simulation of contaminated consignments and their inspections
 # Copyright (C) 2018-2022 Vaclav Petras and others (see below)
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
+# Modifications:  None
 
 # This program is free software; you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software

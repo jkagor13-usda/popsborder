@@ -1,5 +1,23 @@
 # Simulation of contaminated consignments and their inspections
 # Copyright (C) 2018-2022 Vaclav Petras and others (see below)
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
+"""
+Modifications:
+- 10/3/2025: Modeifications described below (Gary Lin and Joseph Agor)
+    Following Functions Modified
+    ----------------
+    - naive_cfrp():
+        * Updated to support refactored terminology (num_boxes -> num_inspection_units)
+        * Maintains backward compatibility with existing configuration parameters
+    ----------------
+
+    Terminology Refactoring
+    ----------------
+    - Updated references from 'boxes' terminology to 'inspection_units' for consistency
+    - Maintains full backward compatibility with existing CFRP and skip lot programs
+    ----------------
+"""
 
 # This program is free software; you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
@@ -18,24 +36,8 @@
 """Skipping inspections of consignments
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
-
-=====================================
-JHU/APL Extensions and Modifications:
-=====================================
-
-Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
-
-Modified Functions:
-------------------
-- naive_cfrp():
-    * Updated to support refactored terminology (num_boxes -> num_inspection_units)
-    * Maintains backward compatibility with existing configuration parameters
-
-Notes:
-------
-- This module handles inspection skipping logic and release programs
-- Updated references from 'boxes' terminology to 'inspection_units' for consistency
-- Maintains full backward compatibility with existing CFRP and skip lot programs
+.. codeauthor:: Gary Lin <Gary.Lin@jhuapl.edu>
+.. codeauthor:: Joseph Agor <Joseph.Agor@jhuapl.edu>
 """
 
 import functools

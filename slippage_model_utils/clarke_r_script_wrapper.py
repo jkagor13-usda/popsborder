@@ -1,3 +1,4 @@
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 from __future__ import annotations
 import os
 import json
@@ -74,21 +75,26 @@ def _find_conda_exe() -> Optional[Path]:
     if platform.system() == "Windows":
         local_appdata = os.getenv("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))
         candidates += [
+            Path(local_appdata) / "anaconda" / "Scripts" / "conda.exe",
             Path(local_appdata) / "anaconda3" / "Scripts" / "conda.exe",
             Path(local_appdata) / "miniconda3" / "Scripts" / "conda.exe",
-            Path(local_appdata) / "Programs" / "Anaconda3" / "Scripts" / "conda.exe",
+            Path(local_appdata) / "Programs" / "anaconda" / "Scripts" / "conda.exe",
         ]
         # add standard home locations too
         candidates += [
+            Path.home() / "anaconda" / "Scripts" / "conda.exe",
             Path.home() / "anaconda3" / "Scripts" / "conda.exe",
             Path.home() / "miniconda3" / "Scripts" / "conda.exe",
         ]
     else:
         # macOS / Linux
         candidates += [
+            Path.home() / "anaconda" / "bin" / "conda",
             Path.home() / "anaconda3" / "bin" / "conda",
             Path.home() / "miniconda3" / "bin" / "conda",
+            Path("/opt/anaconda/bin/conda"),
             Path("/opt/anaconda3/bin/conda"),
+            Path("/usr/local/anaconda/bin/conda"),
             Path("/usr/local/anaconda3/bin/conda"),
         ]
 

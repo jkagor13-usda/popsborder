@@ -1,5 +1,4 @@
-# COPYRIGHT NOTICE
-# © 2023, 2024, 2025 The Johns Hopkins University Applied Physics Laboratory LLC
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
 from pathlib import Path
 

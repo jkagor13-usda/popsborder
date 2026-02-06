@@ -1,3 +1,5 @@
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
 from __future__ import annotations
 
 import argparse
@@ -23,6 +25,8 @@ from slippage_model_utils.paths import BoxPaths, DefaultPaths
 
 def main():
     # Set up data folder and file names
+    box_paths = BoxPaths()
+    shared_ppq_data_path = box_paths.shared_ppq_data()
     default_paths = DefaultPaths()
     data_dir = default_paths.impact_data_dir()
     config_file = data_dir / "config.yml"
@@ -52,37 +56,44 @@ def main():
     #############################################################
     ##### TODO: Replace this block with the appropriate data ####
     #############################################################
-    # # Load in PIS Data
-    # df_pis_data = pd.read_csv(pis_data)
-    #
-    # # Load in RBS Calculator Data
-    # df_rbs_calculator = pd.read_csv(rbs_calc_data)
-    # #############################################################
-    # ##### TODO: Replace this block with the appropriate data ####
-    # #############################################################
-    #
-    # # ### Generate clarke inputs via input data
-    # inputs = gen_clarke_model_inputs(synth_data, synth_data)
-    # #
-    # # Run clarke model
-    # res = run_clarke_bb_group_model(inputs.ty,
-    #                                 inputs.b,
-    #                                 inputs.B,
-    #                                 inputs.Nbar,
-    #                                 inputs.freq,
-    #                                 inputs.theta,
-    #                                 inputs.R,
-    #                                 inputs.start_val,
-    #                                 inputs.se)
-    
-    # print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
-    # print(f'   Alpha = {res["alpha"]}')
-    # print(f'   Beta = {res["beta"]}')
-    # print(f'   Theta (from inputs) = {inputs.theta}')
-    # print('\nFull Clarke model result payload:')
-    # for k, v in res.items():
-    #     print(f'   {k}: {v}')
-    # print('')
+    # Load in PIS Data
+    #df_pis_data = pd.read_csv(pis_data)
+    df_pis_data = pd.read_csv(pis_data_updated)
+
+    # Load in RBS Calculator Data
+    #df_rbs_calculator = pd.read_csv(rbs_calc_data)
+    #############################################################
+    ##### TODO: Replace this block with the appropriate data ####
+    #############################################################
+
+    ### Generate clarke inputs via input data
+    inputs_by_quantity = gen_clarke_model_inputs(df_pis_data)
+
+    # Run clarke model
+    res = {}
+    print(f'\nNow Executing Clarke Model Based on Quantities')
+    for (lower, upper), inputs in inputs_by_quantity.items():
+        print(f'   Calculating for Quantity Range:  {(lower, upper)}')
+        res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
+                                        inputs.b,
+                                        inputs.B,
+                                        inputs.Nbar,
+                                        inputs.freq,
+                                        inputs.theta,
+                                        inputs.R,
+                                        inputs.start_val,
+                                        inputs.se)
+
+    print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
+    for (lower, upper), results in res.items():
+        print(f'   For quantities ranging in {(lower, upper)}:')
+        print(f'      Alpha = {results["alpha"]}')
+        print(f'      Beta = {results["beta"]}')
+        #print(f'      Theta (from inputs) = {results.theta}')
+        #print('\n      Full Clarke model result payload:')
+        # for k, v in results.items():
+        #     print(f'   {k}: {v}')
+        print('')
 
     # Update original parameters of config
     #config['contamination']['contamination_rate']['parameters'][0] = res["alpha"]
