@@ -23,33 +23,21 @@ from slippage_model_utils.paths import BoxPaths, DefaultPaths
 
 def main():
     # Set up data folder and file names
-    box_paths = BoxPaths()
     default_paths = DefaultPaths()
-    #data_dir = Path("slippage_data")
-    data_dir = default_paths.slippage_data_dir()
+    data_dir = default_paths.impact_data_dir()
     config_file = data_dir / "config.yml"
-    #compliance_file = data_dir / "compliance_table_test.csv"
     compliance_file = data_dir / "compliance_table.csv"
     scenario_file = data_dir / "test_scenario.csv"
-    #scenario_file = data_dir / "pis_contaminate_scenarios.csv"
-    pis_data = data_dir / 'synthetic_pis_data.csv'
-    #rbs_calc_data = data_dir / 'synthetic_rbs_calc_data.csv'
-    rbs_calc_data = data_dir / 'synthetic_rbs_calc_data2.csv'
+    pis_data = data_dir / "test_updated_pis_data.csv"
 
     # Load configuration and compliance table
     config = load_configuration(config_file)
 
     # Synthetic data generation
     num_consignments_to_simulate = 10 # Added input parameter to be the number of consignments you want simulated
-    #synthetic_data_generator = SyntheticConsignmentDataGenerator(box_paths.rbs_calc_data())
-    #synthetic_data_generator = SyntheticConsignmentDataGenerator(data_dir / "synthetic_rbs_calc_data2.csv")
-    #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="naive")
-    #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=num_consignments_to_simulate, sampling_method="sequential")
-    #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="gmm")
+    synthetic_data_generator = SyntheticConsignmentDataGenerator(pis_data)
+    synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=num_consignments_to_simulate, sampling_method="sequential")
 
-    #save_to_csv(synth_data, filename= data_dir / "synth_data.csv")
-
-    #config["consignment"]["input_file"]["file_name"] = str(data_dir / "synth_data.csv")
 
     ####################################################################
     ####################################################################
@@ -73,9 +61,9 @@ def main():
     # ##### TODO: Replace this block with the appropriate data ####
     # #############################################################
     #
-    # ### Generate clarke inputs via input data
-    # inputs = gen_clarke_model_inputs(df_pis_data, df_rbs_calculator)
-    #
+    # # ### Generate clarke inputs via input data
+    # inputs = gen_clarke_model_inputs(synth_data, synth_data)
+    # #
     # # Run clarke model
     # res = run_clarke_bb_group_model(inputs.ty,
     #                                 inputs.b,
@@ -86,7 +74,7 @@ def main():
     #                                 inputs.R,
     #                                 inputs.start_val,
     #                                 inputs.se)
-    #
+    
     # print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
     # print(f'   Alpha = {res["alpha"]}')
     # print(f'   Beta = {res["beta"]}')

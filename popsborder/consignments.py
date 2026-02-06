@@ -517,8 +517,7 @@ class PISConsignmentGenerator:
         :param separator: CSV field separator
         """
         import pandas as pd
-        #self.df = pd.read_csv(filename, sep=separator)
-        self.df = pd.read_csv(r'C:\Users\agorjk1\Box\NHH15 - USDA APHIS EDISON\05 PPQ Engagement\PPQ RBS Data (Folder shared with APHIS)\updated_pis_data.csv', sep=separator)
+        self.df = pd.read_csv(filename, sep=separator)
         # Group by inspection number to create consignments
         self.consignment_groups = list(self.df.groupby('INSPECTION_NUMBER'))
         self.current_consignment_index = 0

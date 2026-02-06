@@ -16,6 +16,9 @@ class DefaultPaths:
     def input_data_dir(self) -> Path:
         return self.root / "data_input"
 
+    def impact_data_dir(self) -> Path:
+        return self.root / "impact_data"
+
 
 class BoxPaths:
 
