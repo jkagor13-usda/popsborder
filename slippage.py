@@ -28,18 +28,19 @@ def main():
     box_paths = BoxPaths()
     shared_ppq_data_path = box_paths.shared_ppq_data()
     default_paths = DefaultPaths()
-    data_dir = default_paths.impact_data_dir()
+    data_dir = default_paths.slippage_data_dir()
     config_file = data_dir / "config.yml"
     compliance_file = data_dir / "compliance_table.csv"
     scenario_file = data_dir / "test_scenario.csv"
-    pis_data = data_dir / "test_updated_pis_data.csv"
+    pis_data_updated = shared_ppq_data_path / 'updated_pis_data.csv'
+
 
     # Load configuration and compliance table
     config = load_configuration(config_file)
 
     # Synthetic data generation
     num_consignments_to_simulate = 10 # Added input parameter to be the number of consignments you want simulated
-    synthetic_data_generator = SyntheticConsignmentDataGenerator(pis_data)
+    synthetic_data_generator = SyntheticConsignmentDataGenerator(input_data_file=pis_data_updated)
     synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=num_consignments_to_simulate, sampling_method="sequential")
 
 
@@ -53,15 +54,9 @@ def main():
     ### Read in Data ###
     ####################
 
-    #############################################################
-    ##### TODO: Replace this block with the appropriate data ####
-    #############################################################
     # Load in PIS Data
-    #df_pis_data = pd.read_csv(pis_data)
     df_pis_data = pd.read_csv(pis_data_updated)
 
-    # Load in RBS Calculator Data
-    #df_rbs_calculator = pd.read_csv(rbs_calc_data)
     #############################################################
     ##### TODO: Replace this block with the appropriate data ####
     #############################################################
