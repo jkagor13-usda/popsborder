@@ -458,7 +458,7 @@ class SyntheticConsignmentDataGenerator:
             self,
             df: pd.DataFrame,
             location_name: str,
-            total_units_col: str = "SAMPLING_UNITS",
+            total_units_col: str = 'SAMPLING_UNITS_FOR_INSPECTION_UNIT',
             loc_col: str = "INSPECTION_LOCATION_NAME",
             inspection_col: str = "INSPECTION_NUMBER",
             risk_unit_col: str = "RISK_UNIT",
@@ -538,7 +538,7 @@ class SyntheticConsignmentDataGenerator:
             self,
             df: pd.DataFrame,
             location_name: str,
-            total_units_col: str = "SAMPLING_UNITS",
+            total_units_col: str = 'SAMPLING_UNITS_FOR_INSPECTION_UNIT',
             loc_col: str = "INSPECTION_LOCATION_NAME",
             inspection_col: str = "INSPECTION_NUMBER",
             risk_unit_col: str = "RISK_UNIT",
@@ -628,7 +628,7 @@ class SyntheticConsignmentDataGenerator:
             inspection_location_name: str,
             country_of_origin_name: str,
             propagative_material_type: str,
-            total_units_col: str = "SAMPLING_UNITS",
+            total_units_col: str = 'SAMPLING_UNITS_FOR_INSPECTION_UNIT',
             loc_col: str = "INSPECTION_LOCATION_NAME",
             country_col: str = "COUNTRY_OF_ORIGIN_NAME",
             material_col: str = "PROPAGATIVE_MATERIAL_TYPE",
@@ -801,7 +801,7 @@ class SyntheticConsignmentDataGenerator:
 
             # Sample a number of inspections to occur from a generated PMF
             # This function will filter start from original input data, filter
-            # out "SAMPLING_UNITS" rows that are 0, N/A, or None,
+            # out 'SAMPLING_UNITS_FOR_INSPECTION_UNIT' rows that are 0, N/A, or None,
             # generate a pmf over the distribution of the rows over the unique Inspection Numbers,
             # and sample from that pmf fitted distribution
             num_risk_units = self.sample_num_rows_from_location_pmf(
