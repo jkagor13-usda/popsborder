@@ -1,7 +1,7 @@
 # © 2025 The Johns Hopkins University Applied Physics Laboratory LLC
 # Core scientific and data packages
 numpy==2.3.5
-pandas==3.0.0
+pandas==2.3.3
 scipy==1.17.0
 scikit-learn==1.8.0
 pyyaml==6.0.3
@@ -12,7 +12,7 @@ typing-extensions==4.15.0
 # Development / testing utilities
 pytest==9.0.2
 flake8==7.3.0
-pylint==4.0.4
+pylint==3.3.8
 black==26.1.0
 pytest-datadir==1.8.0
 
