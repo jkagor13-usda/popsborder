@@ -72,12 +72,13 @@ contamination:
       - 0.0194628
       - 2.7609372
     beta_binomial_parameters:
-        alpha: 0.0102
-        beta: 5.3839
-        theta: 10000
-        N_bar: 200
-        I: 1
-        J: None
+      default:
+          alpha: 0.0102
+          beta: 5.3839
+          theta: 10000
+          N_bar: 200
+          I: 1
+          J: 10
   arrangement: random
   clustered:
     percentage_plants_contaminated: .9
