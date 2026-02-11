@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 import pandas as pd
+import random
 
 # Import functions from popsborder
 from popsborder.scenarios import run_scenarios
@@ -79,39 +80,51 @@ def main():
     #############################################################
 
     ### Generate clarke inputs via input data
-    inputs_by_quantity = gen_clarke_model_inputs(df_pis_data)
+    # inputs_by_quantity = gen_clarke_model_inputs(df_pis_data)
+    #
+    # # Run clarke model
+    # res = {}
+    # print(f'\nNow Executing Clarke Model Based on Quantities')
+    # for (lower, upper), inputs in inputs_by_quantity.items():
+    #     print(f'   Calculating for Quantity Range:  {(lower, upper)}')
+    #     res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
+    #                                     inputs.b,
+    #                                     inputs.B,
+    #                                     inputs.Nbar,
+    #                                     inputs.freq,
+    #                                     inputs.theta,
+    #                                     inputs.R,
+    #                                     inputs.start_val,
+    #                                     inputs.se)
+    #
+    # print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
+    # for (lower, upper), results in res.items():
+    #     print(f'   For quantities ranging in {(lower, upper)}:')
+    #     print(f'      Alpha = {results["alpha"]}')
+    #     print(f'      Beta = {results["beta"]}')
+    #     #print(f'      Theta (from inputs) = {results.theta}')
+    #     #print('\n      Full Clarke model result payload:')
+    #     # for k, v in results.items():
+    #     #     print(f'   {k}: {v}')
+    #     print('')
 
-    # Run clarke model
+    # Setting values for testing
     res = {}
-    print(f'\nNow Executing Clarke Model Based on Quantities')
-    for (lower, upper), inputs in inputs_by_quantity.items():
-        print(f'   Calculating for Quantity Range:  {(lower, upper)}')
-        res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
-                                        inputs.b,
-                                        inputs.B,
-                                        inputs.Nbar,
-                                        inputs.freq,
-                                        inputs.theta,
-                                        inputs.R,
-                                        inputs.start_val,
-                                        inputs.se)
-
-    print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
-    for (lower, upper), results in res.items():
-        print(f'   For quantities ranging in {(lower, upper)}:')
-        print(f'      Alpha = {results["alpha"]}')
-        print(f'      Beta = {results["beta"]}')
-        #print(f'      Theta (from inputs) = {results.theta}')
-        #print('\n      Full Clarke model result payload:')
-        # for k, v in results.items():
-        #     print(f'   {k}: {v}')
-        print('')
-
-    # Update original parameters of config
-    #config['contamination']['contamination_rate']['parameters'][0] = res["alpha"]
-    #config['contamination']['contamination_rate']['parameters'][1] = res["beta"]
-    config['contamination']['contamination_rate']['parameters'][0] = 0.194628
-    config['contamination']['contamination_rate']['parameters'][1] = 4.7609372
+    inputs_by_quantity = {}
+    for key in [(-0.001, 10.0),
+                (10.0, 50.0),
+                (50.0, 150.0),
+                (150.0, 300.0),
+                (300.0, 579.0),
+                (579.0, 1000.0)]:
+        inputs_by_quantity[key] = {'theta': np.inf, 'B': 200}
+        res[key] = {
+            'alpha': random.uniform(0.01, 0.25),
+            "beta": random.uniform(2, 8),
+            'mu': 0.0,
+            'rho': 0.0,
+            'D': 0.0
+        }
 
 
     ####################################################################
@@ -180,10 +193,26 @@ def main():
     for scenario in scenarios:
         #scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = res["alpha"]
         #scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] =  res["beta"]
-        scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = 0.194628
-        scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] = 4.1 #20.12345
+        #scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = 0.194628
+        #scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] = 4.1 #20.12345
         #scenario["contamination/contamination_rate/beta_binomial_parameters/theta"] = inputs.theta
-        scenario["contamination/contamination_rate/value"] = None
+        #scenario["contamination/contamination_rate/value"] = None
+        #scenario["contamination/contamination_rate/value"] = 1.23456
+
+        # Setting actual paramters vaues
+        for key in res.keys():
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/alpha"] = res[key]['alpha']
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/beta"] = res[key]['beta']
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/mu"] = res[key]['mu']
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/rho"] = res[key]['rho']
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/D"] = res[key]['D']
+            # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[key].theta
+            # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = inputs_by_quantity[
+            #     key].B
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[
+                key]['theta']
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = inputs_by_quantity[
+                key]['B']
 
     ####################################################################
     ####################################################################
