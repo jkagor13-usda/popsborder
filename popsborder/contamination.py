@@ -24,11 +24,11 @@ Modifications:
     - num_boxes_to_contaminate(): renamed to num_inspection_units_to_contaminate()
 
 - 10/28/2025: Added the following support function for new data-driven contamination procedure (Joseph Agor)
-    - calc_N_bar(): Calculates the average number of 'units' (e.g., plants)
-                               that are in each 'group' (e.g., inspection unit) for a given consignment.
     - add_contaminant_beta_binomial_for_groups(): Beta-binomial contamination sampler where each 'group' is an inspection unit
     - add_contaminant_beta_binomial(): Vectorized sampling functon for Beta-Binomial distribution
     - contaminate_units_by_group(): Function to add contaminants to different "groups"
+    - get_range_key(): Function that finds the parameters based on what range the quantities fall into
+    - _set_beta_binomial_params():  Function that sets the beta-binomial parameters needed based on the main config file.
 
 - 10/28/2025:  Modified the following functions (Joseph Agor)
     - num_items_to_contaminate():  Function was converted to num_units_to_contaminate() to generalize terminology and to
@@ -39,6 +39,7 @@ Modifications:
         * Updated to include ability to contaminate using the beta-binomial approach
         * Embedded logic from previously existing create_contaminant_function() into this function
 """
+from astroid import Raise
 
 # This program is free software; you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
@@ -76,25 +77,95 @@ import numpy as np
 from scipy import stats
 
 from .inputs import update_nested_dict_by_dict
+import warnings
+import ast
 
 
 ##########################################################################
 ## START: Updated New Functions for Fitting Distributions with RBS data ##
 ##########################################################################
 
-def calc_N_bar(consignment):
+def get_range_key(d, num_plants):
+    last_key = None
+    max_upper = float("-inf")
+
+    for key in d:
+        if key.startswith("(") and key.endswith(")"):
+            lower, upper = ast.literal_eval(key)
+
+            # Track the tuple with the highest upper bound
+            if upper > max_upper:
+                max_upper = upper
+                last_key = key
+
+            # Normal range match
+            if lower < num_plants <= upper:
+                return key
+
+    # If no match found, return the tuple with highest upper bound
+    return last_key
+
+
+
+
+def _set_beta_binomial_params(contamination_config, consignment):
     """
-    Function to calculate the average number of 'units' (e.g., plants)
-    that are in each 'group' (e.g., inspection unit) for a given consignment.
+    Function to set all appropriate beta-binomial parameters based on plant quantity on the consignment.
 
     INPUTS
+    contamination_config: contamination config
     consignment:  Consignment object
 
     OUTPUTS
-    N_bar:  Average number of units in a group
+    config_beta_binomial:  dictionary with beta-binomial parameters
     """
-    return consignment.sample_units_per_inspection_unit*consignment.plants_per_sample_unit
+    beta_binomial_params = {}
+    # Get the number of plants on the consignment
+    if consignment.get('num_plants') is None:
+        if consignment.get('plants') is None:
+            warnings.warn(
+                "Attempting to set the beta binomial parameters in the '_set_beta_binomial_params' function"
+                             " of the contamination.py module and no plant information was found (i.e., no 'num_plants'"
+                             " or 'plants' attribute in the consignment object).  Default values are being set"
+                " for parameters that will not reflect any data used for training.",
+                UserWarning
+            )
+            return contamination_config["contamination_rate"]["beta_binomial_parameters"]['default']
+        else:
+            num_plants = len(consignment.get('plants'))
+    else:
+        num_plants = consignment.get('num_plants')
 
+    # Get the appropriate alpha and beta parameters based on the plant quantity of the consignment, otherwise default to the default parameters
+    param_dict = contamination_config["contamination_rate"]["beta_binomial_parameters"]
+    key = get_range_key(param_dict, num_plants)
+    beta_binomial_params = param_dict[key] if key is not None else param_dict["default"]
+
+    # Get the J parameter (number of groups) needed for contaminating via beta binomial
+    if consignment.get('num_sample_units') is None:
+        if consignment.get('sample_units') is None:
+            warnings.warn(
+                "Attempting to set the 'J' (number of groups/sample units on the consignment)"
+                " beta binomial parameters in the '_set_beta_binomial_params' function"
+                " of the contamination.py module and no sample unit information was found (i.e., no 'num_sample_units'"
+                " or 'sample_units' attribute in the consignment object).  Default value found from the generation of"
+                " Clarke input values function being used.",
+                UserWarning
+            )
+        else:
+            beta_binomial_params['J'] = len(consignment.get('sample_units'))
+    else:
+        beta_binomial_params['J'] = consignment.get('num_sample_units')
+
+    # Get the N_bar parameter (number of units per group) needed for contaminating via beta binomial
+    num_sample_units = beta_binomial_params['J']
+    beta_binomial_params['N_bar'] = int(num_plants / num_sample_units)
+
+    # Get theta parameter
+    if beta_binomial_params['theta'] is None:
+        beta_binomial_params['theta'] = np.inf
+
+    return beta_binomial_params
 
 
 def add_contaminant_beta_binomial_for_groups(config, group_sizes, rng=None):
@@ -155,7 +226,7 @@ def add_contaminant_beta_binomial_for_groups(config, group_sizes, rng=None):
 
     return contaminated_plants
 
-def add_contaminant_beta_binomial(config):
+def add_contaminant_beta_binomial(beta_binomial_config):
     """
     Vectorized sampler for:
         p_i ~ Beta(alpha, beta)                          (size I)
@@ -182,13 +253,12 @@ def add_contaminant_beta_binomial(config):
     p_i : (I,) float array
     p_ij : (I, J) float array
     """
-    beta_binomial_config = config["beta_binomial_parameters"]
     alpha = beta_binomial_config["alpha"]
     beta = beta_binomial_config["beta"]
     theta = beta_binomial_config["theta"]
     N_bar = beta_binomial_config["N_bar"]
     I = 1
-    J = config['beta_binomial_parameters']['J']
+    J = beta_binomial_config['J']
     # Seed random number generator
     rng = 1
     rng = np.random.default_rng() if rng is None else np.random.default_rng(rng)
@@ -205,7 +275,7 @@ def add_contaminant_beta_binomial(config):
         theta_ij = np.broadcast_to(theta, (I, J)).astype(float)
     else:
         theta_ij = np.broadcast_to(theta, (I, J)).astype(float)
-    # 2) p_ij | p_i
+    # Calculate p_ij | p_i
     # Start with the degenerate case p_ij = p_i for all cells,
     # then overwrite where theta is finite.
     p_ij = np.broadcast_to(p_i[:, None], (I, J)).copy()
@@ -221,7 +291,7 @@ def add_contaminant_beta_binomial(config):
 
         # NOTE: rng.beta accepts array-shaped a,b and returns matching shape
         p_ij[finite_mask] = rng.beta(a, b)
-    # 3) X_ij | p_ij ~ Binomial(N_bar, p_ij)
+    # Calculate X_ij | p_ij ~ Binomial(N_bar, p_ij)
     N_bar = np.asarray(N_bar)
     if N_bar.ndim == 0:
         N_ij = np.full((I, J), int(N_bar))
@@ -357,7 +427,7 @@ def num_units_to_contaminate(config, num_units):
     Config is the ``contamination_rate`` dictionary.
     """
     if config['distribution'] == "beta-binomial":
-        contaminated_units = add_contaminant_beta_binomial(config)
+        contaminated_units = add_contaminant_beta_binomial(config['contamination_rate']['beta_binomial_parameters']['default'])
     else:
         contamination_rate = get_contamination_rate(config)
         contaminated_units = round(num_units * contamination_rate)
@@ -469,9 +539,8 @@ def add_contaminant_uniform_random(config, consignment):
         # Contaminate plants directly per inspection unit
         num_inspection_units = len(consignment.inspection_units)
         if config["contamination_rate"]['distribution'] == 'beta-binomial':
-            config["contamination_rate"]['beta_binomial_parameters']['N_bar'] = calc_N_bar(consignment)
-            config["contamination_rate"]['beta_binomial_parameters']['J'] = num_inspection_units
-            contaminated_plants = np.asarray(add_contaminant_beta_binomial(config["contamination_rate"]), dtype=int).ravel()
+            beta_binomial_params = _set_beta_binomial_params(config, consignment)
+            contaminated_plants = np.asarray(add_contaminant_beta_binomial(beta_binomial_params), dtype=int).ravel()
             print(f"      contam: random | plants beta-binomial -> total contaminated plants {int(np.sum(contaminated_plants))} of {consignment.num_plants}")
             if np.all(contaminated_plants == 0):
                 return
@@ -1065,15 +1134,6 @@ def get_contaminant_function(config):
                 config, consignment
             )
             return add_contaminant_clusters(specific_contamination_config, consignment)
-
-    elif arrangement == "beta_binomial":
-
-        def add_contaminant(consignment):
-            print("      contam: arrangement=beta_binomial")
-            specific_contamination_config = get_contamination_config_for_consignment(
-                config, consignment
-            )
-            return add_contaminant_beta_binomial(specific_contamination_config)
     else:
         raise RuntimeError(f"Unknown contaminant arrangement: {arrangement}")
     return add_contaminant
