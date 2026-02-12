@@ -25,6 +25,21 @@ Features and Functionality Added:
 ---
 ## Things to know before You Start
 
+### Accessing the PoPS Border Graphical User Interface (GUI)
+
+After you have completed the installation process below, you can access the GUI at any time by opening a **Miniforge Prompt** and entering the following lines of code:
+```
+    conda activate venv
+```
+```
+    cd plant-inspection-station-simulation
+```
+```
+    streamlit run frontend.py
+```
+In the **Miniforge Prompt** window, you can revert back to the ability to enter lines of code (for example, to restart the GUI if it is accidentally closed) by pressing **Ctrl+C**. 
+
+---
 ### Required Software
 
 **_Note_**:  _You can skip any aspects you already have
@@ -91,19 +106,12 @@ You will be using **Command prompt** only if you decide to update the code repos
 If you see files such as Pipfile, frontend.py, and slippage_model_utils,
 you are in the correct directory.
 
-### Accessing the PoPS Border Graphical User Interface (GUI)
 
-After you have completed the installation process below, you can access the GUI at any time by opening a **Miniforge Prompt** and entering the following lines of code:
-```
-    conda activate venv
-```
-```
-    cd plant-inspection-station-simulation
-```
-```
-    streamlit run frontend.py
-```
-In the **Miniforge Prompt** window, you can revert back to the ability to enter lines of code (for example, to restart the GUI if it is accidentally closed) by pressing **Ctrl+C**. 
+### Subfolders within the Plant-Inspection-Station-Simulation repository
+
+- "Example_input": Houses files used for completing the 'GUI Structure Testing' example problems. These examples are intended to walk through examples uses of the PoPS Border tool within the GUI. 
+- "Slippage_model_utils": Contains the files which run the Slippage model within the PoPS Border GUI
+- "popsborder": Contains the files from the original PoPS border used within the PoPS Border GUI
 
 --- 
 
