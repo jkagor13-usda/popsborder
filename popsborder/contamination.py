@@ -228,6 +228,20 @@ def add_contaminant_beta_binomial_for_groups(config, group_sizes, rng=None):
 
 def add_contaminant_beta_binomial(beta_binomial_config):
     """
+    Args:
+        beta_binomial_config:  Dictionary with the folowing beta-binomial parameters as keys:
+                               alpha: float
+                               beta : float
+                               theta : float or array-like
+                                       - scalar (shared for all i,j), may be np.inf
+                                       - shape (I,), (I,1), (1,J), or (I,J) (broadcastable). Entries may be np.inf.
+                               Nbar : int or array-like
+                                      - scalar or broadcastable to (I,J)
+                               J : int
+
+    Returns:
+        X: Vector with number of infected units (plants) per group (sample unit)
+
     Vectorized sampler for:
         p_i ~ Beta(alpha, beta)                          (size I)
         p_ij | p_i ~ Beta(theta * p_i, theta*(1-p_i))    (size I x J)
@@ -235,23 +249,6 @@ def add_contaminant_beta_binomial(beta_binomial_config):
 
     Special handling:
         If theta == np.inf at any position, we set p_ij = p_i there.
-
-    Parameters
-    ----------
-    alpha, beta : float
-    theta : float or array-like
-        - scalar (shared for all i,j), may be np.inf
-        - shape (I,), (I,1), (1,J), or (I,J) (broadcastable). Entries may be np.inf.
-    Nbar : int or array-like
-        - scalar or broadcastable to (I,J)
-    I, J : int
-    rng : np.random.Generator or seed or None
-
-    Returns
-    -------
-    X : (I, J) int array
-    p_i : (I,) float array
-    p_ij : (I, J) float array
     """
     alpha = beta_binomial_config["alpha"]
     beta = beta_binomial_config["beta"]
