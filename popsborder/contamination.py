@@ -31,10 +31,8 @@ Modifications:
     - _set_beta_binomial_params():  Function that sets the beta-binomial parameters needed based on the main config file.
 
 - 10/28/2025:  Modified the following functions (Joseph Agor)
-    - num_items_to_contaminate():  Function was converted to num_units_to_contaminate() to generalize terminology and to
-                                   extend functionality of using the add_contaminant_beta_binomial() function
     - add_contaminant_uniform_random():
-        * Added functionality to use the beta-binomial model from Clarke et. al. 2023 paper
+        * Added functionality to use the beta-binomial model from Clarke et. al. 2023 paper for plant units
     - get_contaminant_function():
         * Updated to include ability to contaminate using the beta-binomial approach
         * Embedded logic from previously existing create_contaminant_function() into this function
@@ -423,11 +421,8 @@ def num_units_to_contaminate(config, num_units):
 
     Config is the ``contamination_rate`` dictionary.
     """
-    if config['distribution'] == "beta-binomial":
-        contaminated_units = add_contaminant_beta_binomial(config['contamination_rate']['beta_binomial_parameters']['default'])
-    else:
-        contamination_rate = get_contamination_rate(config)
-        contaminated_units = round(num_units * contamination_rate)
+    contamination_rate = get_contamination_rate(config)
+    contaminated_units = round(num_units * contamination_rate)
     return contaminated_units
 
 def num_sample_units_to_contaminate(config, num_sample_units):
