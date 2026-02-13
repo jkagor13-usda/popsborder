@@ -568,7 +568,8 @@ def add_contaminant_uniform_random(config, consignment):
 
 
 
-        # Apply contamination per inspection unit TODO: change consignment.inspection_units to consignment.risk_units when consignment genreation process is complete
+        # Apply contamination per inspection unit
+        # TODO: change consignment.inspection_units to consignment.risk_units when consignment generation process is complete
         su_counter = 0 # Define a sampling unit counter to
         for iu_idx, inspection_unit in enumerate(consignment.inspection_units):
             for su_idx, sample_unit in enumerate(inspection_unit.sample_unit_objects):
