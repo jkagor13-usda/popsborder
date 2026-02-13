@@ -163,6 +163,12 @@ def _set_beta_binomial_params(contamination_config, consignment):
     if beta_binomial_params['theta'] is None:
         beta_binomial_params['theta'] = np.inf
 
+    # Set Clustering parameter
+    if param_dict.get('default').get('p') is None:
+        beta_binomial_params['p'] = 0
+    else:
+        beta_binomial_params['p'] = 1-param_dict.get('default').get('p')
+
     return beta_binomial_params
 
 
@@ -236,6 +242,7 @@ def add_contaminant_beta_binomial(beta_binomial_config):
                                Nbar : int or array-like
                                       - scalar or broadcastable to (I,J)
                                J : int
+                               p: clustering parameter (0 implying not clustered at all and 1 meaning "fully clustered")
 
     Returns:
         X: Vector with number of infected units (plants) per group (sample unit)
@@ -254,6 +261,7 @@ def add_contaminant_beta_binomial(beta_binomial_config):
     N_bar = beta_binomial_config["N_bar"]
     I = 1
     J = beta_binomial_config['J']
+
     # Seed random number generator
     rng = 1
     rng = np.random.default_rng() if rng is None else np.random.default_rng(rng)
@@ -294,6 +302,34 @@ def add_contaminant_beta_binomial(beta_binomial_config):
         N_ij = np.broadcast_to(N_bar, (I, J)).astype(int)
     X = rng.binomial(N_ij, p_ij)
     if len(X)>0: X = X[0]
+
+    # Apply clustering
+    if beta_binomial_config['p'] > 0 and sum(X)>0:
+        n = min(int(round(J * (1-beta_binomial_config['p']), 0)),len(X))
+        m = len(X)
+
+        # Choose indices to become zero
+        if n == m:
+            zero_idx = np.random.choice(m, size=n-1, replace=False)
+        else:
+            zero_idx = np.random.choice(m, size=n, replace=False)
+
+        # Identify indices that remain nonzero-eligible
+        nonzero_idx = np.setdiff1d(np.arange(m), zero_idx)
+
+        # Store values that will be removed
+        values_to_redistribute = X[zero_idx].copy()
+
+        # Zero out chosen indices
+        X[zero_idx] = 0
+
+        # Redistribute any nonzero removed values
+        for val in values_to_redistribute:
+            if val != 0:
+                target = np.random.choice(nonzero_idx)
+                X[target] += val
+
+
     return X
 
 
@@ -399,8 +435,8 @@ def get_contamination_rate(config):
         return config["value"]
     if distribution in ["beta_binomial", "beta-binomial"]:
         params = config.get("beta_binomial_parameters", {})
-        alpha = float(params.get("alpha", 0))
-        beta = float(params.get("beta", 0))
+        alpha = float(params['default'].get("alpha", 0))
+        beta = float(params['default'].get("beta", 0))
         denom = alpha + beta
         return 0.0 if denom <= 0 else alpha / denom
     if distribution == "beta":
@@ -452,84 +488,51 @@ def add_contaminant_uniform_random(config, consignment):
     Contamination rate is determined using the ``contamination_rate`` config key.
     """
     contamination_unit = config["contamination_unit"]
-    
-    # Handle backward compatibility for old terminology
-    if contamination_unit in ["box", "boxes"]:
-        contamination_unit = "inspection_unit"
-    elif contamination_unit in ["item", "items"]:
-        contamination_unit = "sample_unit"
 
-    if contamination_unit in ["inspection_unit", "inspection_units"]:
-        contaminated_inspection_units = num_units_to_contaminate(
+    if contamination_unit in ["box", "boxes"]:
+        contaminated_boxes = num_units_to_contaminate(
             config["contamination_rate"], consignment.num_inspection_units
         )
-        if contaminated_inspection_units == 0.0:
+        if contaminated_boxes == 0.0:
             return
-        print(f"      contam: random | inspection_units -> targeting {contaminated_inspection_units} of {consignment.num_inspection_units}")
-        inspection_unit_indexes = np.random.choice(
-            consignment.num_inspection_units, math.ceil(contaminated_inspection_units), replace=False
+        box_indexes = np.random.choice(
+            consignment.num_inspection_units, math.ceil(contaminated_boxes), replace=False
         )
-        # Mark ALL sample_units in ALL contaminated inspection_units as contaminated
-        # When contaminating at inspection unit level, the entire inspection unit should be contaminated
-        for inspection_unit_index in inspection_unit_indexes:
-            consignment.inspection_units[inspection_unit_index].sample_units.fill(1)
-
-        # Pooled plant-level contamination for all contaminated sample_units in all contaminated inspection_units
-        if consignment.num_plants is not None:
-            # Gather all (inspection_unit_idx, samp_index) tuples for contaminated sample_units in contaminated inspection_units
-            contaminated_sample_units = []
-            for inspection_unit_index in inspection_unit_indexes:
-                for samp_index in range(consignment.inspection_units[inspection_unit_index].num_sample_units):
-                    contaminated_sample_units.append((inspection_unit_index, samp_index))
-            perc_plants_contaminated = config["clustered"]["percentage_plants_contaminated"]
-            _apply_pooled_plant_level_contamination(consignment, contaminated_sample_units, perc_plants_contaminated)
-        # Note: sample_unit arrays were already set to 1 above, no additional action needed for non-plant cases
-        
-        # Synchronize global sample_units array with inspection unit arrays after contamination
-        if hasattr(consignment, 'sample_units'):
-            sample_unit_idx = 0
-            for inspection_unit in consignment.inspection_units:
-                for su_idx, su_value in enumerate(inspection_unit.sample_units):
-                    if sample_unit_idx < len(consignment.sample_units):
-                        consignment.sample_units[sample_unit_idx] = su_value
-                        sample_unit_idx += 1
-
-        assert len(inspection_unit_indexes) in (
-            math.ceil(contaminated_inspection_units),
-            math.floor(contaminated_inspection_units),
+        # Contaminate full boxes except for last one
+        for box_index in box_indexes[:-1]:
+            consignment.inspection_units[box_index].items.fill(1)
+        # Use remainder of contaminated_boxes to partially contaminate
+        # last box if needed
+        partial_box_proportion = math.modf(contaminated_boxes)[0]
+        # If contaminated_boxes is whole number, contaminate full box
+        if partial_box_proportion == 0.0:
+            partial_box_proportion = 1
+        partial_box_contaminated_stems = round(
+            consignment.inspection_units[box_indexes[-1]].num_items * partial_box_proportion
         )
-    elif contamination_unit in ["sample_unit", "sample_units"]:
-        contaminated_sample_units = num_units_to_contaminate(
-            config["contamination_rate"], consignment.num_sample_units
+        consignment.inspection_units[box_indexes[-1]].items[0:partial_box_contaminated_stems].fill(
+            1
         )
-        print(f"      contam: random | sample_units -> targeting {contaminated_sample_units} of {consignment.num_sample_units}")
-        if contaminated_sample_units == 0:
+        # Check if correct number of boxes contaminated, should be rounded up
+        # contaminated_boxes, or may be rounded down contaminated_boxes
+        # if no stems were contaminated in last partial box
+        assert np.count_nonzero(consignment.inspection_units) in (
+            math.ceil(contaminated_boxes),
+            math.floor(contaminated_boxes),
+        )
+    elif contamination_unit in ["item", "items"]:
+        contaminated_items = num_units_to_contaminate(
+            config["contamination_rate"], consignment.num_plants
+        )
+        if contaminated_items == 0:
             return
-        sample_unit_indexes = np.random.choice(
-            consignment.num_sample_units, contaminated_sample_units, replace=False
+        item_indexes = np.random.choice(
+            consignment.num_plants, contaminated_items, replace=False
         )
-        if consignment.num_plants is not None:
-            perc_plants_contaminated = config["clustered"]["percentage_plants_contaminated"]
-            _apply_pooled_plant_level_contamination(consignment, list(sample_unit_indexes), perc_plants_contaminated)
-            
-            # Synchronize global sample_units array with inspection unit arrays after contamination
-            sample_unit_idx = 0
-            for inspection_unit in consignment.inspection_units:
-                for su_idx, su_value in enumerate(inspection_unit.sample_units):
-                    consignment.sample_units[sample_unit_idx] = su_value
-                    sample_unit_idx += 1
-            
-            # For plant-level contamination, the assertion is more flexible since some sample_units
-            # may end up with zero contaminated plants due to the probabilistic nature
-            actual_contaminated = np.count_nonzero(consignment.sample_units)
-            assert actual_contaminated <= contaminated_sample_units, f"Expected at most {contaminated_sample_units} contaminated sample_units, got {actual_contaminated}"
-        else:
-            # No plant unit exists, so set sample_unit array directly
-            np.put(consignment.sample_units, sample_unit_indexes, 1)
-            assert np.count_nonzero(consignment.sample_units) == contaminated_sample_units
+        np.put(consignment.plants, item_indexes, 1)
+        assert np.count_nonzero(consignment.plants) == contaminated_items
     elif contamination_unit in ["plant", "plants"]:
         # Contaminate plants directly per inspection unit
-        num_inspection_units = len(consignment.inspection_units)
         if config["contamination_rate"]['distribution'] == 'beta-binomial':
             beta_binomial_params = _set_beta_binomial_params(config, consignment)
             contaminated_plants = np.asarray(add_contaminant_beta_binomial(beta_binomial_params), dtype=int).ravel()
@@ -538,6 +541,7 @@ def add_contaminant_uniform_random(config, consignment):
                 return
         else:
             # Fallback fixed-rate contamination across all plants
+            num_inspection_units = len(consignment.inspection_units)
             total_plants = sum(len(su.plants) for iu in consignment.inspection_units for su in iu.sample_unit_objects)
             contaminated_total = num_units_to_contaminate(config["contamination_rate"], total_plants)
             contaminated_plants = np.zeros(num_inspection_units, dtype=int)
@@ -552,36 +556,40 @@ def add_contaminant_uniform_random(config, consignment):
             if contaminated_plants.sum() == 0:
                 return
 
-        # Apply contamination per inspection unit using flat sampling within the unit
-        for iu_idx, inspection_unit in enumerate(consignment.inspection_units):
-            k = int(contaminated_plants[iu_idx]) if iu_idx < len(contaminated_plants) else 0
-            if k <= 0:
-                continue
-            su_objs = inspection_unit.sample_unit_objects
-            lengths = [len(su.plants) for su in su_objs]
-            unit_total = sum(lengths)
-            if unit_total <= 0:
-                continue
-            k = min(k, unit_total)
-            chosen = np.random.choice(unit_total, size=k, replace=False)
-            # Map flat indices to sample units
-            cum = 0
-            for su_obj, n in zip(su_objs, lengths):
-                if n == 0:
-                    continue
-                mask = (chosen >= cum) & (chosen < cum + n)
-                rel_idx = chosen[mask] - cum
-                if rel_idx.size > 0:
-                    su_obj.plants[rel_idx] = 1
-                cum += n
-        # Update consignment.sample_units to sum of contaminated plants for each sample_unit
-        sample_unit_counter = 0
-        for inspection_unit in consignment.inspection_units:
-            for sample_unit_object in inspection_unit.sample_unit_objects:
-                consignment.sample_units[sample_unit_counter] = sample_unit_object.plants.sum()
-                sample_unit_counter += 1
+        minimum = np.min(contaminated_plants)
+        maximum = np.max(contaminated_plants)
+        q1, median, q3 = np.percentile(contaminated_plants, [25, 50, 75])
 
-        # Test correct number contaminated
+        print('Distribution of number of contaminated plants per sample unit:')
+        print(f"   Min: {minimum}, Q1: {q1}, Median: {median}, Q3: {q3}, Max: {maximum}")
+        zero_count = np.count_nonzero(contaminated_plants == 0)
+        percentage_sample = round((zero_count/len(contaminated_plants))*100,2)
+        print(f'\nNumber of sample units with zero infected units: {zero_count} ({percentage_sample}%)')
+
+
+
+        # Apply contamination per inspection unit TODO: change consignment.inspection_units to consignment.risk_units when consignment genreation process is complete
+        su_counter = 0 # Define a sampling unit counter to
+        for iu_idx, inspection_unit in enumerate(consignment.inspection_units):
+            for su_idx, sample_unit in enumerate(inspection_unit.sample_unit_objects):
+                num_plants_contaminated_per_su = int(contaminated_plants[su_counter]) if su_counter < len(contaminated_plants) else 0
+                if num_plants_contaminated_per_su <= 0:
+                    su_counter+=1
+                    continue
+
+                # Get number of plants in sample unit
+                if num_plants_contaminated_per_su>len(sample_unit.plants):
+                    sample_unit.plants[:] = 1
+                    contaminated_plants[su_counter] = len(sample_unit.plants)
+                    su_counter += 1
+                    continue
+                chosen = np.random.choice(len(sample_unit.plants), size=num_plants_contaminated_per_su, replace=False)
+                np.put(sample_unit.plants, chosen, 1)
+                inspection_unit.sample_unit_objects[su_idx] = sample_unit
+                su_counter += 1
+            consignment.inspection_units[iu_idx] = inspection_unit
+
+        # Test that the correct number contaminated
         total_contaminated = sum(
             (sample_unit_object.plants == 1).sum()
             for inspection_unit in consignment.inspection_units
