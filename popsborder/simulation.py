@@ -294,6 +294,7 @@ def simulation(
             pass
 
     # Write out simulated data
+    sim_data.finalize_dataframes()
     sim_data.write_synthetic_data_to_csv()
 
     num_contaminated = num_consignments - success_rates.ok
