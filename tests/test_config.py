@@ -1,3 +1,5 @@
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
 """Test configuration loading functions"""
 
 import pytest

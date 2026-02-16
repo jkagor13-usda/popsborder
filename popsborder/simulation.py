@@ -1,5 +1,36 @@
 # Simulation of contaminated consignments and their inspections
 # Copyright (C) 2018-2022 Vaclav Petras and others (see below)
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
+"""
+Modifications:
+- 10/3/2025: Modeifications described below (Gary Lin and Joseph Agor)
+    Following Functions Modified
+    ----------------
+    - simulation():
+        * Added RBS functionalities that utilize compliance levels to adjust hypergeometric sampling parameters
+        * Enhanced to support compliance table integration for country/material type specific detection levels
+        * Updated variable names throughout for terminology consistency (boxes -> inspection_units, items -> sample_units)
+
+    - run_simulation():
+        * Enhanced result tracking and aggregation for refactored terminology
+        * Updated contamination and inspection counting for new hierarchical structure
+        * Added support for plant-level contamination tracking in hierarchical consignments
+    ----------------
+
+    Terminology Refactoring
+    ----------------
+    - Updated all variable names from box/item terminology to inspection_unit/sample_unit terminology
+    - Enhanced result aggregation to handle both legacy and new terminology reporting
+    - Maintained backward compatibility in simulation result structures
+        - Johns Hopkins University Applied Physics Laboratory (JHU/APL)
+        - United States Department of Agriculture Animal and Plant Health Inspection Service (USDA APHIS)
+        * Supports hierarchical packaging structure (boxes -> items -> plants)
+        * Custom consignment data input from CSV
+    - run_simulation():
+        * Inputs for plant-level parameters, compliance table file, and consignment data supported
+    ----------------
+"""
 
 # This program is free software; you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
@@ -19,37 +50,8 @@
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
 .. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
-
-
-=====================================
-JHU/APL Extensions and Modifications:
-=====================================
-
-Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
-
-Modified Functions:
-------------------- 
-- simulation():
-    * Added RBS functionalities that utilize compliance levels to adjust hypergeometric sampling parameters
-    * Enhanced to support compliance table integration for country/material type specific detection levels
-    * Updated variable names throughout for terminology consistency (boxes -> inspection_units, items -> sample_units)
-
-- run_simulation():
-    * Enhanced result tracking and aggregation for refactored terminology
-    * Updated contamination and inspection counting for new hierarchical structure
-    * Added support for plant-level contamination tracking in hierarchical consignments
-
-Terminology Updates:
--------------------
-- Updated all variable names from box/item terminology to inspection_unit/sample_unit terminology
-- Enhanced result aggregation to handle both legacy and new terminology reporting
-- Maintained backward compatibility in simulation result structures 
-    - Johns Hopkins University Applied Physics Laboratory (JHU/APL)
-    - United States Department of Agriculture Animal and Plant Health Inspection Service (USDA APHIS)
-    * Supports hierarchical packaging structure (boxes -> items -> plants)
-    * Custom consignment data input from CSV
-- run_simulation():
-    * Inputs for plant-level parameters, compliance table file, and consignment data supported
+.. codeauthor:: Gary Lin <Gary.Lin jhuapl edu>
+.. codeauthor:: Joseph Agor <Joseph.Agor jhuapl edu>
 """
 
 import random

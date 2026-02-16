@@ -1,5 +1,20 @@
 # Simulation of contaminated consignments and their inspections
 # Copyright (C) 2018-2021 Vaclav Petras and others (see below)
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
+"""
+Modifications:
+- 10/3/2025: Modeifications described below (Gary Lin)
+    Following Functions Modified
+    ----------------
+    - run_scenarios():
+        * Enhanced to support plant-level parameters for hierarchical consignment structure
+        * Added compliance table file integration for RBS scenario execution
+        * Enhanced to support input consignment data for realistic scenario modeling
+        * Updated parameter handling for refactored terminology (boxes -> inspection_units, items -> sample_units)
+        * Maintains backward compatibility with existing scenario definition files
+    ----------------
+"""
 
 # This program is free software; you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
@@ -18,22 +33,8 @@
 """Functionality for running multiple scenarios
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
-
-=====================================
-JHU/APL Extensions and Modifications:
-=====================================
-
-Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
-
-Modified Functions:
-------------------- 
-- run_scenarios():
-    * Enhanced to support plant-level parameters for hierarchical consignment structure
-    * Added compliance table file integration for RBS scenario execution
-    * Enhanced to support input consignment data for realistic scenario modeling
-    * Updated parameter handling for refactored terminology (boxes -> inspection_units, items -> sample_units)
-    * Maintains backward compatibility with existing scenario definition files
-
+.. codeauthor:: Gary Lin <Gary.Lin jhuapl edu>
+.. codeauthor:: Joseph Agor <Joseph.Agor jhuapl edu>
 """
 
 from .inputs import update_config

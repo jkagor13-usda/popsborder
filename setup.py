@@ -21,5 +21,15 @@ setuptools.setup(
         "Topic :: Scientific/Engineering",
     ],
     python_requires=">=3.5",
-    install_requires=["numpy", "scipy", "pandas", "PyYAML", "openpyxl", "odfpy"],
+    install_requires=["numpy",
+                      "scipy",
+                      "pandas",
+                      "PyYAML",
+                      "openpyxl",
+                      "odfpy",
+                      "scikit-learn>=1.3.0",
+                      "typing-extensions>=4.5.0; python_version<'3.11'"],
+    extras_require={
+        "gui": ["streamlit"],
+    }
 )

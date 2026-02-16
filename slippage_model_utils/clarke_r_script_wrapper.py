@@ -1,3 +1,4 @@
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 from __future__ import annotations
 import os
 import json
@@ -12,7 +13,9 @@ import sys
 from math import isinf
 
 # === CONFIG ===
-CONDA_ENV_NAME: Optional[str] = 'rbb'
+# Name of the conda environment that contains R + required R packages.
+# Can be overridden by setting the environment variable POPS_R_CONDA_ENV.
+CONDA_ENV_NAME: Optional[str] = os.getenv("POPS_R_CONDA_ENV", "rbb")
 REPO_NAME = "plant-inspection-station-simulation"
 R_SCRIPT_REL = Path("slippage_model_utils") / "clarke_bb_model.R"
 
@@ -49,29 +52,49 @@ def get_r_script_path() -> Path:
 
 def _find_conda_exe() -> Optional[Path]:
     """
-    Auto-locate conda.exe (Windows) or conda (POSIX) via Common Anaconda/Miniconda locations
+    Auto-locate conda executable via:
+      1) POPS_CONDA_EXE / CONDA_EXE
+      2) PATH
+      3) Common Anaconda/Miniconda install locations
     """
-    # Go through all "Common" install paths by OS
+
+    # Respect explicit overrides first
+    for env_var in ("POPS_CONDA_EXE", "CONDA_EXE"):
+        v = os.getenv(env_var)
+        if v and Path(v).exists():
+            return Path(v).resolve()
+
+    # Then try PATH
+    which = shutil.which("conda.exe" if platform.system() == "Windows" else "conda")
+    if which:
+        return Path(which).resolve()
+
+    # If above two options don't work, go through all "Common" install paths by OS
     candidates: list[Path] = []
 
     if platform.system() == "Windows":
         local_appdata = os.getenv("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))
         candidates += [
+            Path(local_appdata) / "anaconda" / "Scripts" / "conda.exe",
             Path(local_appdata) / "anaconda3" / "Scripts" / "conda.exe",
             Path(local_appdata) / "miniconda3" / "Scripts" / "conda.exe",
-            Path(local_appdata) / "Programs" / "Anaconda3" / "Scripts" / "conda.exe",
+            Path(local_appdata) / "Programs" / "anaconda" / "Scripts" / "conda.exe",
         ]
         # add standard home locations too
         candidates += [
+            Path.home() / "anaconda" / "Scripts" / "conda.exe",
             Path.home() / "anaconda3" / "Scripts" / "conda.exe",
             Path.home() / "miniconda3" / "Scripts" / "conda.exe",
         ]
     else:
         # macOS / Linux
         candidates += [
+            Path.home() / "anaconda" / "bin" / "conda",
             Path.home() / "anaconda3" / "bin" / "conda",
             Path.home() / "miniconda3" / "bin" / "conda",
+            Path("/opt/anaconda/bin/conda"),
             Path("/opt/anaconda3/bin/conda"),
+            Path("/usr/local/anaconda/bin/conda"),
             Path("/usr/local/anaconda3/bin/conda"),
         ]
 
@@ -121,25 +144,37 @@ class BBResult(TypedDict):
 
 def _pick_rscript_command() -> list[str]:
     """
-    Determine cmd run with auto-discovery for Conda via conda run -n <env> Rscript  (auto-found conda.exe)
+    Determine command to run Rscript via:
+      conda run -n <env> Rscript
+
+    Conda executable is auto-discovered, or can be explicitly set via:
+      POPS_CONDA_EXE or CONDA_EXE environment variables.
     """
 
-    if CONDA_ENV_NAME:
-        conda_exe = _find_conda_exe()
-        if conda_exe:
-            return [str(conda_exe), "run", "-n", CONDA_ENV_NAME, "Rscript"]
-        else:
-            raise RuntimeError(
-                f"Could not locate conda executable automatically. "
-            )
+    if not CONDA_ENV_NAME:
+        raise RuntimeError(
+            "CONDA_ENV_NAME is not set. "
+            "Set POPS_R_CONDA_ENV to the name of a conda environment "
+            "that contains R and required packages."
+        )
 
-
-
+    conda_exe = _find_conda_exe()
+    if conda_exe:
+        return [str(conda_exe), "run", "-n", CONDA_ENV_NAME, "Rscript"]
 
     raise RuntimeError(
-        "Could not find Rscript. Ensure that...\n"
-        f" - CONDA_ENV_NAME is valid conda env with R installed (currently set as {CONDA_ENV_NAME} AND \n"
-        "  - Ensure the conda.exe is located in 'C:/Users/YOUR_USERNAME/AppData/Local/anaconda3/Scripts/conda.exe'\n"
+        "Could not locate the conda executable.\n\n"
+        "Tried:\n"
+        "  - POPS_CONDA_EXE environment variable\n"
+        "  - CONDA_EXE environment variable\n"
+        "  - conda on PATH\n"
+        "  - common Anaconda / Miniconda install locations\n\n"
+        "Fix one of the following:\n"
+        "  1) Run this command from an Anaconda Prompt\n"
+        "  2) Add conda to your PATH\n"
+        "  3) Set POPS_CONDA_EXE to your conda executable, e.g.:\n"
+        "       setx POPS_CONDA_EXE \"C:\\Users\\<you>\\miniconda3\\Scripts\\conda.exe\"\n\n"
+        f"Expected conda environment name: '{CONDA_ENV_NAME}'"
     )
 
 def _parse_json_from_r_stdout(stdout: str) -> dict[str, Any]:

@@ -1,3 +1,5 @@
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
 import pytest
 
 from popsborder.inputs import load_configuration_yaml_from_text

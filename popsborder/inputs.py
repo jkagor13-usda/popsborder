@@ -1,5 +1,30 @@
 # Simulation of contaminated consignments and their inspections
 # Copyright (C) 2018-2022 Vaclav Petras and others (see below)
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
+"""
+Modifications:
+- 10/3/2025: Modifications described below (Gary Lin)
+    New Functions Added
+    -------------------
+    - load_compliance_lookup_csv():
+        * Loads compliance level CSV files for RBS inspection workflows
+        * Parses country/material type combinations with associated detection and confidence levels
+        * Returns dictionary structure for efficient compliance level lookup during simulation
+
+    - load_input_consignment_data():
+        * Loads RBS calculator data for realistic consignment generation
+        * Supports various input formats (CSV, Excel) for consignment parameter specifications
+        * Integrates with synthetic data generation workflows for enhanced simulation realism
+    -------------------
+
+    Configuration Enhancements
+    --------------------------
+    - Enhanced configuration validation for new terminology (inspection_units vs boxes, sample_units vs items)
+    - Added backward compatibility parameter mapping throughout configuration loading
+    - Improved error handling and validation for RBS-specific configuration parameters
+    --------------------------
+"""
 
 # This program is free software; you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
@@ -18,31 +43,8 @@
 """Inputs, especially loading of configuration
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
-
-=====================================
-JHU/APL Extensions and Modifications:
-=====================================
-
-Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
-
-New Functions Added:
--------------------  
-- load_compliance_lookup_csv(): 
-    * Loads compliance level CSV files for RBS inspection workflows
-    * Parses country/material type combinations with associated detection and confidence levels
-    * Returns dictionary structure for efficient compliance level lookup during simulation
-
-- load_input_consignment_data():
-    * Loads RBS calculator data for realistic consignment generation
-    * Supports various input formats (CSV, Excel) for consignment parameter specifications
-    * Integrates with synthetic data generation workflows for enhanced simulation realism
-
-Configuration Enhancements:
---------------------------
-- Enhanced configuration validation for new terminology (inspection_units vs boxes, sample_units vs items)
-- Added backward compatibility parameter mapping throughout configuration loading
-- Improved error handling and validation for RBS-specific configuration parameters
-
+.. codeauthor:: Gary Lin <Gary.Lin jhuapl edu>
+.. codeauthor:: Joseph Agor <Joseph.Agor jhuapl edu>
 """
 
 import copy

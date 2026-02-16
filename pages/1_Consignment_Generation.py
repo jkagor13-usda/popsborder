@@ -1,3 +1,5 @@
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
 from pathlib import Path
 import itertools
 import re
@@ -219,6 +221,10 @@ config_ports = config.get("consignment", {}).get("parameter_based", {}).get("por
 config_materials = config.get("consignment", {}).get("parameter_based", {}).get("flowers", [])
 
 st.title("Page 1 - Consignment Generation")
+st.warning(
+    "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
+    "Features may be incomplete and subject to change. Results have not been validated.**"
+)
 st.caption(
     "Ingest curated RBS Calculator Data or define consignments from scratch. Both paths create the inputs needed for "
     "contamination fitting and simulation."

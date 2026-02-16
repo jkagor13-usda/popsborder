@@ -1,24 +1,9 @@
 # Simulation of contaminated consignments and their inspections
 # Copyright (C) 2018-2022 Vaclav Petras and others (see below)
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation; either version 2 of the License, or (at your option) any later
-# version.
+"""
 
-# This program is distributed in the hope that it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
-# details.
-
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
-
-
-"""Generating of various simulation outputs
-
-.. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
-.. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
 
 =====================================
 JHU/APL Extensions and Modifications:
@@ -53,6 +38,89 @@ Notes:
 - Enhanced configuration parameter handling for backward compatibility
 - Maintains support for legacy configuration while displaying updated terminology
 - All output functions now support both inspection_unit/sample_unit and box/item terminology
+
+
+
+
+
+
+
+Modifications:
+- 10/3/2025: Modeifications described below (Gary Lin and Joseph Agor)
+    Following New Classes Added
+    ------------------
+    - SimData:
+        * Class to store and write out all simulated data
+    ------------------
+
+    Following Functions Modified
+    ----------------
+    - pretty_header():
+        * Updated terminology in output headers from "Inspection Units" and "Sample Units"
+        * Maintains backward compatibility with both old and new terminology display
+
+    - pretty_consignment_inspection_units():
+        * Updated to handle refactored consignment structure with inspection_units terminology
+        * Enhanced display formatting for hierarchical inspection unit organization
+
+    - config_to_simplified_simulation_params():
+        * Added backward compatibility for configuration parameter mapping
+        * Handles cluster_sample_unit_width (formerly cluster_item_width) parameter conversion
+        * Updated within_inspection_unit_proportion (formerly within_box_proportion) handling
+        * Enhanced support for both old and new contamination_unit terminology
+
+    - print_totals_as_text():
+        * Updated output text to use new terminology (inspection_units, sample_units)
+        * Added backward compatibility for displaying both old and new unit terminology
+        * Enhanced reporting format for contamination and inspection statistics
+
+    - pretty_consignment_items():
+        * Renamed to pretty_consignment_sample_units()
+
+    - pretty_consignment_boxes():
+        * Renamed to pretty_consignment_inspection_units()
+
+    - pretty_consignment_boxes_only():
+        * Renamed to pretty_consignment_inspection_units_only()
+    ----------------
+
+    Terminology Refactoring
+    ----------------
+    - Systematically refactored: boxes -> inspection_units, items -> sample_units
+    - Updated all class names, method names, and variable names for consistency
+    - Added comprehensive backward compatibility for existing configurations
+    - Maintained dual access patterns for smooth migration from legacy terminology
+    ----------------
+
+    Backward Compatibility
+    ----------------
+    - Configuration parameter mapping: boxes -> inspection_units, items -> sample_units
+    - Legacy attribute access in Consignment class via __getattr__ and __hasattr__
+    - Support for both items_per_box and sample_units_per_inspection_unit configuration keys
+    - Maintained existing F280 and AQIM consignment generator functionality
+    ----------------
+"""
+
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation; either version 2 of the License, or (at your option) any later
+# version.
+
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+# details.
+
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
+
+
+"""Generating of various simulation outputs
+
+.. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
+.. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
+.. codeauthor:: Gary Lin <Gary.Lin jhuapl edu>
+.. codeauthor:: Joseph Agor <Joseph.Agor jhuapl edu>
 """
 
 import csv

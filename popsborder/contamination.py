@@ -1,5 +1,44 @@
 # Simulation of contaminated consignments and their inspections
 # Copyright (C) 2018-2022 Vaclav Petras and others (see below)
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
+"""
+Modifications:
+- 10/3/2025: Modified following functions (Gary Lin)
+    - add_contaminant_uniform_random():
+        * Added backward compatibility for contamination_unit parameter
+        * Maps old terminology: "box"/"boxes" -> "inspection_unit", "item"/"items" -> "sample_unit"
+        * Enhanced to support both inspection_unit and sample_unit level contamination
+        * Added plant-level contamination support with pooled contamination methodology
+
+    - add_contaminant_clusters():
+        * Updated contamination_unit parameter handling for backward compatibility
+        * Supports legacy "box"/"item" terminology while using new "inspection_unit"/"sample_unit" internally
+        * Enhanced clustering algorithms for hierarchical contamination patterns
+
+    - add_contaminant_clusters_to_sample_units():
+        * Added backward compatibility for cluster_sample_unit_width (formerly cluster_item_width)
+        * Updated to handle both old and new terminology in clustering configuration
+        * Enhanced plant-level contamination with percentage-based pooled contamination
+    - num_items_to_contaminate(): renamed to num_sample_units_to_contaminate()
+    - num_boxes_to_contaminate(): renamed to num_inspection_units_to_contaminate()
+
+- 10/28/2025: Added the following support function for new data-driven contamination procedure (Joseph Agor)
+    - calc_N_bar(): Calculates the average number of 'units' (e.g., plants)
+                               that are in each 'group' (e.g., inspection unit) for a given consignment.
+    - add_contaminant_beta_binomial_for_groups(): Beta-binomial contamination sampler where each 'group' is an inspection unit
+    - add_contaminant_beta_binomial(): Vectorized sampling functon for Beta-Binomial distribution
+    - contaminate_units_by_group(): Function to add contaminants to different "groups"
+
+- 10/28/2025:  Modified the following functions (Joseph Agor)
+    - num_items_to_contaminate():  Function was converted to num_units_to_contaminate() to generalize terminology and to
+                                   extend functionality of using the add_contaminant_beta_binomial() function
+    - add_contaminant_uniform_random():
+        * Added functionality to use the beta-binomial model from Clarke et. al. 2023 paper
+    - get_contaminant_function():
+        * Updated to include ability to contaminate using the beta-binomial approach
+        * Embedded logic from previously existing create_contaminant_function() into this function
+"""
 
 # This program is free software; you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
@@ -19,39 +58,10 @@
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
 .. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
-
-=====================================
-JHU/APL Extensions and Modifications:
-=====================================
-
-Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
-
-Modified Functions:
-------------------
-- add_contaminant_uniform_random():
-    * Added backward compatibility for contamination_unit parameter
-    * Maps old terminology: "box"/"boxes" -> "inspection_unit", "item"/"items" -> "sample_unit"
-    * Enhanced to support both inspection_unit and sample_unit level contamination
-    * Added plant-level contamination support with pooled contamination methodology
-    * Added functionality to use the beta-binomial model from Clarke et. al. 2023 paper
-
-- add_contaminant_clusters():
-    * Updated contamination_unit parameter handling for backward compatibility
-    * Supports legacy "box"/"item" terminology while using new "inspection_unit"/"sample_unit" internally
-    * Enhanced clustering algorithms for hierarchical contamination patterns
-
-- add_contaminant_clusters_to_sample_units():
-    * Added backward compatibility for cluster_sample_unit_width (formerly cluster_item_width)
-    * Updated to handle both old and new terminology in clustering configuration
-    * Enhanced plant-level contamination with percentage-based pooled contamination
-
-Notes:
-------
-- Updated contamination_unit parameter mapping throughout contamination functions
-- All contamination functions now support both legacy and new terminology
-- Enhanced support for hierarchical contamination at inspection_unit, sample_unit, and plant levels
-- Maintains full backward compatibility with existing contamination configuration files
+.. codeauthor:: Gary Lin <Gary.Lin jhuapl edu>
+.. codeauthor:: Joseph Agor <Joseph.Agor jhuapl edu>
 """
+
 
 import math
 import random
@@ -341,7 +351,7 @@ def get_contamination_rate(config):
 
 
 def num_units_to_contaminate(config, num_units):
-    """Return number of sample_units to be contaminated
+    """Return number of plant units to be contaminated
     Rounds up or down to nearest integer.
 
     Config is the ``contamination_rate`` dictionary.

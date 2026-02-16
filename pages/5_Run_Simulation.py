@@ -1,3 +1,5 @@
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
 from pathlib import Path
 
 import pandas as pd
@@ -26,6 +28,10 @@ TMP_DIR = Path("tmp")
 
 
 st.title("Page 5 - Run Simulation")
+st.warning(
+    "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
+    "Features may be incomplete and subject to change. Results have not been validated.**"
+)
 st.caption("Execute the slippage pipeline and compare policies based on slippage metrics.")
 
 with st.sidebar:

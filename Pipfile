@@ -13,7 +13,7 @@ matplotlib = "*"
 seaborn = "*"
 
 [packages]
-popsborder = {editable = true, path = "."}
+popsborder = {editable = true, path = ".", extras = ["gui"]}
 ipykernel = "*"
 matplotlib = "*"
 

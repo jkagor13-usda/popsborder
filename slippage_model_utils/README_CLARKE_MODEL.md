@@ -1,3 +1,4 @@
+_© 2026 The Johns Hopkins University Applied Physics Laboratory LLC_
 # Using Updated Contamination Parameterization via Clarke Model
 
 ## Overview
@@ -21,7 +22,8 @@ The setup is designed to work automatically on both **full Anaconda** and **Mini
 
 ### 1. Install Conda
 #### Option A — Full Anaconda (recommended for developers)
-If you already have Anaconda installed, open **Anaconda Prompt** and verify:
+If you already have Anaconda installed, open **Anaconda Prompt** 
+(by searching for "_Anaconda Prompt_") and verify:
 ```powershell
 conda --version
 ```
@@ -77,8 +79,12 @@ Next, retrieve the repository url.
 - Navigate to the repository page in your browser.
 - Look for a button or tab labeled “Code”, “Clone”, or “Clone or download.”
 - Click the copy icon next to the HTTPS (or SSH) URL.
-- Open a command line prompt and navigate to the folder/directory created above.
-- Use that copied link to replace `%repository_url%` in the command below (remove the `%` signs)
+- Open a command line prompt (by searching for "_cmd_")
+- Navigate to the folder/directory created above
+  - If on Windows, when you open the command prompt, you should see `C:\Users\username1>`
+  - You can then enter command `cd plant-inspection-station-simulation` 
+  which will put you in the example directory created above.
+- Use that copied link to replace `%REPOSITORY_URL%` in the command below (remove the `%` signs)
 
 ```powershell
 git clone %REPOSITORY_URL%
@@ -91,29 +97,38 @@ plant-inspection-station-simulation\slippage_model_utils\clarke_bb_model.R
 
 ---
 
-### 4. Create a Python Virtual Environment and Install Requirements
+### 4. Create a Python Environment (pipenv) and Install Requirements
 
-Note:  If you have one already installed, then skip this step.
+Note:  If you have one already installed via `pipenv install`, then skip this step.
 
 ```powershell
-py -m venv .venv
+pip install pipenv
+$env:PIP_DEFAULT_TIMEOUT="300
+pipenv install
 ```
-
-You can also create the environment using conda:
- - Open the Anaconda prompt
- - Navigate to the directory to where your repo is cloned
- - Check your python version:  `python --version`
- - Create the environment: `conda create -n venv python=XXX anaconda` where "XXX" represents the version number
- - Activate the environment: `conda activate venv`
+To install developer tools (pytest, linting, etc.), 
+run `pipenv install --dev` in place of `pipenv install`
 
 
 ---
-### 5. Activate your Virtual Environment, Upgrade Pip, Install Requirements
+### 5. (Only if needed) Configure Conda Discovery / Environment Name
 
-- Activate the environment (if not done via conda): `.\.venv\Scripts\activate`
-- Upgrade pip: `python -m pip install --upgrade pip`
-- Install requirements:  `pip install -r requirements.txt --timeout=10000`
+There is an R wrapper which attempts to auto-locate
+the conda executable from common Anaconda/Miniconda install locations and from PATH.
 
+If conda is installed in a non-standard location, set an explicit override:
+
+- Set conda executable path (PowerShell session):
+
+```powershell
+$env:POPS_CONDA_EXE="C:%INSERT PATH TO%...\Miniconda3\Scripts\conda.exe"
+```
+
+- Override the conda environment name (default is `rbb`):
+
+```powershell
+$env:POPS_R_CONDA_ENV="rbb"
+```
 
 ---
 
@@ -127,7 +142,7 @@ You should see `Rscript is alive`.
 Next, verify Python can import the wrapper.  
 From either **Anaconda Prompt** or from terminal/cmd line, run:
 ```powershell
-python -c "from slippage_model_utils.clarke_r_script_wrapper import run_clarke_bb_group_model as run; print('Wrapper imported successfully')"
+pipenv run python -c "from slippage_model_utils.clarke_r_script_wrapper import run_clarke_bb_group_model as run; print('Wrapper imported successfully')"
 ```
 
 You should see `Wrapper imported successfully`.
@@ -141,14 +156,53 @@ in the `plant-inspection-station-simulation` git repository.
 ---
 
 ## Notes for Developers
-- The wrapper uses `conda run -n rbb` to ensure consistent R environments across systems.
-- JSON payloads are passed as command-line arguments; for large payloads, consider refactoring to use temp files.
-- The R output must end with a valid JSON object.
+- The wrapper uses conda run -n <env> to ensure consistent R environments across systems.
+- The conda executable can be overridden using POPS_CONDA_EXE (or CONDA_EXE if set by conda). 
+- The conda environment name can be overridden using POPS_R_CONDA_ENV. 
+- JSON payloads are passed as command-line arguments; for large payloads, consider refactoring to use temporary files. 
+- The R output must end with a valid JSON object for the wrapper to parse it reliably.
+
+---
+
+## Troubleshooting
+
+**“Could not locate the conda executable”**
+
+Fix one of the following:
+
+- Run the test commands from Anaconda Prompt 
+- Ensure conda is on PATH 
+- Set:
+
+```powershell
+setx POPS_CONDA_EXE "C:\Path\To\...\Scripts\conda.exe"
+```
 
 
+**"R environment not found (“EnvironmentNameNotFound”)"**
+
+Confirm the env exists:
+```powershell
+conda env list
+```
+
+
+
+If needed, recreate:
+```powershell
+conda create -n rbb -c conda-forge r-base r-jsonlite r-rmpfr -y
+```
+
+
+**"Wrapper cannot find `clarke_bb_model.R`"**
+
+Confirm the file exists at:
+```powershell
+dir .\slippage_model_utils\clarke_bb_model.R
+```
 
 ---
 
 **Maintainer:** Joseph Agor (joseph.agor@jhuapl.edu)
 
-**Last updated:** October 2025
+**Last updated:** December 2025

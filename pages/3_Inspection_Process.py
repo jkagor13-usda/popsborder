@@ -1,3 +1,5 @@
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
 from pathlib import Path
 from typing import Optional
 import shutil
@@ -55,6 +57,10 @@ def _pick_compliance_column(df: pd.DataFrame) -> Optional[str]:
 
 
 st.title("Page 3 - Inspection Process")
+st.warning(
+    "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
+    "Features may be incomplete and subject to change. Results have not been validated.**"
+)
 st.caption(
     "Ingest the compliance lookup table, configure low/medium/high types, and review RBS parameters."
 )
