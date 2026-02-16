@@ -30,3 +30,10 @@ class BoxPaths:
 
     def rbs_calc_data(self) -> Path:
          return self.shared_ppq_data() / "PIS_RBS_calculator.xlsx"
+
+    def validation_data(self) -> Path:
+        primary_path = self.shared_ppq_data() / "APL Created Data Related Items" / "Joe Data Analysis" / "validation_data"
+        if primary_path.exists():
+            return primary_path
+        else:
+            raise FileNotFoundError("No path found to use as the PPQ Data Folder")
