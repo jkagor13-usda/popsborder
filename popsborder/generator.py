@@ -732,9 +732,34 @@ class SyntheticConsignmentDataGenerator:
         return sampled_df
 
     def sequential_multinomial_sample(self, df, columns, n_consignments=1, random_state=None):
-        """Sequential sampling to preserve conditional dependencies, with
-        n_consignments unique INSPECTION_NUMBER values and a computed number
-        of rows per inspection via identify_num_inspection_units.
+        """Generate synthetic rows using sequential conditional multinomial sampling.
+
+        The sampler builds each synthetic inspection in layers:
+        1. Sample an inspection location.
+        2. Sample how many risk units should appear in that inspection.
+        3. For each risk unit, choose a conditional base subset
+           (Miami vs Non-Miami logic), optionally pin a specific RISK_UNIT value,
+           then sample how many rows that risk unit contributes.
+        4. For each row, sample remaining columns sequentially, conditioning each
+           next column on prior sampled values by filtering the working subset.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Source data used to estimate empirical distributions.
+        columns : list[str]
+            Requested output columns. `INSPECTION_NUMBER` is used internally and
+            only retained in output if explicitly requested.
+        n_consignments : int, default=1
+            Number of synthetic inspections to generate.
+        random_state : int | None, default=None
+            Seed passed to NumPy random sampling for reproducibility.
+
+        Returns
+        -------
+        pd.DataFrame
+            Synthetic dataset with requested columns, preserving conditional
+            structure from observed data where possible.
         """
         np.random.seed(random_state)
         risk_unit_col = "RISK_UNIT"
@@ -744,18 +769,22 @@ class SyntheticConsignmentDataGenerator:
 
         # Make sure INSPECTION_NUMBER is represented
         inspection_col = "INSPECTION_NUMBER"
+        include_inspection_col_in_output = inspection_col in columns
         if inspection_col not in columns:
             columns = [inspection_col] + list(columns)
 
         risk_unit_number_col = "RISK_UNIT_NUMBER"
-        if risk_unit_number_col not in columns:
+        include_risk_unit_number_in_output = risk_unit_number_col in columns
+        if include_risk_unit_number_in_output and risk_unit_number_col not in columns:
             columns = [risk_unit_number_col] + list(columns)
 
+        # Empirical location sampler P(location) from observed frequencies.
         def sample_location():
             values, counts = np.unique(df['INSPECTION_LOCATION_NAME'], return_counts=True)
             probs = counts / counts.sum()
             return np.random.choice(values, p=probs)
 
+        # Sample a conditional key for a case, optionally constrained to one location.
         def pick_key(case, fixed_location=None):
             key = self.sample_random_key(case=case)
             if fixed_location is None:
@@ -764,6 +793,7 @@ class SyntheticConsignmentDataGenerator:
                 key = self.sample_random_key(case=case)
             return key
 
+        # Build the base sample + subset that subsequent column sampling conditions on.
         def build_base(chosen_location, fixed_location):
             base_sample = {'INSPECTION_LOCATION_NAME': chosen_location}
             is_miami = chosen_location == 'Miami PIS'
@@ -796,14 +826,10 @@ class SyntheticConsignmentDataGenerator:
 
         samples = []
         for ins_id in inspection_ids:
-            # First Sample the PIS
+            # 1) Sample top-level inspection location.
             chosen_location = sample_location()
 
-            # Sample a number of inspections to occur from a generated PMF
-            # This function will filter start from original input data, filter
-            # out 'SAMPLING_UNITS_FOR_INSPECTION_UNIT' rows that are 0, N/A, or None,
-            # generate a pmf over the distribution of the rows over the unique Inspection Numbers,
-            # and sample from that pmf fitted distribution
+            # 2) Sample number of risk units in this inspection from location-specific PMF.
             num_risk_units = self.sample_num_rows_from_location_pmf(
                 df,
                 location_name=chosen_location,
@@ -814,7 +840,7 @@ class SyntheticConsignmentDataGenerator:
 
             fixed_pis_location = None
 
-            # For each risk unit under this inspection
+            # 3) Generate each risk unit under this inspection.
             for risk_unit_number in range(num_risk_units):
                 base_sample, base_subset, cols_to_remove, fixed_pis_location = build_base(
                     chosen_location=chosen_location,
@@ -822,8 +848,9 @@ class SyntheticConsignmentDataGenerator:
                 )
 
                 # Assign a synthetic risk unit number per inspection
-                base_sample[risk_unit_number_col] = f"RU_{ins_id}_{risk_unit_number}"
-                cols_to_remove = cols_to_remove + [risk_unit_number_col]
+                if include_risk_unit_number_in_output:
+                    base_sample[risk_unit_number_col] = f"RU_{ins_id}_{risk_unit_number}"
+                    cols_to_remove = cols_to_remove + [risk_unit_number_col]
 
                 # Set a consistent risk unit value for this risk unit
                 if risk_unit_col in df.columns:
@@ -843,7 +870,7 @@ class SyntheticConsignmentDataGenerator:
                     risk_unit_col="RISK_UNIT",
                 )
 
-                # For each row under this risk unit
+                # 4) Generate each row belonging to this risk unit.
                 for _ in range(num_rows_for_risk_unit):
                     subset = base_subset
                     sample = dict(base_sample)
@@ -893,6 +920,12 @@ class SyntheticConsignmentDataGenerator:
 
         # Optional: enforce column order to match `columns`
         sampled_df = sampled_df[[c for c in columns if c in sampled_df.columns]]
+
+        # Keep helper columns out of final output unless requested.
+        if not include_inspection_col_in_output and inspection_col in sampled_df.columns:
+            sampled_df = sampled_df.drop(columns=[inspection_col])
+        if not include_risk_unit_number_in_output and risk_unit_number_col in sampled_df.columns:
+            sampled_df = sampled_df.drop(columns=[risk_unit_number_col])
 
         return sampled_df
 
@@ -1196,9 +1229,27 @@ class SyntheticConsignmentDataGenerator:
         # Define columns to use for sampling
         available_cols = self.input_data.columns.tolist()
         target_cols = [col for col in available_cols if col in [
-            'INSPECTION_NUMBER', 'INSPECTION_LOCATION_NAME', 'PATHWAY',
-            'COUNTRY_OF_ORIGIN_NAME', 'PROPAGATIVE_MATERIAL_TYPE',
-            'SAMPLING_UNITS_FOR_INSPECTION_UNIT', 'TOTAL_PLANT_QUANTITY', 'PRODUCER_NAME'
+            'NSPECTION_ID',  # included for compatibility with requested spelling
+            'INSPECTION_ID',
+            'INSPECTION_NUMBER',
+            'COMMODITY_COMMON_NAME',
+            'COUNTRY_OF_ORIGIN_NAME',
+            'PRODUCER_NAME',
+            'PROPAGATIVE_MATERIAL_TYPE',
+            'QUANTITY',
+            'BROKER_NAME',
+            'INSPECTION_LOCATION_NAME',
+            'PATHWAY',
+            'SHIPPER_NAME',
+            'TAXONOMY_ORDER',
+            'TAXONOMY_FAMILY',
+            'TAXONOMY_GENUS',
+            'TAXONOMY_SPECIES',
+            'action',
+            'RISK_UNIT',
+            'TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT',
+            'SAMPLING_UNITS_FOR_INSPECTION_UNIT',
+            'REQUIRED_NUMBER_OF_BOXES',
         ]]
         
         if not target_cols:
