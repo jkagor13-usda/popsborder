@@ -12,6 +12,7 @@ import pandas as pd
 from popsborder.scenarios import run_scenarios
 from popsborder.inputs import load_configuration, load_scenario_table, load_compliance_lookup_csv
 from popsborder.outputs import save_scenario_result_to_pandas
+from popsborder.outputs import save_inspection_unit_detection_records_to_csv
 from popsborder.generator import SyntheticConsignmentDataGenerator, save_to_csv
 from popsborder.consignments import get_consignment_generator
 
@@ -211,6 +212,21 @@ def main():
                                                 result_columns=result_columns)
     results_df.to_csv(output_dir / "pis_contamination_scenario_results2.csv", index=False)
     print("Results saved to output/pis_contamination_scenario_results2.csv")
+
+    if detailed_bool:
+        inspection_unit_records = []
+        for details, _, scenario_config in scenario_results_raw:
+            if len(details) >= 3:
+                for row in details[2]:
+                    row_with_scenario = dict(row)
+                    row_with_scenario["scenario_name"] = scenario_config.get("name")
+                    inspection_unit_records.append(row_with_scenario)
+        if inspection_unit_records:
+            save_inspection_unit_detection_records_to_csv(
+                inspection_unit_records,
+                output_dir / "inspection_unit_detection_records.csv",
+            )
+            print("Results saved to output/inspection_unit_detection_records.csv")
     print('')
 
 if __name__ == "__main__":
