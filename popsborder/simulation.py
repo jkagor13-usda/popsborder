@@ -65,7 +65,7 @@ import sys
 
 from . import consignments
 from .consignments import get_consignment_generator
-from .contamination import get_contaminant_function
+from .contamination import get_contaminant_function, synchronize_contamination_arrays_from_plants
 from .inspections import (
     consignment_contamination_rate,
     get_sample_function,
@@ -163,6 +163,7 @@ def simulation(
             print(f"   Generated consignment with {consignment.num_inspection_units} inspection units and {consignment.num_sample_units} sample units")
             print("   Starting contamination...")
             add_contaminant(consignment)
+            synchronize_contamination_arrays_from_plants(consignment)
             print("   Finished contamination.")
             total_contaminated_units = 0
             total_contaminated_inspection_units = 0

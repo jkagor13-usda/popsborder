@@ -384,6 +384,38 @@ def num_inspection_units_to_contaminate(config, num_inspection_units):
     return contaminated_inspection_units
 
 
+def synchronize_contamination_arrays_from_plants(consignment):
+    """Synchronize sample-unit and plant arrays to match plant-level contamination truth."""
+    if not hasattr(consignment, "inspection_units"):
+        return
+
+    global_sample_unit_idx = 0
+    global_plant_idx = 0
+    has_global_sample_units = hasattr(consignment, "sample_units") and consignment.sample_units is not None
+    has_global_plants = hasattr(consignment, "plants") and consignment.plants is not None
+
+    for inspection_unit in consignment.inspection_units:
+        sample_unit_objects = getattr(inspection_unit, "sample_unit_objects", [])
+        for local_su_idx, sample_unit_object in enumerate(sample_unit_objects):
+            contaminated_plants_in_sample_unit = int(np.count_nonzero(sample_unit_object.plants))
+
+            if hasattr(inspection_unit, "sample_units") and local_su_idx < len(inspection_unit.sample_units):
+                inspection_unit.sample_units[local_su_idx] = contaminated_plants_in_sample_unit
+
+            if has_global_sample_units and global_sample_unit_idx < len(consignment.sample_units):
+                consignment.sample_units[global_sample_unit_idx] = contaminated_plants_in_sample_unit
+            global_sample_unit_idx += 1
+
+            if has_global_plants:
+                plant_values = np.asarray(sample_unit_object.plants, dtype=np.int64)
+                n_plants = len(plant_values)
+                end_idx = min(global_plant_idx + n_plants, len(consignment.plants))
+                write_n = end_idx - global_plant_idx
+                if write_n > 0:
+                    consignment.plants[global_plant_idx:end_idx] = plant_values[:write_n]
+                global_plant_idx += n_plants
+
+
 def add_contaminant_uniform_random(config, consignment):
     """Add contaminants to consignment using uniform random distribution
 
