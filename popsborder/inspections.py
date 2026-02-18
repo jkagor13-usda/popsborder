@@ -594,6 +594,13 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     # pylint: disable=too-many-branches,too-many-nested-blocks
 
     
+    # Detection is inspection-outcome state, so reset for each inspect() call.
+    for inspection_unit in consignment.inspection_units:
+        if hasattr(inspection_unit, "reset_detection"):
+            inspection_unit.reset_detection()
+        elif hasattr(inspection_unit, "is_detected"):
+            inspection_unit.is_detected = False
+
     unit = config["inspection"]["unit"]
     selection_strategy = config["inspection"]["selection_strategy"]
     sample_strategy = config["inspection"]["sample_strategy"]
@@ -675,6 +682,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                     if os.environ.get("SLIPPAGE_DEBUG_INSPECTION"):
                         print(f"Inspecting sample unit {sample_unit_index}")
                     if inspect_sample_unit(consignment.sample_units[sample_unit_index], effectiveness):
+                        consignment.inspection_units[iu_idx].is_detected = True
                         # Count every contaminated sample_unit in sample
                         ret.contaminated_sample_units_completion += 1
                         if not detected:
@@ -750,6 +758,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                         if not detected:
                             ret.sample_units_inspected_detection += 1
                         if inspect_sample_unit(sample_unit, effectiveness):
+                            consignment.inspection_units[inspection_unit_index].is_detected = True
                             # Count all contaminated sample_units in sample, regardless of
                             # detected variable
                             ret.contaminated_sample_units_completion += 1
@@ -785,6 +794,8 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                             math.floor(sample_unit_index / sample_units_per_inspection_unit)
                         )
                     if inspect_sample_unit(consignment.sample_units[sample_unit_index], effectiveness):
+                        iu_idx = math.floor(sample_unit_index / sample_units_per_inspection_unit)
+                        consignment.inspection_units[iu_idx].is_detected = True
                         # Count every contaminated sample_unit in sample
                         ret.contaminated_sample_units_completion += 1
                         if not detected:
@@ -825,6 +836,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                     if not detected:
                         ret.sample_units_inspected_detection += 1
                     if inspect_sample_unit(sample_unit, effectiveness):
+                        consignment.inspection_units[inspection_unit_index].is_detected = True
                         # Count every contaminated sample_unit in sample
                         ret.contaminated_sample_units_completion += 1
                         # If first contaminated inspection_unit inspected,

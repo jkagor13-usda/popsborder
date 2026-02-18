@@ -1,34 +1,52 @@
+# Simulation of contaminated consignments and their inspections
+# Copyright (C) 2018-2022 Vaclav Petras and others (see below)
 # © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
-"""Synthetic consignment data generation
+# Modifications:
+# 
+# - 2/17/2026 – 
+# New Classes Added:
+# SyntheticConsignmentDataGenerator:
+#     * Generates synthetic consignment data for testing and simulation purposes
+#     * Creates realistic consignment records with randomized attributes
+#     * Uses advanced sampling techniques including Gaussian copulas
+#     * Supports multiple sampling methods: naive, sequential, GMM, gaussian_copula
+#     * Integrates with real PIS data for training synthetic data generation
 
-Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
+# Sampling Methods Implemented:
+# ----------------------------
+# - multinomial_sample(): Naive approach sampling each column independently
+# - sequential_multinomial_sample(): Sequential sampling preserving conditional dependencies
+# - gmm_sample(): Gaussian Mixture Model sampling for numeric columns
+# - gaussian_copula_sample(): Category-conditional Gaussian copula preserving correlations
 
-New Classes Added:
-------------------
-- SyntheticConsignmentDataGenerator:
-    * Generates synthetic consignment data for testing and simulation purposes
-    * Creates realistic consignment records with randomized attributes
-    * Uses advanced sampling techniques including Gaussian copulas
-    * Supports multiple sampling methods: naive, sequential, GMM, gaussian_copula
-    * Integrates with real PIS data for training synthetic data generation
+# Data Generation Features:
+# ------------------------
+# - Configurable consignment attributes (origins, ports, pathways, commodities)
+# - Propagative material and flower commodity support
+# - Contamination modeling with configurable probability and quantities
+# - Quality metrics calculation comparing original and synthetic data
+# - Multiple output formats (CSV, JSON) with comprehensive statistics
 
-Sampling Methods Implemented:
-----------------------------
-- multinomial_sample(): Naive approach sampling each column independently
-- sequential_multinomial_sample(): Sequential sampling preserving conditional dependencies
-- gmm_sample(): Gaussian Mixture Model sampling for numeric columns
-- gaussian_copula_sample(): Category-conditional Gaussian copula preserving correlations
+# This program is free software; you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation; either version 2 of the License, or (at your option) any later
+# version.
 
-Data Generation Features:
-------------------------
-- Configurable consignment attributes (origins, ports, pathways, commodities)
-- Propagative material and flower commodity support
-- Contamination modeling with configurable probability and quantities
-- Quality metrics calculation comparing original and synthetic data
-- Multiple output formats (CSV, JSON) with comprehensive statistics
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+# details.
+
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
+
 """
-
+.. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
+.. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
+.. codeauthor:: Gary Lin (Johns Hopkins University Applied Physics Laboratory) 
+.. codeauthor:: Joseph Agor (Johns Hopkins University Applied Physics Laboratory) 
+"""
 
 import csv
 import json

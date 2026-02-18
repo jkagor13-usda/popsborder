@@ -32,8 +32,8 @@ def main():
     config_file = data_dir / "config.yml"
     compliance_file = data_dir / "compliance_table.csv"
     scenario_file = data_dir / "test_scenario.csv"
-    pis_data_updated = shared_ppq_data_path / 'updated_pis_data.csv'  # PIS data
-    # pis_data_updated = data_dir / "TEST_PIS_SampleQuantity.csv"       # Test data
+    # pis_data_updated = shared_ppq_data_path / 'updated_pis_data.csv'  # PIS data
+    pis_data_updated = data_dir / "TEST_PIS_SampleQuantity.csv"       # Test data
 
 
     # Load configuration and compliance table

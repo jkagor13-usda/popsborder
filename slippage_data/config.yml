@@ -52,7 +52,7 @@ consignment:
       - Seattle PIS
   input_file:
     file_type: PIS
-    file_name: slippage_data/synthetic_pis_data.csv
+    file_name: slippage_data/Syntehtic_PIS_SampleQuantity.csv
 contamination:
   contamination_unit: sample_unit
   contamination_rate:

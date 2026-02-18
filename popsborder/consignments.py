@@ -122,6 +122,10 @@ class RiskUnit:
 
     def __init__(self,
                  sample_units,
+                 risk_unit_id=None,
+                 sample_unit_ids=None,
+                 inspection_unit_ids=None,
+                 plant_ids=None,
                  material_type=None,
                  producer=None,
                  origin=None,
@@ -134,7 +138,13 @@ class RiskUnit:
         :param producer: Producer name for this inspection unit
         """
         self.sample_units = sample_units
-        self.sample_unit_objects = []  # For hierarchical structure - list of SampleUnit objects
+        self.id = risk_unit_id
+        self.sample_unit_ids = sample_unit_ids if sample_unit_ids is not None else []
+        self.inspection_unit_ids = (
+            inspection_unit_ids if inspection_unit_ids is not None else []
+        )
+        self.plant_ids = plant_ids if plant_ids is not None else []
+        self.inspection_unit_objects = []  # For hierarchical structure - list of SampleUnit objects
         self.material_type = material_type
         self.producer = producer
         self.origin = origin
@@ -148,6 +158,11 @@ class RiskUnit:
             return self.sample_units.shape[0]
         else:
             return len(self.sample_units)
+
+    @property
+    def N_for_hypergeom(self):
+        """Population size N used by hypergeometric sampling (fixed to sample unit count)."""
+        return len(self.sample_unit_ids) if self.sample_unit_ids else self.num_sample_units
 
     def __bool__(self):
         if isinstance(self.sample_units, np.ndarray):
@@ -158,50 +173,123 @@ class RiskUnit:
 
 
 class InspectionUnit:
-    """Inspection unit (formerly Box)
+    """Inspection unit with fixed hierarchy support.
 
-    Evaluates to bool when it contains contaminant.
-
-    InspectionUnit is a view into array of sample_units, i.e. a slice of that array. The
-    assumption is that the original, and possibly modifed, sample_units can not
-    only be accessed but also modifed through the InspectionUnit.
+    Supported shapes:
+    - one RiskUnit (which holds SampleUnit data)
+    - multiple SampleUnit objects
+    - one SampleUnit object
     """
 
     def __init__(self,
-                 sample_units,
+                 included_units=None,
                  material_type=None,
                  producer=None,
                  origin=None,
                  port=None,
-                 pathway=None):
-        """Store reference to associated sample_units
+                 pathway=None,
+                 inspection_unit_id=None,
+                 risk_unit=None,
+                 risk_unit_ids=None,
+                 sample_units=None,
+                 sample_unit=None,
+                 sample_unit_ids=None,
+                 plant_ids=None,
+                 action_status="pending",
+                 is_detected=False):
+        """Store references to fixed-hierarchy unit collections."""
+        if included_units is None and sample_units is not None:
+            included_units = sample_units
+        if included_units is None and sample_unit is not None:
+            included_units = [sample_unit]
+        if included_units is None:
+            included_units = []
 
-        :param sample_units: Array-like object of sample_units
-        :param material_type: Material type for this inspection unit
-        :param producer: Producer name for this inspection unit
-        """
-        self.sample_units = sample_units
-        self.sample_unit_objects = []  # For hierarchical structure - list of SampleUnit objects
+        self.included_units = included_units
+        self._included_unit_objects = []
+        self.id = inspection_unit_id
+
         self.material_type = material_type
         self.producer = producer
         self.origin = origin
         self.port = port
         self.pathway = pathway
 
+        # Fixed hierarchy anchors.
+        self.risk_unit = risk_unit
+        self.risk_unit_ids = risk_unit_ids if risk_unit_ids is not None else []
+        self.sample_unit = sample_unit
+        self.sample_unit_ids = sample_unit_ids if sample_unit_ids is not None else []
+        self.plant_ids = plant_ids if plant_ids is not None else []
+        self.action_status = action_status
+        self.is_detected = bool(is_detected)
+
+        # Backward-compatible aliases used throughout this file.
+        self.sample_units = included_units
+        self.sample_unit_objects = self._included_unit_objects
+
+    @property
+    def num_included_units(self):
+        """Number of primary units held by this container."""
+        if hasattr(self.included_units, "shape"):
+            return self.included_units.shape[0]
+        return len(self.included_units)
+
+    @property
+    def sample_units_per_inspection_unit(self):
+        """Backward-compatible size accessor used by legacy logic."""
+        if self.risk_unit is not None:
+            return self.risk_unit.num_sample_units
+        if self._included_unit_objects:
+            return len(self._included_unit_objects)
+        if self.sample_unit is not None:
+            return 1
+        return self.num_included_units
+
     @property
     def num_sample_units(self):
-        """Number of sample_units in the InspectionUnit"""
-        if hasattr(self.sample_units, 'shape'):
-            return self.sample_units.shape[0]
-        else:
-            return len(self.sample_units)
+        """Backward-compatible alias used by contamination logic."""
+        return self.sample_units_per_inspection_unit
+
+    @property
+    def included_unit_objects(self):
+        return self._included_unit_objects
+
+    @included_unit_objects.setter
+    def included_unit_objects(self, units):
+        self._included_unit_objects = units
+
+    @property
+    def sample_unit_objects(self):
+        return self._included_unit_objects
+
+    @sample_unit_objects.setter
+    def sample_unit_objects(self, units):
+        self._included_unit_objects = units
 
     def __bool__(self):
-        if isinstance(self.sample_units, np.ndarray):
-            return bool(np.any(self.sample_units > 0))
-        else:
-            # Assuming it's a list of SampleUnit objects
-            return any(bool(su) for su in self.sample_units)
+        # Prefer deepest hierarchy checks (sample_unit -> plants) when available.
+        if self.risk_unit is not None:
+            if hasattr(self.risk_unit, "inspection_unit_objects") and self.risk_unit.inspection_unit_objects:
+                return any(bool(sample_unit) for sample_unit in self.risk_unit.inspection_unit_objects)
+            return bool(self.risk_unit)
+        if self.sample_unit is not None:
+            return bool(self.sample_unit)
+        if self._included_unit_objects:
+            return any(bool(sample_unit) for sample_unit in self._included_unit_objects)
+        if isinstance(self.included_units, np.ndarray):
+            return bool(np.any(self.included_units > 0))
+        return any(bool(unit) for unit in self.included_units)
+
+    @property
+    def is_infected(self):
+        return bool(self)
+
+    def reset_detection(self):
+        self.is_detected = False
+
+    def mark_detected(self):
+        self.is_detected = True
 
 
 class SampleUnit:
@@ -216,6 +304,10 @@ class SampleUnit:
 
     def __init__(self,
                  plants=None,
+                 sample_unit_id=None,
+                 risk_unit_id=None,
+                 inspection_unit_id=None,
+                 plant_ids=None,
                  producer=None,
                  origin=None,
                  port=None,
@@ -226,6 +318,10 @@ class SampleUnit:
         :param producer: Producer name for this sample unit
         """
         self.plants = plants
+        self.id = sample_unit_id
+        self.risk_unit_id = risk_unit_id
+        self.inspection_unit_id = inspection_unit_id
+        self.plant_ids = plant_ids if plant_ids is not None else []
         self.producer = producer
         self.origin = origin
         self.port = port
@@ -234,10 +330,18 @@ class SampleUnit:
     @property
     def num_plants(self):
         """Number of plants in the Sample Unit"""
-        return self.plants.shape[0]
+        if self.plants is None:
+            return 0
+        return self.plants.shape[0] if hasattr(self.plants, "shape") else len(self.plants)
 
     def __bool__(self):
+        if self.plants is None:
+            return False
         return bool(np.any(self.plants > 0))
+
+    @property
+    def is_infected(self):
+        return bool(self)
 
 
 class Consignment(collections.UserDict):
@@ -270,6 +374,12 @@ class Consignment(collections.UserDict):
         inspection_number=None,
         producer=None,
         risk_units=None,
+        sample_unit_objects=None,
+        risk_unit_to_inspection_units=None,
+        inspection_unit_to_risk_units=None,
+        risk_unit_to_sample_units=None,
+        sample_unit_to_inspection_unit=None,
+        plant_unit_to_inspection_unit=None,
     ):
         """Store reference to associated attributes
 
@@ -304,6 +414,12 @@ class Consignment(collections.UserDict):
             inspection_number=inspection_number,
             producer=producer,
             risk_units=risk_units,
+            sample_unit_objects=sample_unit_objects,
+            risk_unit_to_inspection_units=risk_unit_to_inspection_units,
+            inspection_unit_to_risk_units=inspection_unit_to_risk_units,
+            risk_unit_to_sample_units=risk_unit_to_sample_units,
+            sample_unit_to_inspection_unit=sample_unit_to_inspection_unit,
+            plant_unit_to_inspection_unit=plant_unit_to_inspection_unit,
         )
         self.num_sample_units = num_sample_units
         self.sample_units = sample_units
@@ -321,6 +437,63 @@ class Consignment(collections.UserDict):
         self.inspection_number = inspection_number
         self.producer = producer
         self.risk_units = risk_units
+        self.sample_unit_objects = (
+            sample_unit_objects if sample_unit_objects is not None else []
+        )
+        self.risk_unit_to_inspection_units = (
+            risk_unit_to_inspection_units if risk_unit_to_inspection_units is not None else {}
+        )
+        self.inspection_unit_to_risk_units = (
+            inspection_unit_to_risk_units if inspection_unit_to_risk_units is not None else {}
+        )
+        self.risk_unit_to_sample_units = (
+            risk_unit_to_sample_units if risk_unit_to_sample_units is not None else {}
+        )
+        self.sample_unit_to_inspection_unit = (
+            sample_unit_to_inspection_unit if sample_unit_to_inspection_unit is not None else {}
+        )
+        self.plant_unit_to_inspection_unit = (
+            plant_unit_to_inspection_unit if plant_unit_to_inspection_unit is not None else {}
+        )
+        self._build_hierarchy_indexes()
+
+    def _build_hierarchy_indexes(self):
+        """Build hierarchy maps when explicit maps are not provided."""
+        if not self.sample_unit_objects:
+            self.sample_unit_objects = []
+            for inspection_unit in self.inspection_units or []:
+                self.sample_unit_objects.extend(getattr(inspection_unit, "sample_unit_objects", []))
+
+        if not self.risk_unit_to_inspection_units and self.risk_units:
+            for risk_unit in self.risk_units:
+                self.risk_unit_to_inspection_units[risk_unit.id] = list(
+                    getattr(risk_unit, "inspection_unit_ids", [])
+                )
+
+        if not self.inspection_unit_to_risk_units and self.inspection_units:
+            for inspection_unit in self.inspection_units:
+                if inspection_unit.id is None:
+                    continue
+                self.inspection_unit_to_risk_units[inspection_unit.id] = list(
+                    getattr(inspection_unit, "risk_unit_ids", [])
+                )
+
+        if not self.risk_unit_to_sample_units and self.risk_units:
+            for risk_unit in self.risk_units:
+                self.risk_unit_to_sample_units[risk_unit.id] = list(
+                    getattr(risk_unit, "sample_unit_ids", [])
+                )
+
+        if not self.sample_unit_to_inspection_unit and self.sample_unit_objects:
+            for sample_unit in self.sample_unit_objects:
+                if sample_unit.id is not None:
+                    self.sample_unit_to_inspection_unit[sample_unit.id] = sample_unit.inspection_unit_id
+
+        if not self.plant_unit_to_inspection_unit and self.inspection_units:
+            for inspection_unit in self.inspection_units:
+                inspection_unit_id = getattr(inspection_unit, "id", None)
+                for plant_id in getattr(inspection_unit, "plant_ids", []):
+                    self.plant_unit_to_inspection_unit[plant_id] = inspection_unit_id
 
     def __hasattr__(self, name):
         return name in self
@@ -553,32 +726,51 @@ class PISConsignmentGenerator:
         risk_units=None,
         """
 
-        ### Create the Risk Units
-        # Identify unique number of risk units
-        num_risk_units = len(inspection_units_data['risk_unit'].unique())
-
         # Extract common consignment info from first record
         first_record = inspection_units_data.iloc[0]
         pathway = first_record.get("PATHWAY", "None")
         origin = first_record["COUNTRY_OF_ORIGIN_NAME"]
         port = first_record["INSPECTION_LOCATION_NAME"]
-        
-        # Calculate total quantities across all inspection units in this consignment
+
+        # Build fixed hierarchy:
+        # consignment -> risk_units -> sample_units -> plant_units
         total_sample_units = 0
         total_plants = 0
         inspection_units = []
+        risk_units = []
+        all_sample_unit_objects = []
+        sample_unit_by_id = {}
+        risk_unit_buckets = {}
+
+        risk_unit_column = None
+        for candidate in ["RISK UNIT", "RISK_UNIT", "risk_unit", "RISK_UNIT_NUMBER"]:
+            if candidate in inspection_units_data.columns:
+                risk_unit_column = candidate
+                break
+        if risk_unit_column is None:
+            raise RuntimeError(
+                "PIS input is missing risk unit label column. Expected one of: "
+                "'RISK UNIT', 'RISK_UNIT', 'risk_unit', 'RISK_UNIT_NUMBER'."
+            )
         
         # Process each inspection unit (row) in this consignment
-        for _, record in inspection_units_data.iterrows():
+        for inspection_unit_id, (_, record) in enumerate(inspection_units_data.iterrows()):
             material_type = record["PROPAGATIVE_MATERIAL_TYPE"]
+            raw_risk_unit = record.get(risk_unit_column)
+            if raw_risk_unit is None or str(raw_risk_unit).strip() == "":
+                raise RuntimeError(
+                    f"Record for inspection '{inspection_number}' has empty risk unit label "
+                    f"in column '{risk_unit_column}'."
+                )
+            risk_unit_id = str(raw_risk_unit).strip()
             
             # Use the actual quantities from the PIS data
-            inspection_unit_sample_units = int(record["TOTAL_SAMPLING_UNITS"])
-            inspection_unit_plants = int(record["TOTAL_PLANT_QUANTITY"])
-            inspection_unit_producer = record["PRODUCER_NAME"]
-            inspection_unit_origin = record["COUNTRY_OF_ORIGIN_NAME"]
-            inspection_unit_port = record["INSPECTION_LOCATION_NAME"]
-            inspection_unit_pathway = record["PATHWAY"]
+            inspection_unit_sample_units = int(record["SAMPLING_UNITS_FOR_INSPECTION_UNIT"])
+            inspection_unit_plants = int(record["QUANTITY"])
+            inspection_unit_producer = record.get("PRODUCER_NAME", None)
+            inspection_unit_origin = record.get("COUNTRY_OF_ORIGIN_NAME", origin)
+            inspection_unit_port = record.get("INSPECTION_LOCATION_NAME", port)
+            inspection_unit_pathway = record.get("PATHWAY", pathway)
 
             # Calculate plants per sample_unit for this inspection unit
             if inspection_unit_sample_units > 0:
@@ -595,6 +787,8 @@ class PISConsignmentGenerator:
             
             # Create SampleUnit objects for hierarchical access
             sample_unit_objects = []
+            inspection_sample_unit_ids = []
+            inspection_plant_ids = []
             plant_index = 0
             
             for item_index in range(inspection_unit_sample_units):
@@ -608,26 +802,92 @@ class PISConsignmentGenerator:
                 
                 # Create slice for this sample unit
                 sample_unit_plants = plants_array[plant_index:plant_index + plants_in_this_unit]
-                sample_unit_objects.append(SampleUnit(sample_unit_plants,
-                                                      producer=inspection_unit_producer,
-                                                      origin=inspection_unit_origin,
-                                                      port=inspection_unit_port,
-                                                      pathway=inspection_unit_pathway))
+                sample_unit_id = total_sample_units
+                total_sample_units += 1
+
+                plant_ids_for_sample_unit = []
+                for local_plant_offset in range(plants_in_this_unit):
+                    plant_unit_id = total_plants
+                    total_plants += 1
+                    plant_ids_for_sample_unit.append(plant_unit_id)
+                    inspection_plant_ids.append(plant_unit_id)
+
+                sample_unit = SampleUnit(
+                    sample_unit_plants,
+                    sample_unit_id=sample_unit_id,
+                    risk_unit_id=risk_unit_id,
+                    inspection_unit_id=inspection_unit_id,
+                    plant_ids=plant_ids_for_sample_unit,
+                    producer=inspection_unit_producer,
+                    origin=inspection_unit_origin,
+                    port=inspection_unit_port,
+                    pathway=inspection_unit_pathway,
+                )
+                sample_unit_objects.append(sample_unit)
+                all_sample_unit_objects.append(sample_unit)
+                sample_unit_by_id[sample_unit_id] = sample_unit
+                inspection_sample_unit_ids.append(sample_unit_id)
                 plant_index += plants_in_this_unit
 
             # Create InspectionUnit
-            inspection_unit = InspectionUnit(sample_units_array,
-                                             material_type=material_type,
-                                             producer=inspection_unit_producer,
-                                             origin=inspection_unit_origin,
-                                             port=inspection_unit_port,
-                                             pathway=inspection_unit_pathway)
+            inspection_unit = InspectionUnit(
+                sample_units_array,
+                material_type=material_type,
+                producer=inspection_unit_producer,
+                origin=inspection_unit_origin,
+                port=inspection_unit_port,
+                pathway=inspection_unit_pathway,
+                inspection_unit_id=inspection_unit_id,
+                risk_unit_ids=[risk_unit_id],
+                sample_unit_ids=inspection_sample_unit_ids,
+                plant_ids=inspection_plant_ids,
+            )
 
             inspection_unit.sample_unit_objects = sample_unit_objects
             inspection_units.append(inspection_unit)
-            
-            total_sample_units += inspection_unit_sample_units
-            total_plants += inspection_unit_plants
+
+            if risk_unit_id not in risk_unit_buckets:
+                risk_unit_buckets[risk_unit_id] = {
+                    "inspection_unit_ids": [],
+                    "sample_unit_ids": [],
+                    "plant_ids": [],
+                    "material_type": material_type,
+                    "producer": inspection_unit_producer,
+                    "origin": inspection_unit_origin,
+                    "port": inspection_unit_port,
+                    "pathway": inspection_unit_pathway,
+                }
+            risk_bucket = risk_unit_buckets[risk_unit_id]
+            risk_bucket["inspection_unit_ids"].append(inspection_unit_id)
+            risk_bucket["sample_unit_ids"].extend(inspection_sample_unit_ids)
+            risk_bucket["plant_ids"].extend(inspection_plant_ids)
+
+        # Create risk units from accumulated hierarchy links
+        risk_unit_by_id = {}
+        for risk_unit_id, bucket in risk_unit_buckets.items():
+            risk_unit = RiskUnit(
+                np.zeros(len(bucket["sample_unit_ids"]), dtype=np.int64),
+                risk_unit_id=risk_unit_id,
+                sample_unit_ids=bucket["sample_unit_ids"],
+                inspection_unit_ids=bucket["inspection_unit_ids"],
+                plant_ids=bucket["plant_ids"],
+                material_type=bucket["material_type"],
+                producer=bucket["producer"],
+                origin=bucket["origin"],
+                port=bucket["port"],
+                pathway=bucket["pathway"],
+            )
+            risk_unit.inspection_unit_objects = [
+                sample_unit_by_id[sample_unit_id]
+                for sample_unit_id in bucket["sample_unit_ids"]
+                if sample_unit_id in sample_unit_by_id
+            ]
+            risk_units.append(risk_unit)
+            risk_unit_by_id[risk_unit_id] = risk_unit
+
+        for inspection_unit in inspection_units:
+            if inspection_unit.risk_unit_ids:
+                inspection_unit.risk_unit = risk_unit_by_id.get(inspection_unit.risk_unit_ids[0])
 
         # Create overall arrays for the entire consignment
         consignment_sample_units = np.zeros(total_sample_units, dtype=np.int64)
@@ -689,6 +949,29 @@ class PISConsignmentGenerator:
             plants=consignment_plants,
             plants_per_sample_unit=avg_plants_per_sample_unit,
             inspection_number=inspection_number,
+            risk_units=risk_units,
+            sample_unit_objects=all_sample_unit_objects,
+            risk_unit_to_inspection_units={
+                risk_unit.id: list(risk_unit.inspection_unit_ids) for risk_unit in risk_units
+            },
+            inspection_unit_to_risk_units={
+                inspection_unit.id: list(inspection_unit.risk_unit_ids)
+                for inspection_unit in inspection_units
+                if inspection_unit.id is not None
+            },
+            risk_unit_to_sample_units={
+                risk_unit.id: list(risk_unit.sample_unit_ids) for risk_unit in risk_units
+            },
+            sample_unit_to_inspection_unit={
+                sample_unit.id: sample_unit.inspection_unit_id
+                for sample_unit in all_sample_unit_objects
+                if sample_unit.id is not None
+            },
+            plant_unit_to_inspection_unit={
+                plant_id: inspection_unit.id
+                for inspection_unit in inspection_units
+                for plant_id in inspection_unit.plant_ids
+            },
         )
 
 
@@ -804,14 +1087,12 @@ def get_consignment_generator(config):
     ):
         consignment_generator = PISConsignmentGenerator(
             filename=config["input_file"]["file_name"],
-            # TODO: add filename for contamination
         )
     elif generation_method == "RBS":
         if "input_file" in config and "rbs_file_name" in config["input_file"]:
         # RBS record-based generation from file
             consignment_generator = PISConsignmentGenerator(
                 filename=config["input_file"]["rbs_file_name"],
-                #TODO: add filename for contamination
             )
         else:
             print("No consignment data available")
