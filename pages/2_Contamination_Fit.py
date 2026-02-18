@@ -697,7 +697,7 @@ with fit_tab:
     pis_df = None
     pis_preview = _load_preview(slippage_state["paths"].pis_data)
     if pis_preview is not None:
-        st.dataframe(pis_preview, use_container_width=True)
+        st.dataframe(pis_preview, width='stretch')
         try:
             pis_df = pd.read_csv(slippage_state["paths"].pis_data)
         except Exception:  # pylint: disable=broad-except
@@ -786,7 +786,7 @@ with fit_tab:
         metrics[2].metric("Theta", f"{fit_to_show.theta}")
         st.altair_chart(
             _beta_chart(fit_to_show.alpha, fit_to_show.beta, "Beta-Binomial Probability Density Function"),
-            use_container_width=True,
+            width='stretch',
         )
 
     st.markdown("**Save fitted parameters**")
@@ -985,7 +985,7 @@ with assign_tab:
         st.write("")
         st.altair_chart(
             _beta_chart(adj_alpha, adj_beta, "Beta-Binomial Probability Density Function"),
-            use_container_width=True,
+            width='stretch',
         )
 
         st.write("")
@@ -1052,7 +1052,7 @@ with assign_tab:
 
         st.altair_chart(
             _beta_chart(alpha_val, beta_val, "Beta-Binomial Probability Density Function"),
-            use_container_width=True,
+            width='stretch',
         )
         manual_name = st.text_input(
             "Parameter set name for manual values",
@@ -1098,7 +1098,7 @@ with saved_tab:
                 st.metric("Plant unit contamination rate", f"{sample_unit_rate}")
             st.altair_chart(
                 _beta_chart(alpha, beta, f"Beta-binomial PDF for {sel}"),
-                use_container_width=True,
+                width='stretch',
             )
             st.info("Sets are stored in tmp/contamination/contamination_parameter_sets.json.")
 
