@@ -268,17 +268,19 @@ class InspectionUnit:
         self._included_unit_objects = units
 
     def __bool__(self):
-        # Prefer deepest hierarchy checks (sample_unit -> plants) when available.
-        if self.risk_unit is not None:
-            if hasattr(self.risk_unit, "inspection_unit_objects") and self.risk_unit.inspection_unit_objects:
-                return any(bool(sample_unit) for sample_unit in self.risk_unit.inspection_unit_objects)
-            return bool(self.risk_unit)
+        # Ground-truth infection for an inspection unit should come from its own
+        # nested sample/plant data, not the whole risk unit.
         if self.sample_unit is not None:
             return bool(self.sample_unit)
         if self._included_unit_objects:
             return any(bool(sample_unit) for sample_unit in self._included_unit_objects)
         if isinstance(self.included_units, np.ndarray):
             return bool(np.any(self.included_units > 0))
+        # Legacy fallback only when local inspection-unit data is unavailable.
+        if self.risk_unit is not None:
+            if hasattr(self.risk_unit, "inspection_unit_objects") and self.risk_unit.inspection_unit_objects:
+                return any(bool(sample_unit) for sample_unit in self.risk_unit.inspection_unit_objects)
+            return bool(self.risk_unit)
         return any(bool(unit) for unit in self.included_units)
 
     @property

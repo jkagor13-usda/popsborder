@@ -281,6 +281,8 @@ def simulation(
                     elif getattr(inspection_unit, "risk_unit", None) is not None:
                         risk_unit_id = inspection_unit.risk_unit.id
 
+                    is_infected = bool(getattr(inspection_unit, "is_infected", bool(inspection_unit)))
+                    is_detected = bool(getattr(inspection_unit, "is_detected", False))
                     inspection_unit_detection_records.append(
                         {
                             "consignment_index": i + 1,
@@ -291,8 +293,9 @@ def simulation(
                             "num_sample_units": getattr(inspection_unit, "num_sample_units", len(sample_unit_objects)),
                             "num_plants": num_plants_in_inspection_unit,
                             "infected_plants": infected_plants_in_inspection_unit,
-                            "is_infected": bool(getattr(inspection_unit, "is_infected", bool(inspection_unit))),
-                            "is_detected": bool(getattr(inspection_unit, "is_detected", False)),
+                            "is_infected": is_infected,
+                            "is_detected": is_detected,
+                            "missed": bool(is_infected and not is_detected),
                             "was_inspected": bool(
                                 must_inspect and inspected_counts_by_inspection_unit[inspection_unit_index] > 0
                             ),
