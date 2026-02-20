@@ -584,24 +584,10 @@ def add_contaminant_uniform_random(config, consignment):
                 for idx, size in enumerate(unit_sizes):
                     share = int(round(contaminated_total * size / total_size)) if total_size else 0
                     contaminated_plants[idx] = min(share, size)
-            print(f"      contam: random | plants fixed -> total targeted {int(contaminated_plants.sum())}")
             if contaminated_plants.sum() == 0:
                 return
 
-        minimum = np.min(contaminated_plants)
-        maximum = np.max(contaminated_plants)
-        q1, median, q3 = np.percentile(contaminated_plants, [25, 50, 75])
-
-        print('Distribution of number of contaminated plants per sample unit:')
-        print(f"   Min: {minimum}, Q1: {q1}, Median: {median}, Q3: {q3}, Max: {maximum}")
-        zero_count = np.count_nonzero(contaminated_plants == 0)
-        percentage_sample = round((zero_count/len(contaminated_plants))*100,2)
-        print(f'\nNumber of sample units with zero infected units: {zero_count} ({percentage_sample}%)')
-
-
-
         # Apply contamination per inspection unit
-        # TODO: change consignment.inspection_units to consignment.risk_units when consignment generation process is complete
         su_counter = 0 # Define a sampling unit counter to
         for iu_idx, inspection_unit in enumerate(consignment.inspection_units):
             for su_idx, sample_unit in enumerate(inspection_unit.sample_unit_objects):
