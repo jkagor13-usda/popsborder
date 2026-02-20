@@ -144,7 +144,6 @@ class RiskUnit:
             inspection_unit_ids if inspection_unit_ids is not None else []
         )
         self.plant_ids = plant_ids if plant_ids is not None else []
-        self.inspection_unit_objects = []  # For hierarchical structure - list of SampleUnit objects
         self.material_type = material_type
         self.producer = producer
         self.origin = origin
@@ -276,11 +275,7 @@ class InspectionUnit:
             return any(bool(sample_unit) for sample_unit in self._included_unit_objects)
         if isinstance(self.included_units, np.ndarray):
             return bool(np.any(self.included_units > 0))
-        # Legacy fallback only when local inspection-unit data is unavailable.
-        if self.risk_unit is not None:
-            if hasattr(self.risk_unit, "inspection_unit_objects") and self.risk_unit.inspection_unit_objects:
-                return any(bool(sample_unit) for sample_unit in self.risk_unit.inspection_unit_objects)
-            return bool(self.risk_unit)
+
         return any(bool(unit) for unit in self.included_units)
 
     @property
@@ -879,11 +874,6 @@ class PISConsignmentGenerator:
                 port=bucket["port"],
                 pathway=bucket["pathway"],
             )
-            risk_unit.inspection_unit_objects = [
-                sample_unit_by_id[sample_unit_id]
-                for sample_unit_id in bucket["sample_unit_ids"]
-                if sample_unit_id in sample_unit_by_id
-            ]
             risk_units.append(risk_unit)
             risk_unit_by_id[risk_unit_id] = risk_unit
 
