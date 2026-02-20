@@ -139,3 +139,6 @@ slippage_data/
 tmp/
 slippage_data/uploaded_pis_data.csv
 slippage_data/uploaded_rbs_data.csv
+
+# data file
+impact_data/

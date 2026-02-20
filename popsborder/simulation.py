@@ -56,6 +56,7 @@ Modifications:
 
 import random
 import types
+from collections import Counter
 
 import numpy as np
 import pandas as pd
@@ -65,7 +66,7 @@ import sys
 
 from . import consignments
 from .consignments import get_consignment_generator
-from .contamination import get_contaminant_function
+from .contamination import get_contaminant_function, synchronize_contamination_arrays_from_plants
 from .inspections import (
     consignment_contamination_rate,
     get_sample_function,
@@ -146,6 +147,7 @@ def simulation(
     if detailed:
         sample_unit_details = []
         inspected_sample_unit_details = []
+        inspection_unit_detection_records = []
 
     consignment_generator = get_consignment_generator(config)
     add_contaminant = get_contaminant_function(config)
@@ -164,6 +166,7 @@ def simulation(
             print(f"   Generated consignment with {consignment.num_inspection_units} inspection units and {consignment.num_sample_units} sample units")
             print("   Starting contamination...")
             add_contaminant(consignment)
+            synchronize_contamination_arrays_from_plants(consignment)
             print("   Finished contamination.")
             total_contaminated_units = 0
             total_contaminated_inspection_units = 0
@@ -252,6 +255,54 @@ def simulation(
                 total_num_sample_units += consignment.num_sample_units
                 if consignment.num_plants is not None:
                     total_num_plants += consignment.num_plants
+
+            if detailed:
+                sample_unit_to_inspection = getattr(consignment, "sample_unit_to_inspection_unit", {}) or {}
+                inspected_sample_unit_indexes = (
+                    ret.inspected_sample_unit_indexes if must_inspect else []
+                )
+                inspected_counts_by_inspection_unit = Counter()
+                for sample_unit_index in inspected_sample_unit_indexes:
+                    inspection_unit_index = sample_unit_to_inspection.get(
+                        sample_unit_index,
+                        consignment.get_inspection_unit_and_sample_unit_index(sample_unit_index)[0],
+                    )
+                    inspected_counts_by_inspection_unit[inspection_unit_index] += 1
+
+                for inspection_unit_index, inspection_unit in enumerate(consignment.inspection_units):
+                    sample_unit_objects = getattr(inspection_unit, "sample_unit_objects", [])
+                    num_plants_in_inspection_unit = sum(len(su.plants) for su in sample_unit_objects)
+                    infected_plants_in_inspection_unit = sum(
+                        int(np.count_nonzero(su.plants)) for su in sample_unit_objects
+                    )
+                    risk_unit_id = None
+                    risk_unit_ids = getattr(inspection_unit, "risk_unit_ids", None)
+                    if risk_unit_ids:
+                        risk_unit_id = risk_unit_ids[0]
+                    elif getattr(inspection_unit, "risk_unit", None) is not None:
+                        risk_unit_id = inspection_unit.risk_unit.id
+
+                    is_infected = bool(getattr(inspection_unit, "is_infected", bool(inspection_unit)))
+                    is_detected = bool(getattr(inspection_unit, "is_detected", False))
+                    inspection_unit_detection_records.append(
+                        {
+                            "consignment_index": i + 1,
+                            "inspection_number": getattr(consignment, "inspection_number", None),
+                            "inspection_unit_index": inspection_unit_index,
+                            "inspection_unit_id": getattr(inspection_unit, "id", inspection_unit_index),
+                            "risk_unit_id": risk_unit_id,
+                            "num_sample_units": getattr(inspection_unit, "num_sample_units", len(sample_unit_objects)),
+                            "num_plants": num_plants_in_inspection_unit,
+                            "infected_plants": infected_plants_in_inspection_unit,
+                            "is_infected": is_infected,
+                            "is_detected": is_detected,
+                            "missed": bool(is_infected and not is_detected),
+                            "was_inspected": bool(
+                                must_inspect and inspected_counts_by_inspection_unit[inspection_unit_index] > 0
+                            ),
+                            "inspected_sample_units": int(inspected_counts_by_inspection_unit[inspection_unit_index]),
+                        }
+                    )
 
             print(f'\n==== INSPECTION OF CONSIGNMENT {i + 1} COMPLETED ====')
 
@@ -404,7 +455,11 @@ def simulation(
         avg_slipped_sample_units_per_consignment = avg_slipped_sample_units_per_consignment
     )
     if detailed:
-        simulation_results.details = [sample_unit_details, inspected_sample_unit_details]
+        simulation_results.details = [
+            sample_unit_details,
+            inspected_sample_unit_details,
+            inspection_unit_detection_records,
+        ]
 
     return simulation_results
 
