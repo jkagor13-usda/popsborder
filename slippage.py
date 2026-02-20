@@ -42,7 +42,7 @@ def main():
     config = load_configuration(config_file)
 
     # Synthetic data generation
-    num_consignments_to_simulate = 100 # Added input parameter to be the number of consignments you want simulated
+    num_consignments_to_simulate = 20 # Added input parameter to be the number of consignments you want simulated
     synthetic_data_generator = SyntheticConsignmentDataGenerator(input_data_file=pis_data_updated)
     synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=num_consignments_to_simulate, sampling_method="sequential")
     synth_out_path = data_dir / "Syntehtic_PIS_SampleQuantity.csv"
