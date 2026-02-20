@@ -1247,8 +1247,6 @@ class SyntheticConsignmentDataGenerator:
         # Define columns to use for sampling
         available_cols = self.input_data.columns.tolist()
         target_cols = [col for col in available_cols if col in [
-            'NSPECTION_ID',  # included for compatibility with requested spelling
-            'INSPECTION_ID',
             'INSPECTION_NUMBER',
             'COMMODITY_COMMON_NAME',
             'COUNTRY_OF_ORIGIN_NAME',
