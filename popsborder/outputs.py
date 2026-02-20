@@ -725,9 +725,6 @@ def save_inspection_unit_detection_records_to_csv(records, filename):
     df.to_csv(filename, index=False)
     return df
 
-
-class SimData(object):
-
 class SimData:
     """
     Data collection class for simulation runs with multiple replications.
