@@ -497,7 +497,7 @@ def select_random_indexes_rbs(unit, consignment, n_units_to_inspect):
         # Build lookup from sample_unit_id to local index inside each inspection unit.
         sample_unit_local_index = {}
         for iu_idx, inspection_unit in enumerate(consignment.inspection_units):
-            for local_idx, sample_unit_obj in enumerate(inspection_unit.sample_unit_objects):
+            for local_idx, sample_unit_obj in enumerate(inspection_unit.included_unit_objects):
                 sample_unit_id = getattr(sample_unit_obj, "id", None)
                 if sample_unit_id is not None:
                     sample_unit_local_index[sample_unit_id] = (iu_idx, local_idx)
@@ -525,7 +525,7 @@ def select_random_indexes_rbs(unit, consignment, n_units_to_inspect):
             # Legacy fallback: keyed per inspection unit.
             current_idx = 0
             for inspection_unit in consignment.inspection_units:
-                population = len(inspection_unit.sample_unit_objects)
+                population = len(inspection_unit.included_unit_objects)
                 requested = n_units_to_inspect.get(inspection_unit_counter, 0)
                 requested = max(0, min(requested, population))
                 indexes_to_inspect_temp = random.sample(
@@ -661,7 +661,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     sample_unit_local_index = {}
     running_sample_index = 0
     for iu_idx, inspection_unit in enumerate(consignment.inspection_units):
-        su_objects = getattr(inspection_unit, "sample_unit_objects", [])
+        su_objects = getattr(inspection_unit, "included_unit_objects", [])
         if su_objects:
             for local_idx, sample_unit_obj in enumerate(su_objects):
                 su_id = getattr(sample_unit_obj, "id", None)
@@ -731,7 +731,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                         sample_unit_index % sample_units_per_inspection_unit,
                     )
                     try:
-                        su_obj = consignment.inspection_units[iu_idx].sample_unit_objects[su_local_idx]
+                        su_obj = consignment.inspection_units[iu_idx].included_unit_objects[su_local_idx]
                         ret.plant_units_inspected_completion += len(su_obj.plants)
                     except Exception:
                         pass
@@ -741,7 +741,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                     if not detected:
                         ret.sample_units_inspected_detection += 1
                         try:
-                            su_obj = consignment.inspection_units[iu_idx].sample_unit_objects[su_local_idx]
+                            su_obj = consignment.inspection_units[iu_idx].included_unit_objects[su_local_idx]
                             ret.plant_units_inspected_detection += len(su_obj.plants)
                         except Exception:
                             pass
@@ -774,7 +774,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                     sample_unit_counter = 0
                     total_contaminated_sample_units = 0
                     total_contaminated_units = 0
-                    for samp_unit in inspect_unit.sample_unit_objects:
+                    for samp_unit in inspect_unit.included_unit_objects:
                         if sum(samp_unit.plants) > 0:
                             inspection_unit_contaminated = True
                             total_contaminated_sample_units+=1
@@ -817,7 +817,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                         inspect_per_inspection_unit = sample_remainder
                     # In each inspection_unit, loop through first n sample_units (n = inspect_per_inspection_unit)
                     for sample_unit_in_inspection_unit_index, sample_unit in enumerate(
-                            (consignment.inspection_units[inspection_unit_index]).sample_units[
+                            (consignment.inspection_units[inspection_unit_index]).included_units[
                                 0:inspect_per_inspection_unit]
                     ):
                         if detailed:
@@ -899,7 +899,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                     ret.inspection_units_opened_detection += 1
                 # In each inspection_unit, loop through first n sample_units (n = inspect_per_inspection_unit)
                 for sample_unit_in_inspection_unit_index, sample_unit in enumerate(
-                        (consignment.inspection_units[inspection_unit_index]).sample_units[
+                        (consignment.inspection_units[inspection_unit_index]).included_units[
                             0:inspect_per_inspection_unit]
                 ):
                     if detailed:
@@ -1140,3 +1140,5 @@ def normalize_rbs_variables_against_consignment(
                 updated_vars.append(original)
 
     return updated_vars, mapping, unmapped
+
+

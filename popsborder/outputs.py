@@ -223,7 +223,7 @@ def pretty_consignment_inspection_units(consignment, config=None):
         separator = line
     header = pretty_header(consignment, config=config)
     body = separator.join(
-        [pretty_content(inspection_unit.sample_units, config=config) for inspection_unit in consignment["inspection_units"]]
+        [pretty_content(inspection_unit.included_units, config=config) for inspection_unit in consignment["inspection_units"]]
     )
     return f"{header}\n{body}"
 
@@ -881,7 +881,7 @@ class SimData(object):
         if sum(consignment.plants)>0:
             for inspection_unit in consignment.inspection_units:
                 num_contaminats_per_sample_unit = []
-                for sample_unit in inspection_unit.sample_unit_objects:
+                for sample_unit in inspection_unit.included_unit_objects:
                     num_contaminats_per_sample_unit.append(sum(sample_unit.plants))
                     if sum(sample_unit.plants)>0:
                         num_contaminated_inspection_units += 1
@@ -944,3 +944,5 @@ class SimData(object):
             # Add rows to synthetic data sets
             self.pis_synthetic_data.loc[len(self.pis_synthetic_data)] = default_row_pis
             self.rbs_calc_synthetic_data.loc[len(self.rbs_calc_synthetic_data)] = default_row_rbs_calc
+
+
