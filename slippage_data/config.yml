@@ -1,5 +1,5 @@
 consignment:
-  generation_method: RBS
+  generation_method: input_file
   sample_units_per_inspection_unit:
     default: 200
     air:
@@ -51,8 +51,8 @@ consignment:
       - San Francisco PIS
       - Seattle PIS
   input_file:
-    pis_file_type: NA #TODO Add PIS contamination data
-    rbs_file_name: data/fake_pis_data.csv
+    file_type: PIS
+    file_name: slippage_data/Syntehtic_PIS_SampleQuantity.csv
 contamination:
   contamination_unit: sample_unit
   contamination_rate:

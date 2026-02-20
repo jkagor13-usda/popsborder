@@ -714,6 +714,18 @@ def save_scenario_result_to_pandas(results, config_columns=None, result_columns=
     return pd.DataFrame.from_records(rows)
 
 
+def inspection_unit_detection_records_to_pandas(records):
+    """Convert per-inspection-unit detection records (list of dicts) to DataFrame."""
+    return pd.DataFrame.from_records(records)
+
+
+def save_inspection_unit_detection_records_to_csv(records, filename):
+    """Save per-inspection-unit detection records to CSV and return DataFrame."""
+    df = inspection_unit_detection_records_to_pandas(records)
+    df.to_csv(filename, index=False)
+    return df
+
+
 class SimData(object):
 
     def __init__(self):
