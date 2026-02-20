@@ -43,8 +43,8 @@ Modifications:
 """Inputs, especially loading of configuration
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
-.. codeauthor:: Gary Lin <Gary.Lin@jhuapl.edu>
-.. codeauthor:: Joseph Agor <Joseph.Agor@jhuapl.edu>
+.. codeauthor:: Gary Lin <Gary.Lin jhuapl edu>
+.. codeauthor:: Joseph Agor <Joseph.Agor jhuapl edu>
 """
 
 import copy

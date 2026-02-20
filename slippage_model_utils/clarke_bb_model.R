@@ -1,3 +1,6 @@
+# This code has been taken from the supplementary materials provided in the following article
+# Clark, R.G., Barnes, B. & Parsa, M. Clustered and Unclustered Group Testing for Biosecurity. JABES 29, 193–211 (2024). https://doi.org/10.1007/s13253-023-00566-x
+
 #########################################################################
 # This script performs the simulations for the Supp Materials
 # 27/4/2023

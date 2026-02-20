@@ -1,5 +1,7 @@
 # RBS PIS Slippage Model Install Instructions
 
+**_Development Notice: This software is under active development with limited functionality.  Features may be incomplete and subject to change. Results have not been validated._**
+
 _This software is controlled under the Export Administration Regulations (EAR) (15 CFR 730-744). It has an ECCN EAR99 and may require an export authorization to transfer to foreign persons._
 
 
@@ -18,9 +20,6 @@ Features and Functionality Added:
 - Additional metrics
 - Graphic user interface for building scenarios, running the model, and visualizing results
 - RBS strategies captured via uploaded compliance tables
-
-_Development Notice: This software is under active development with limited functionality.  Features may be incomplete and subject to change. Results have not been validated._
-
 
 
 ---
