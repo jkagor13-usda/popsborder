@@ -56,6 +56,7 @@ Modifications:
 
 import random
 import types
+from collections import Counter
 
 import numpy as np
 import pandas as pd
@@ -65,7 +66,7 @@ import sys
 
 from . import consignments
 from .consignments import get_consignment_generator
-from .contamination import get_contaminant_function
+from .contamination import get_contaminant_function, synchronize_contamination_arrays_from_plants
 from .inspections import (
     consignment_contamination_rate,
     get_sample_function,
@@ -78,7 +79,7 @@ from .outputs import (
     PrintReporter,
     SuccessRates,
     pretty_consignment,
-    SimData,
+    PISSimData,
 )
 from .skipping import get_inspection_needed_function
 from .inputs import load_input_consignment_data
@@ -98,6 +99,7 @@ def simulation(
     verbose=False,
     pretty=None,
     detailed=False,
+    output_dir_rep=None,
 ):
     """Simulate consignments, their contamination, and their inspection
 
@@ -111,7 +113,7 @@ def simulation(
     if seed is not None:
         random_seed(seed)
 
-    simData = SimData()
+    pis_sim_data = PISSimData(output_dir_rep=output_dir_rep, config=config)
 
     # allow for an empty disposition code specification
     disposition_codes = config.get("disposition_codes", {})
@@ -145,6 +147,7 @@ def simulation(
     if detailed:
         sample_unit_details = []
         inspected_sample_unit_details = []
+        inspection_unit_detection_records = []
 
     consignment_generator = get_consignment_generator(config)
     add_contaminant = get_contaminant_function(config)
@@ -163,6 +166,7 @@ def simulation(
             print(f"   Generated consignment with {consignment.num_inspection_units} inspection units and {consignment.num_sample_units} sample units")
             print("   Starting contamination...")
             add_contaminant(consignment)
+            synchronize_contamination_arrays_from_plants(consignment)
             print("   Finished contamination.")
             total_contaminated_units = 0
             total_contaminated_inspection_units = 0
@@ -208,7 +212,7 @@ def simulation(
                 sys.stdout.flush()
 
 
-            #simData.add_consignment(consignment)
+            pis_sim_data.add_consignment(consignment)
             if detailed:
                 for inspection_unit in consignment.inspection_units:
                     sample_unit_details.append(inspection_unit.sample_units)
@@ -224,8 +228,8 @@ def simulation(
                 n_units_to_inspect = sample(consignment)
                 print(f"   Requested sample units to inspect (total): {n_units_to_inspect}")
                 ret = inspect(config, consignment, n_units_to_inspect, detailed)
+                pis_sim_data.add_to_pis_synthetic_data(ret, consignment, n_units_to_inspect)
                 print(f"   Completed inspection. Sample units inspected: {ret.sample_units_inspected_completion}")
-                #simData.add_to_synthetic_data(ret, consignment, n_units_to_inspect)
                 consignment_checked_ok = ret.consignment_checked_ok
                 num_inspections += 1
                 total_num_inspection_units += consignment.num_inspection_units
@@ -251,6 +255,54 @@ def simulation(
                 total_num_sample_units += consignment.num_sample_units
                 if consignment.num_plants is not None:
                     total_num_plants += consignment.num_plants
+
+            if detailed:
+                sample_unit_to_inspection = getattr(consignment, "sample_unit_to_inspection_unit", {}) or {}
+                inspected_sample_unit_indexes = (
+                    ret.inspected_sample_unit_indexes if must_inspect else []
+                )
+                inspected_counts_by_inspection_unit = Counter()
+                for sample_unit_index in inspected_sample_unit_indexes:
+                    inspection_unit_index = sample_unit_to_inspection.get(
+                        sample_unit_index,
+                        consignment.get_inspection_unit_and_sample_unit_index(sample_unit_index)[0],
+                    )
+                    inspected_counts_by_inspection_unit[inspection_unit_index] += 1
+
+                for inspection_unit_index, inspection_unit in enumerate(consignment.inspection_units):
+                    sample_unit_objects = getattr(inspection_unit, "sample_unit_objects", [])
+                    num_plants_in_inspection_unit = sum(len(su.plants) for su in sample_unit_objects)
+                    infected_plants_in_inspection_unit = sum(
+                        int(np.count_nonzero(su.plants)) for su in sample_unit_objects
+                    )
+                    risk_unit_id = None
+                    risk_unit_ids = getattr(inspection_unit, "risk_unit_ids", None)
+                    if risk_unit_ids:
+                        risk_unit_id = risk_unit_ids[0]
+                    elif getattr(inspection_unit, "risk_unit", None) is not None:
+                        risk_unit_id = inspection_unit.risk_unit.id
+
+                    is_infected = bool(getattr(inspection_unit, "is_infected", bool(inspection_unit)))
+                    is_detected = bool(getattr(inspection_unit, "is_detected", False))
+                    inspection_unit_detection_records.append(
+                        {
+                            "consignment_index": i + 1,
+                            "inspection_number": getattr(consignment, "inspection_number", None),
+                            "inspection_unit_index": inspection_unit_index,
+                            "inspection_unit_id": getattr(inspection_unit, "id", inspection_unit_index),
+                            "risk_unit_id": risk_unit_id,
+                            "num_sample_units": getattr(inspection_unit, "num_sample_units", len(sample_unit_objects)),
+                            "num_plants": num_plants_in_inspection_unit,
+                            "infected_plants": infected_plants_in_inspection_unit,
+                            "is_infected": is_infected,
+                            "is_detected": is_detected,
+                            "missed": bool(is_infected and not is_detected),
+                            "was_inspected": bool(
+                                must_inspect and inspected_counts_by_inspection_unit[inspection_unit_index] > 0
+                            ),
+                            "inspected_sample_units": int(inspected_counts_by_inspection_unit[inspection_unit_index]),
+                        }
+                    )
 
             print(f'\n==== INSPECTION OF CONSIGNMENT {i + 1} COMPLETED ====')
 
@@ -293,7 +345,8 @@ def simulation(
             pass
 
     # Write out simulated data
-    #simData.write_synthetic_data_to_csv()
+    pis_sim_data.finalize_dataframes()
+    pis_sim_data.write_synthetic_data_to_csv()
 
     num_contaminated = num_consignments - success_rates.ok
     if num_contaminated:
@@ -402,7 +455,11 @@ def simulation(
         avg_slipped_sample_units_per_consignment = avg_slipped_sample_units_per_consignment
     )
     if detailed:
-        simulation_results.details = [sample_unit_details, inspected_sample_unit_details]
+        simulation_results.details = [
+            sample_unit_details,
+            inspected_sample_unit_details,
+            inspection_unit_detection_records,
+        ]
 
     return simulation_results
 
@@ -417,6 +474,7 @@ def run_simulation(
     verbose=False,
     pretty=None,
     detailed=False,
+    output_dir=None,
 ):
     """Run the simulation function specified number of times
 
@@ -484,6 +542,11 @@ def run_simulation(
         print(f'\n\n======================================================================')
         print(f'======= RUNNING REPLICATION {i + 1} OUT OF {num_simulations} =========')
         print(f'======================================================================')
+
+        # Define output replication directory for the simulated data
+        output_dir_rep = output_dir / f"rep_{i}"
+        output_dir_rep.mkdir(parents=True, exist_ok=True)
+
         result = simulation(
             config=config,
             num_consignments=num_consignments,
@@ -493,6 +556,7 @@ def run_simulation(
             verbose=verbose,
             pretty=pretty,
             detailed=detailed,
+            output_dir_rep=output_dir_rep,
         )
 
         ##############################
