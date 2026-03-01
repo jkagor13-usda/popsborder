@@ -45,7 +45,7 @@ def main():
     consignment_groups = list(df_pis_test_data.groupby('INSPECTION_NUMBER'))
     num_consignments_to_simulate = len(consignment_groups) # Define number of consignments in the test dataset
 
-    config["consignment"]["input_file"]["rbs_file_name"] = str(val_data_path / "test.csv")
+    config["consignment"]["input_file"]["file_name"] = str(val_data_path / "test.csv")
 
     ####################################################################
     ####################################################################
@@ -69,7 +69,7 @@ def main():
     #############################################################
 
     ### Generate clarke inputs via input data
-    inputs_by_quantity = gen_clarke_model_inputs(df_pis_train_data)
+    #inputs_by_quantity = gen_clarke_model_inputs(df_pis_train_data)
 
     # # Run clarke model
     # res = {}
@@ -193,6 +193,7 @@ def main():
 
 
     # Post process outputs across replications/num_simulations to validate against previously seen action rates
+    print('')
 
 
 
