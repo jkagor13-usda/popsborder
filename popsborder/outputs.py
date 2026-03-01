@@ -129,8 +129,10 @@ import shutil
 import types
 import weakref
 from collections.abc import MutableMapping
+from collections import Counter
 from functools import reduce
 import pandas as pd
+import numpy as np
 import os
 from pathlib import Path
 from typing import Optional, Dict, List, Any, Union
@@ -725,7 +727,7 @@ def save_inspection_unit_detection_records_to_csv(records, filename):
     df.to_csv(filename, index=False)
     return df
 
-class SimData:
+class PISSimData:
     """
     Data collection class for simulation runs with multiple replications.
     Efficiently collects data during simulation and provides analysis tools.
@@ -838,7 +840,8 @@ class SimData:
         "MODIFIED_BY_USER_LAST_NAME",
         "MODIFIED_DATETIME",
         "remarks2",
-        "pack_plant"
+        "pack_plant",
+        'RISK_UNIT',
     ]
 
     CONSIGNMENT_COLUMNS = [
@@ -854,13 +857,14 @@ class SimData:
         'Total Number Contaminated in Each Inspection Unit',
     ]
 
-    def __init__(self, output_dir_rep: Optional[Path] = None):
+    def __init__(self, output_dir_rep: Optional[Path] = None, config: dict = None):
         """
         Initialize SimData for a simulation replication.
 
         Args:
             output_dir_rep: Optional directory path for saving replication data.
                            Directory will be created if it doesn't exist.
+           config: Config object.
         """
         self.output_dir_rep = output_dir_rep
         if output_dir_rep:
@@ -869,20 +873,32 @@ class SimData:
         # ID counter for consignments
         self.current_id: int = 0
 
+        # Read in the input file that has the commodity line/inspection unit data that's being used for the simulation
+        config = config["consignment"]
+        generation_method = config["generation_method"]
+        if (generation_method == "input_file") and (
+                config["input_file"]["file_type"] == "PIS"
+        ):
+            filename = config["input_file"]["file_name"]
+            self.pis_synthetic_data: Optional[pd.DataFrame] = pd.read_csv(filename, sep=",")
+        else:
+            self.pis_synthetic_data: Optional[pd.DataFrame] = None
+
+
         # Efficient collection using lists (converted to DataFrames later)
-        self._pis_records: List[Dict] = []
-        self._rbs_records: List[Dict] = []
-        self._consignment_records: List[Dict] = []
+        self.rbs_records: List[Dict] = []
+        self.consignment_records: List[Dict] = []
+        self.inspection_unit_detection_records: List[Dict] = []
 
         # Final DataFrames (populated by finalize_dataframes())
-        self.pis_synthetic_data: Optional[pd.DataFrame] = None
         self.rbs_calc_synthetic_data: Optional[pd.DataFrame] = None
         self.consignments: Optional[pd.DataFrame] = None
+        self.commodity_line_results: Optional[pd.DataFrame] = None
 
     def __repr__(self) -> str:
         """Provide useful string representation."""
         return (
-            f"SimData(records_collected={len(self._pis_records) + len(self._rbs_records) + len(self._consignment_records)}, "
+            f"SimData(records_collected={self.commodity_line_records.shape[0] + len(self.rbs_records) + len(self.consignment_records)}, "
             f"current_id={self.current_id}, "
             f"output_dir={self.output_dir_rep})"
         )
@@ -917,7 +933,7 @@ class SimData:
         if not self.output_dir_rep:
             raise ValueError(
                 "output_dir_rep must be set before writing data. "
-                "Initialize SimData with an output directory."
+                "Initialize PISSimData with an output directory."
             )
 
         # Ensure output directory exists
@@ -928,6 +944,7 @@ class SimData:
         consignment_file = output_path / "synthetic_consignment_data.csv"
         pis_file = output_path / "synthetic_pis_data.csv"
         rbs_file = output_path / "synthetic_rbs_calc_data.csv"
+        commodity_line_results_file = output_path / "synthetic_commodity_line_results_data.csv"
 
         # Write DataFrames to CSV
         try:
@@ -946,6 +963,11 @@ class SimData:
             else:
                 print(f"Warning: No RBS data to write")
 
+            if self.commodity_line_results is not None and not self.commodity_line_results.empty:
+                self.commodity_line_results.to_csv(commodity_line_results_file, index=False)
+            else:
+                print(f"Warning: No consignment data to write")
+
             print(f"Successfully wrote synthetic data to {output_path}")
 
         except OSError as e:
@@ -960,24 +982,27 @@ class SimData:
         collection pattern.
 
         Notes:
-            - Converts _pis_records, _rbs_records, and _consignment_records to DataFrames
+            - Converts rbs_records and consignment_records to DataFrames
             - Safe to call multiple times (won't duplicate data)
             - No-op if records are already converted or empty
         """
         # Convert PIS records
-        if self._pis_records and (self.pis_synthetic_data is None or self.pis_synthetic_data.empty):
-            self.pis_synthetic_data = pd.DataFrame(self._pis_records, columns=self.PIS_COLUMNS)
-            print(f"Finalized {len(self._pis_records)} PIS inspection records")
+        # if self.pis_records and (self.pis_synthetic_data is None or self.pis_synthetic_data.empty):
+        #     self.pis_synthetic_data = pd.DataFrame(self.pis_records, columns=self.PIS_COLUMNS)
+        #     print(f"Finalized {len(self.pis_records)} PIS inspection records")
 
         # Convert RBS records
-        if self._rbs_records and (self.rbs_calc_synthetic_data is None or self.rbs_calc_synthetic_data.empty):
-            self.rbs_calc_synthetic_data = pd.DataFrame(self._rbs_records, columns=self.RBS_COLUMNS)
-            print(f"Finalized {len(self._rbs_records)} RBS calculator records")
+        if self.rbs_records and (self.rbs_calc_synthetic_data is None or self.rbs_calc_synthetic_data.empty):
+            self.rbs_calc_synthetic_data = pd.DataFrame(self.rbs_records, columns=self.RBS_COLUMNS)
+            print(f"Finalized {len(self.rbs_records)} RBS calculator records")
 
         # Convert consignment records
-        if self._consignment_records and (self.consignments is None or self.consignments.empty):
-            self.consignments = pd.DataFrame(self._consignment_records, columns=self.CONSIGNMENT_COLUMNS)
-            print(f"Finalized {len(self._consignment_records)} consignment records")
+        if self.consignment_records and (self.consignments is None or self.consignments.empty):
+            self.consignments = pd.DataFrame(self.consignment_records, columns=self.CONSIGNMENT_COLUMNS)
+            print(f"Finalized {len(self.consignment_records)} consignment records")
+
+        # Convert inspection record results
+        self.commodity_line_results = inspection_unit_detection_records_to_pandas(self.inspection_unit_detection_records)
 
     def get_next_consignment_id(self) -> int:
         """
@@ -1008,31 +1033,25 @@ class SimData:
             Dictionary with record counts and basic statistics
         """
         # If using list collection, count from lists
-        pis_count = len(self._pis_records) if hasattr(self, '_pis_records') else (
+        commodity_line_count = len(self.commodity_line_records) if hasattr(self, 'commodity_line_records') else (
             len(self.pis_synthetic_data) if self.pis_synthetic_data is not None else 0
         )
-        rbs_count = len(self._rbs_records) if hasattr(self, '_rbs_records') else (
+        rbs_count = len(self.rbs_records) if hasattr(self, 'rbs_records') else (
             len(self.rbs_calc_synthetic_data) if self.rbs_calc_synthetic_data is not None else 0
         )
-        consignment_count = len(self._consignment_records) if hasattr(self, '_consignment_records') else (
+        consignment_count = len(self.consignment_records) if hasattr(self, 'consignment_records') else (
             len(self.consignments) if self.consignments is not None else 0
         )
 
         return {
-            'pis_records': pis_count,
+            'commodity_line_records': commodity_line_count,
             'rbs_records': rbs_count,
             'consignments': consignment_count,
-            'total_records': pis_count + rbs_count + consignment_count,
+            'total_records': commodity_line_count + rbs_count + consignment_count,
             'current_id': self.current_id,
             'output_dir': str(self.output_dir_rep) if self.output_dir_rep else None,
         }
 
-
-
-
-    def gen_consignment_id(self):
-        self.current_id += 1
-        return str(self.current_id)
 
     def add_consignment(self, consignment: Consignment) -> None:
         """
@@ -1062,10 +1081,10 @@ class SimData:
                 - Records are appended to internal list for efficient batch processing
             """
         # Optional validation
-        #self._validate_consignment(consignment)
+        self._validate_consignment(consignment)
 
         # Analyze contamination if present
-        contamination_data = self._analyze_contamination(consignment)
+        contamination_data = self._analyze_infestation(consignment)
 
         # Create consignment record
         consignment_record = {
@@ -1073,82 +1092,101 @@ class SimData:
             'Origin': consignment.origin,
             'Pathway': consignment.pathway,
             'Port': consignment.port,
-            'Total Number of Risk Units': consignment.num_inspection_units,
+            'Total Number of Risk Units': len(consignment.risk_units),
             'Total Number of Sample Units': consignment.num_sample_units,
             'Total Units (Plants)': consignment.num_plants,
-            'Total Units Contaminated': contamination_data['total_contaminated'],
-            'Total Number of Inspection Units Contaminated': contamination_data['num_contaminated_units'],
-            'Total Number Contaminated in Each Inspection Unit': contamination_data['contaminants_per_unit'],
+            'Total Units Infested': contamination_data['total_infested'],
+            'Total Number of Risk Units Infested': contamination_data['num_infested_risk_units'],
+            'Total Number of Inspection Units Infested': contamination_data['num_infested_inspection_units'],
+            'Total Units Infested in Each Inspection Unit': contamination_data['pests_per_inspection_unit'],
         }
 
         # Add to collection (efficient for batch processing)
-        self._consignment_records.append(consignment_record)
+        self.consignment_records.append(consignment_record)
 
     @staticmethod
-    def _analyze_contamination(consignment: Consignment) -> Dict[str, Any]:
+    def _analyze_infestation(consignment: Consignment) -> Dict[str, Any]:
         """
-        Analyze contamination distribution across inspection and sample units.
+        Analyze infestation distribution across risk, inspection, and sample units.
 
         Processes the consignment's inspection units to determine:
-        1. Total contaminated plants
-        2. Number of inspection units with at least one contaminated sample unit
-        3. Detailed contamination count per sample unit within each inspection unit
+        1. Total infested plants
+        2. Number of inspection units with at least one infested sample unit
+        3. Detailed infestation count per sample unit within each inspection unit
+        3. Number of risk units with at least one infested inspection unit
 
         Args:
-            consignment: Consignment object with inspection_units and plants data
+            consignment: Consignment object with risk unit objects, inspection unit objects, sample
+                         unit objects, and plant array
 
         Returns:
             Dictionary with keys:
-                - total_contaminated (int): Sum of all contaminated plants
-                - num_contaminated_units (int): Count of inspection units with contamination
-                - contaminants_per_unit (List[List[int]]): Nested list where each inner
+                - total_infested (int): Sum of all infested plants
+                - num_infested_inspection_units (int): Count of inspection units with contamination
+                - pests_per_inspection_unit (List[List[int]]): Nested list where each inner
                   list contains contamination counts for sample units within an inspection unit
+                - num_infested_risk_units (int):  Count of risk units on consignment with contamination
+
 
         Example:
-            If consignment has 2 inspection units:
-            - Unit 1: [0, 5, 0] (3 sample units, 1 contaminated with 5 plants)
-            - Unit 2: [2, 0, 3] (3 sample units, 2 contaminated with 2 and 3 plants)
+            If consignment has 1 risk unit with 2 inspection units:
+            - Inspection Unit 1: [0, 5, 0] (3 sample units, 1 infested with 5 plants)
+            - Inspection Unit 2: [2, 0, 3] (3 sample units, 2 infested with 2 and 3 plants)
 
             Returns:
             {
-                'total_contaminated': 10,
-                'num_contaminated_units': 2,
+                'total_infested': 10,
+                'num_infested_units': 2,
                 'contaminants_per_unit': [[0, 5, 0], [2, 0, 3]]
             }
+            {
+                'total_infested': 10,
+                'num_infested_inspection_units': 2,
+                'pests_per_inspection_unit': [[0, 5, 0], [2, 0, 3]],
+                'num_infested_risk_units': 1,
+            }
         """
-        # Calculate total contaminated plants across entire consignment
-        total_contaminated = sum(consignment.plants) if consignment.plants else 0
+        # Calculate total infested plants across entire consignment
+        total_infested = sum(consignment.plants) if consignment.plants is not None else 0
 
-        # Initialize contamination tracking structures
-        contaminants_per_inspection_unit: List[List[int]] = []
-        num_contaminated_inspection_units = 0
+        # Initialize infestation tracking structures
+        pests_per_inspection_unit: List[List[int]] = []
+        num_infested_inspection_units = 0
+        num_infested_risk_units = 0
 
         # Only analyze if contamination is present
-        if total_contaminated > 0:
-            for inspection_unit in consignment.inspection_units:
-                contaminants_per_sample_unit: List[int] = []
-                unit_has_contamination = False
+        if total_infested > 0:
+            for risk_unit in consignment.risk_units:
+                infection_indicator = 0
+                for inspection_unit_id in risk_unit.inspection_unit_ids:
+                    inspection_unit = consignment.inspection_units[inspection_unit_id]
+                    contaminants_per_sample_unit: List[int] = []
+                    unit_has_contamination = False
 
-                # Check each sample unit within the inspection unit
-                for sample_unit in inspection_unit.sample_unit_objects:
-                    contamination_count = sum(sample_unit.plants) if sample_unit.plants else 0
-                    contaminants_per_sample_unit.append(contamination_count)
+                    # Check each sample unit within the inspection unit
+                    for sample_unit in inspection_unit.sample_unit_objects:
+                        contamination_count = sum(sample_unit.plants) if sample_unit.plants is not None else 0
+                        contaminants_per_sample_unit.append(contamination_count)
 
-                    # Mark that this inspection unit has contamination
-                    if contamination_count > 0:
-                        unit_has_contamination = True
+                        # Mark that this inspection unit has contamination
+                        if contamination_count > 0:
+                            unit_has_contamination = True
 
-                # Store contamination data for this inspection unit
-                contaminants_per_inspection_unit.append(contaminants_per_sample_unit)
+                    # Store contamination data for this inspection unit
+                    pests_per_inspection_unit.append(contaminants_per_sample_unit)
 
-                # Count this inspection unit if it has any contamination
-                if unit_has_contamination:
-                    num_contaminated_inspection_units += 1
+                    # Count this inspection unit if it has any contamination
+                    if unit_has_contamination:
+                        num_infested_inspection_units += 1
+                        infection_indicator = 1
+                if infection_indicator == 1: num_infested_risk_units+=1
+
 
         return {
-            'total_contaminated': total_contaminated,
-            'num_contaminated_units': num_contaminated_inspection_units,
-            'contaminants_per_unit': contaminants_per_inspection_unit,
+            'total_infested': total_infested,
+            'num_infested_inspection_units': num_infested_inspection_units,
+            'pests_per_inspection_unit': pests_per_inspection_unit,
+            'num_infested_risk_units': num_infested_risk_units,
         }
 
     @staticmethod
@@ -1180,7 +1218,7 @@ class SimData:
                 f"but got {len(consignment.inspection_units)} inspection_units"
             )
 
-    def add_to_synthetic_data(
+    def add_to_pis_synthetic_data(
             self,
             ret: SimpleNamespace,
             consignment: Consignment,
@@ -1214,46 +1252,67 @@ class SimData:
         Raises:
             ValueError: If inspected_box_result length doesn't match inspected_box_indexes
         """
-        # Check if there are boxes to record (only when unit='inspection_unit')
-        if not ret.inspected_box_result:
-            # No box-level results to record (e.g., when unit='sample_unit')
-            return
 
-        # Validate input data consistency
-        if len(ret.inspected_box_indexes) != len(ret.inspected_box_result):
-            raise ValueError(
-                f"Mismatch: {len(ret.inspected_box_indexes)} boxes inspected "
-                f"but {len(ret.inspected_box_result)} results provided"
+        sample_unit_to_inspection = getattr(consignment, "sample_unit_to_inspection_unit", {}) or {}
+        inspected_sample_unit_indexes = ret.inspected_sample_unit_indexes
+        inspected_counts_by_inspection_unit = Counter()
+        for sample_unit_index in ret.inspected_sample_unit_indexes:
+            inspection_unit_index = sample_unit_to_inspection.get(
+                sample_unit_index,
+                consignment.get_inspection_unit_and_sample_unit_index(sample_unit_index)[0],
+            )
+            inspected_counts_by_inspection_unit[inspection_unit_index] += 1
+
+        for inspection_unit_index, inspection_unit in enumerate(consignment.inspection_units):
+            sample_unit_objects = getattr(inspection_unit, "sample_unit_objects", [])
+            num_plants_in_inspection_unit = sum(len(su.plants) for su in sample_unit_objects)
+            infected_plants_in_inspection_unit = sum(
+                int(np.count_nonzero(su.plants)) for su in sample_unit_objects
+            )
+            risk_unit_id = None
+            risk_unit_ids = getattr(inspection_unit, "risk_unit_ids", None)
+            if risk_unit_ids:
+                risk_unit_id = risk_unit_ids[0]
+            elif getattr(inspection_unit, "risk_unit", None) is not None:
+                risk_unit_id = inspection_unit.risk_unit.id
+
+            is_infected = bool(getattr(inspection_unit, "is_infected", bool(inspection_unit)))
+            is_detected = bool(getattr(inspection_unit, "is_detected", False))
+            self.inspection_unit_detection_records.append(
+                {
+                    "inspection_number": getattr(consignment, "inspection_number", None),
+                    "inspection_unit_index": inspection_unit_index,
+                    "inspection_unit_id": getattr(inspection_unit, "id", inspection_unit_index),
+                    "risk_unit_id": risk_unit_id,
+                    "num_sample_units": getattr(inspection_unit, "num_sample_units", len(sample_unit_objects)),
+                    "num_plants": num_plants_in_inspection_unit,
+                    "infected_plants": infected_plants_in_inspection_unit,
+                    "is_infected": is_infected,
+                    "is_detected": is_detected,
+                    "action": 1 if is_detected else 0,
+                    "missed": bool(is_infected and not is_detected),
+                    "was_inspected": bool(
+                        inspected_counts_by_inspection_unit[inspection_unit_index] > 0
+                    ),
+                    "inspected_sample_units": int(inspected_counts_by_inspection_unit[inspection_unit_index]),
+                }
             )
 
-        # Process each inspected box
-        for box_idx, box_result in zip(ret.inspected_box_indexes, ret.inspected_box_result):
-            # Create RBS calculation record
-            rbs_record = self._create_rbs_record(
-                consignment=consignment,
-                n_units_to_inspect=n_units_to_inspect,
-                inspection_result=ret
-            )
 
-            # Create PIS record
-            pis_record = self._create_pis_record(
-                consignment=consignment,
-                box_idx=box_idx,
-                box_result=box_result,
-                n_units_to_inspect=n_units_to_inspect,
-                inspection_result=ret
-            )
+        # Create the calculator records
+        self._create_rbs_records(
+            consignment=consignment,
+            n_units_to_inspect=n_units_to_inspect,
+            inspection_result=ret
+        )
 
-            # Add to collections (efficient batch approach)
-            self._rbs_records.append(rbs_record)
-            self._pis_records.append(pis_record)
 
-    @staticmethod
-    def _create_rbs_record(
+    def _create_rbs_records(
+            self,
             consignment: Consignment,
             n_units_to_inspect: int,
             inspection_result: SimpleNamespace
-    ) -> dict:
+    ) -> None:
         """
         Create a single RBS (Risk-Based Sampling) calculation record.
 
@@ -1265,56 +1324,21 @@ class SimData:
         Returns:
             Dictionary with RBS record data including sampling plan and results
         """
-        rbs_record = {
-            'INSPECTION_ID': consignment.inspection_number,
-            'COUNTRY_OF_ORIGIN_NAME': consignment.origin,
-            'PATHWAY': consignment.pathway,
-            'TOTAL_PLANT_QUANTITY': consignment.num_plants,
-            'TOTAL_SAMPLING_UNITS': consignment.num_sample_units,
-            'REQUIRED_NUMBER_OF_BOXES': n_units_to_inspect,
-            # Optional: Add inspection results if needed in RBS data
-            # 'INSPECTION_UNITS_OPENED': inspection_result.inspection_units_opened_completion,
-            # 'SAMPLE_UNITS_INSPECTED': inspection_result.sample_units_inspected_completion,
-            # 'CONTAMINATED_UNITS_FOUND': inspection_result.contaminated_sample_units_completion,
-        }
+        for risk_unit in consignment.risk_units:
+            rbs_record = {
+                'RISK_UNIT': risk_unit.id,
+                'INSPECTION_NUMBER': consignment.inspection_number,
+                'COUNTRY_OF_ORIGIN_NAME': risk_unit.origin,
+                'PATHWAY': risk_unit.pathway,
+                'TOTAL_PLANT_QUANTITY': len(risk_unit.plant_ids),
+                'TOTAL_SAMPLING_UNITS': risk_unit.num_sample_units,
+                'REQUIRED_NUMBER_OF_BOXES': len(risk_unit.sample_unit_ids),
+                # Optional: Add inspection results if needed in RBS data
+                # 'INSPECTION_UNITS_OPENED': inspection_result.inspection_units_opened_completion,
+                # 'SAMPLE_UNITS_INSPECTED': inspection_result.sample_units_inspected_completion,
+                # 'CONTAMINATED_UNITS_FOUND': inspection_result.contaminated_sample_units_completion,
+            }
 
-        return rbs_record
+            # Add to collections (efficient batch approach)
+            self.rbs_records.append(rbs_record)
 
-    @staticmethod
-    def _create_pis_record(
-            consignment: Consignment,
-            box_idx: int,
-            box_result: int,
-            n_units_to_inspect: int,
-            inspection_result: SimpleNamespace
-    ) -> dict:
-        """
-        Create a single PIS (Plant Inspection System) record.
-
-        Args:
-            consignment: Consignment object with inspection details
-            box_idx: Index of the inspection unit (box) being recorded
-            box_result: Result of inspection (1=contamination found, 0=clean)
-            n_units_to_inspect: Required number of boxes to inspect
-            inspection_result: SimpleNamespace from inspect() with inspection metrics
-
-        Returns:
-            Dictionary with PIS record data
-        """
-        pis_record = {
-            'INSPECTION_ID': consignment.inspection_number,
-            'COUNTRY_OF_ORIGIN_NAME': consignment.origin,
-            'PATHWAY': consignment.pathway,
-            'QUANTITY': consignment.num_plants,
-            'year': consignment.date.year,
-            'month': consignment.date.month,
-            'action': box_result,
-            "RISK_UNIT": 0, #Todo: Update with appropriate risk unit value
-            "REQUIRED_NUMBER_OF_BOXES": n_units_to_inspect,
-            'TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT': consignment.num_sample_units
-            # Optional: Add more details
-            # 'BOX_INDEX': box_idx,
-            # 'CONSIGNMENT_PASSED': inspection_result.consignment_checked_ok,
-        }
-
-        return pis_record
