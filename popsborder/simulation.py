@@ -285,8 +285,7 @@ def simulation(
                         {
                             "consignment_index": i + 1,
                             "inspection_number": getattr(consignment, "inspection_number", None),
-                            "inspection_unit_index": inspection_unit_index,
-                            "inspection_unit_id": getattr(inspection_unit, "id", inspection_unit_index),
+                            "inspection_unit_id": getattr(inspection_unit, "inspection_print_id", None),
                             "risk_unit_id": risk_unit_id,
                             "num_sample_units": getattr(inspection_unit, "num_sample_units", len(sample_unit_objects)),
                             "num_plants": num_plants_in_inspection_unit,

@@ -702,15 +702,13 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
 
     if sample_strategy == "rbs":
 
-        """
-        TODO: Investigate min guard and impact on oversampling
-        """
         if unit in ["sample_unit", "sample_units", "item", "items"]:
             detected = False
             if selection_strategy == "cluster":
                 raise RuntimeError(f"Selection strategy = '{selection_strategy}' is not supported for"
                                    f" sampling_strategy = {sample_strategy}")
-            else:  # All other sample_unit selection strategies inspected the same way
+            else:  
+                # All other sample_unit selection strategies inspected the same way
                 # Empty lists to hold opened inspection_units indexes, will be duplicates bc inspection_unit index
                 # computed per inspected sample_unit
                 inspection_units_opened_completion = []
@@ -721,7 +719,8 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                     if detailed:
                         ret.inspected_sample_unit_indexes.append(sample_unit_index)
                     ret.sample_units_inspected_completion += 1
-                    # Count plant units inspected (all plants in this sample unit)
+                    
+                    # Count sample units inspected (all plants in this sample unit)
                     iu_idx = sample_unit_to_inspection.get(
                         sample_unit_index,
                         math.floor(sample_unit_index / sample_units_per_inspection_unit),
@@ -749,9 +748,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                         inspection_units_opened_detection.append(
                             iu_idx
                         )
-                    # Debug hook to confirm we are inspecting individual sample units
-                    if os.environ.get("SLIPPAGE_DEBUG_INSPECTION"):
-                        print(f"Inspecting sample unit {sample_unit_index}")
+
                     if inspect_sample_unit(consignment.sample_units[sample_unit_index], effectiveness):
                         consignment.inspection_units[iu_idx].is_detected = True
                         # Count every contaminated sample_unit in sample

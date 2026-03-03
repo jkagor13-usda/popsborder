@@ -192,6 +192,7 @@ class InspectionUnit:
                  sample_unit_ids=None,
                  plant_ids=None,
                  action_status="pending",
+                 inspection_print_id = None,
                  is_detected=False):
         """Store references to fixed-hierarchy unit collections."""
         if included_units is None:
@@ -741,6 +742,7 @@ class PISConsignmentGenerator:
             inspection_unit_origin = record.get("COUNTRY_OF_ORIGIN_NAME", origin)
             inspection_unit_port = record.get("INSPECTION_LOCATION_NAME", port)
             inspection_unit_pathway = record.get("PATHWAY", pathway)
+            inspection_unit_row_id = record.get("Row_ID", pathway)
 
             # Calculate plants per sample_unit for this inspection unit
             if inspection_unit_sample_units > 0:
@@ -811,6 +813,7 @@ class PISConsignmentGenerator:
                 risk_unit_ids=[risk_unit_id],
                 sample_unit_ids=inspection_sample_unit_ids,
                 plant_ids=inspection_plant_ids,
+                inspection_print_id=inspection_unit_row_id,
             )
 
             inspection_unit.included_unit_objects = sample_unit_objects
