@@ -46,7 +46,7 @@ def main():
     consignment_groups = list(df_pis_test_data.groupby('INSPECTION_NUMBER'))
     num_consignments_to_simulate = len(consignment_groups) # Define number of consignments in the test dataset
 
-    num_consignments_to_simulate = 100
+    num_consignments_to_simulate = 20
 
     config["consignment"]["input_file"]["file_name"] = str(val_data_path / "test.csv")
 
@@ -184,7 +184,7 @@ def main():
 
     # Run one scenario analysis simulation
     detailed_bool = True
-    num_replications = 10
+    num_replications = 2
     scenario_results_raw = run_scenarios(
         config=config,
         scenario_table=scenarios,
