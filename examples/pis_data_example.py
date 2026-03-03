@@ -56,7 +56,7 @@ def main():
         for j, iu in enumerate(consignment.inspection_units):
             print(f"    Unit {j+1}: {iu.material_type}")
             print(f"            Sample Units: {iu.num_sample_units}")
-            print(f"            Plant Objects: {len(iu.sample_unit_objects)}")
+            print(f"            Plant Objects: {len(iu.included_unit_objects)}")
         
         print()
         
@@ -68,11 +68,11 @@ def main():
             total_sample_units_check = 0
             for j, iu in enumerate(consignment.inspection_units):
                 print(f"  Inspection Unit {j+1} ({iu.material_type}):")
-                print(f"    Sample Units Array Shape: {iu.sample_units.shape}")
-                print(f"    Sample Unit Objects: {len(iu.sample_unit_objects)}")
+                print(f"    Sample Units Array Shape: {iu.included_units.shape}")
+                print(f"    Sample Unit Objects: {len(iu.included_unit_objects)}")
                 
                 # Check first few sample unit objects
-                for k, suo in enumerate(iu.sample_unit_objects[:3]):
+                for k, suo in enumerate(iu.included_unit_objects[:3]):
                     print(f"      SampleUnit {k+1}: {suo.num_plants} plants")
                     
                 total_sample_units_check += iu.num_sample_units
@@ -84,3 +84,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
