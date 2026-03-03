@@ -21,6 +21,7 @@ from popsborder.inspections import normalize_rbs_variables_against_consignment
 from slippage_model_utils.clarke_r_script_wrapper import *
 from slippage_model_utils.clarke_model_support_functions import *
 from slippage_model_utils.paths import BoxPaths, DefaultPaths
+from slippage_model_utils.validation_utils import *
 
 
 def main():
@@ -34,16 +35,18 @@ def main():
     compliance_file = data_dir / "compliance_table.csv"
     scenario_file = data_dir / "validation_scenario.csv"
     pis_data_train = val_data_path / 'train.csv'
-    pis_data_test = val_data_path / 'test.csv'
+    pis_data_test_path = val_data_path / 'test.csv'
 
     # Load configuration and compliance table
     config = load_configuration(config_file)
 
     # Load in the test data to understand how many consignments to generate
-    df_pis_test_data = pd.read_csv(pis_data_test)
+    df_pis_test_data = pd.read_csv(pis_data_test_path)
     # Group by inspection number to create consignments
     consignment_groups = list(df_pis_test_data.groupby('INSPECTION_NUMBER'))
     num_consignments_to_simulate = len(consignment_groups) # Define number of consignments in the test dataset
+
+    num_consignments_to_simulate = 100
 
     config["consignment"]["input_file"]["file_name"] = str(val_data_path / "test.csv")
 
@@ -61,7 +64,7 @@ def main():
     ##### TODO: Replace this block with the appropriate data ####
     #############################################################
     # Load in PIS Data
-    df_pis_train_data = pd.read_csv(pis_data_train)
+    #df_pis_train_data = pd.read_csv(pis_data_train)
 
 
     #############################################################
@@ -181,11 +184,12 @@ def main():
 
     # Run one scenario analysis simulation
     detailed_bool = True
+    num_replications = 10
     scenario_results_raw = run_scenarios(
         config=config,
         scenario_table=scenarios,
         seed=42,
-        num_simulations=2,            # Only one simulation
+        num_simulations=num_replications,            # Only one simulation
         num_consignments=num_consignments_to_simulate,
         compliance_table=compliance_table,
         detailed=detailed_bool
@@ -193,6 +197,55 @@ def main():
 
 
     # Post process outputs across replications/num_simulations to validate against previously seen action rates
+    # Configuration
+    scenarios = ["Validation"]
+    val_group_fields = ["COUNTRY_OF_ORIGIN_NAME", "PROPAGATIVE_MATERIAL_TYPE"]
+
+    # List available simulation runs
+    print("Available simulation runs:")
+    available_runs = list_available_simulation_runs(default_paths.output_dir())
+    for i, run in enumerate(available_runs, 1):
+        print(f"{i}. {run['name']} (Timestamp: {run['timestamp']})")
+
+    # Option 1: Use latest simulation run
+    results = calculate_action_rates_by_scenario(
+        ground_truth_path=pis_data_test_path,
+        simulation_output_path=default_paths.output_dir(),
+        scenarios=scenarios,
+        num_replications=num_replications,
+        filter_fields=val_group_fields,
+        simulation_base_path="latest"  # Auto-select most recent
+    )
+
+    # Option 2: Use specific simulation run
+    # results = calculate_action_rates_by_scenario(
+    #     ground_truth_path=ground_truth_path,
+    #     simulation_output_path=simulation_output_path,
+    #     scenarios=scenarios,
+    #     num_replications=num_replications,
+    #     filter_fields=filter_fields,
+    #     simulation_base_path="pops_border_scenario_data_03_02_2026_17_21_12"
+    # )
+
+    # Save results
+    save_results(results=results)
+
+    # Create and save statistical comparison summaries (now includes ground_truth_path)
+    summaries = summarize_statistical_comparison(
+        results=results,
+        filter_fields=val_group_fields,
+        ground_truth_path=pis_data_test_path
+    )
+
+    # Display summary
+    if results:
+        first_scenario = scenarios[0]
+        print(f"\n{first_scenario} Overall Statistical Summary:")
+        print(summaries[first_scenario]['overall_summary'])
+
+
+
+
     print('')
 
 
