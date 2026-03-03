@@ -12,6 +12,7 @@ import pandas as pd
 from popsborder.scenarios import run_scenarios
 from popsborder.inputs import load_configuration, load_scenario_table, load_compliance_lookup_csv
 from popsborder.outputs import save_scenario_result_to_pandas
+from popsborder.outputs import save_inspection_unit_detection_records_to_csv
 from popsborder.generator import SyntheticConsignmentDataGenerator, save_to_csv
 from popsborder.consignments import get_consignment_generator
 
@@ -28,32 +29,38 @@ def main():
     box_paths = BoxPaths()
     shared_ppq_data_path = box_paths.shared_ppq_data()
     default_paths = DefaultPaths()
-    #data_dir = Path("slippage_data")
     data_dir = default_paths.slippage_data_dir()
     config_file = data_dir / "config.yml"
-    #compliance_file = data_dir / "compliance_table_test.csv"
     compliance_file = data_dir / "compliance_table.csv"
     scenario_file = data_dir / "test_scenario.csv"
-    #scenario_file = data_dir / "pis_contaminate_scenarios.csv"
-    pis_data = data_dir / 'synthetic_pis_data.csv'
-    #rbs_calc_data = data_dir / 'synthetic_rbs_calc_data.csv'
-    #rbs_calc_data = data_dir / 'synthetic_rbs_calc_data2.csv'
-    pis_data_updated = shared_ppq_data_path / 'updated_pis_data.csv'
 
+    pis_data_updated = shared_ppq_data_path / 'updated_pis_data.csv'  # PIS data
+    pis_data_updated = data_dir / "TEST_PIS_SampleQuantity.csv"       # Test data
+    
     # Load configuration and compliance table
     config = load_configuration(config_file)
 
-    # Synthetic data generation
-    num_consignments_to_simulate = 10 # Added input parameter to be the number of consignments you want simulated
-    #synthetic_data_generator = SyntheticConsignmentDataGenerator(box_paths.rbs_calc_data())
-    #synthetic_data_generator = SyntheticConsignmentDataGenerator(data_dir / "synthetic_rbs_calc_data2.csv")
-    #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="naive")
-    #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=num_consignments_to_simulate, sampling_method="sequential")
-    #synth_data = synthetic_data_generator.generate_from_input_data(n_consignments=10, sampling_method="gmm")
+    historical = True
+    num_consignments_to_simulate = 5 # Added input parameter to be the number of consignments you want simulated
+    synthetic_data_generator = SyntheticConsignmentDataGenerator(input_data_file=pis_data_updated)
+    
+    if historical:
+        included_inspection_nums = synthetic_data_generator.input_data["INSPECTION_NUMBER"].sample(n=num_consignments_to_simulate)
+        hist_data = synthetic_data_generator.input_data[synthetic_data_generator.input_data["INSPECTION_NUMBER"].isin(included_inspection_nums)]
+        hist_data['Row_ID'] = 'CR-' + (hist_data.index + 1).astype(str)
+        hist_out_path = data_dir / "Historical_PIS_SampleQuantity.csv"
+        hist_data.to_csv(hist_out_path)
+        config["consignment"]["input_file"]["file_name"] = "slippage_data/Historical_PIS_SampleQuantity.csv"
+    else:
+        synth_data = synthetic_data_generator.generate_from_input_data(
+            n_consignments=num_consignments_to_simulate, 
+            sampling_method="sequential"
+        )
+        synth_out_path = data_dir / "Syntehtic_PIS_SampleQuantity.csv"
+        synth_data.to_csv(synth_out_path)
 
-    #save_to_csv(synth_data, filename= data_dir / "synth_data.csv")
 
-    config["consignment"]["input_file"]["rbs_file_name"] = str(data_dir / "synth_data.csv")
+
 
     ####################################################################
     ####################################################################
@@ -65,15 +72,9 @@ def main():
     ### Read in Data ###
     ####################
 
-    #############################################################
-    ##### TODO: Replace this block with the appropriate data ####
-    #############################################################
     # Load in PIS Data
-    #df_pis_data = pd.read_csv(pis_data)
     df_pis_data = pd.read_csv(pis_data_updated)
 
-    # Load in RBS Calculator Data
-    #df_rbs_calculator = pd.read_csv(rbs_calc_data)
     #############################################################
     ##### TODO: Replace this block with the appropriate data ####
     #############################################################
@@ -191,9 +192,6 @@ def main():
     ####################################################################
     ####################################################################
 
-
-
-
     # Run one scenario analysis simulation
     detailed_bool = True
     scenario_results_raw = run_scenarios(
@@ -226,6 +224,21 @@ def main():
                                                 result_columns=result_columns)
     results_df.to_csv(output_dir / "pis_contamination_scenario_results2.csv", index=False)
     print("Results saved to output/pis_contamination_scenario_results2.csv")
+
+    if detailed_bool:
+        inspection_unit_records = []
+        for details, _, scenario_config in scenario_results_raw:
+            if len(details) >= 3:
+                for row in details[2]:
+                    row_with_scenario = dict(row)
+                    row_with_scenario["scenario_name"] = scenario_config.get("name")
+                    inspection_unit_records.append(row_with_scenario)
+        if inspection_unit_records:
+            save_inspection_unit_detection_records_to_csv(
+                inspection_unit_records,
+                output_dir / "inspection_unit_detection_records.csv",
+            )
+            print("Results saved to output/inspection_unit_detection_records.csv")
     print('')
 
 if __name__ == "__main__":

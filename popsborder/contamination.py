@@ -58,8 +58,8 @@ Modifications:
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
 .. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
-.. codeauthor:: Gary Lin <Gary.Lin@jhuapl.edu>
-.. codeauthor:: Joseph Agor <Joseph.Agor@jhuapl.edu>
+.. codeauthor:: Gary Lin <Gary.Lin jhuapl edu>
+.. codeauthor:: Joseph Agor <Joseph.Agor jhuapl edu>
 """
 
 
@@ -282,26 +282,26 @@ def add_contaminant_to_random_inspection_unit(config, consignment, contamination
             in_inspection_unit = config.get("in_inspection_unit_arrangement", "all")
             if in_inspection_unit == "first":
                 # simply put one contaminant to first sample_unit in the inspection_unit
-                inspection_unit.sample_units[0] = 1
+                inspection_unit.included_units[0] = 1
                 # Plant contamination
-                if hasattr(inspection_unit, 'sample_unit_objects'):
-                    inspection_unit.sample_unit_objects[0].plants.fill(1)
-                    inspection_unit.sample_units[0] = inspection_unit.sample_unit_objects[0].plants.sum()
+                if hasattr(inspection_unit, 'included_unit_objects'):
+                    inspection_unit.included_unit_objects[0].plants.fill(1)
+                    inspection_unit.included_units[0] = inspection_unit.included_unit_objects[0].plants.sum()
             elif in_inspection_unit == "all":
-                inspection_unit.sample_units.fill(1)
+                inspection_unit.included_units.fill(1)
                 # Plant contamination
-                if hasattr(inspection_unit, 'sample_unit_objects'):
+                if hasattr(inspection_unit, 'included_unit_objects'):
                     for samp_index in range(inspection_unit.num_sample_units):
-                        if hasattr(inspection_unit.sample_unit_objects[samp_index], 'plants'):
-                            inspection_unit.sample_unit_objects[samp_index].plants.fill(1)
-                            inspection_unit.sample_units[samp_index] = inspection_unit.sample_unit_objects[samp_index].plants.sum()
+                        if hasattr(inspection_unit.included_unit_objects[samp_index], 'plants'):
+                            inspection_unit.included_unit_objects[samp_index].plants.fill(1)
+                            inspection_unit.included_units[samp_index] = inspection_unit.included_unit_objects[samp_index].plants.sum()
             elif in_inspection_unit == "one_random":
                 index = np.random.choice(inspection_unit.num_sample_units - 1)
-                inspection_unit.sample_units[index] = 1
+                inspection_unit.included_units[index] = 1
                 # Plant contamination
-                if hasattr(inspection_unit, 'sample_unit_objects'):
-                    inspection_unit.sample_unit_objects[index].plants.fill(1)
-                    inspection_unit.sample_units[index] = inspection_unit.sample_unit_objects[index].plants.sum()
+                if hasattr(inspection_unit, 'included_unit_objects'):
+                    inspection_unit.included_unit_objects[index].plants.fill(1)
+                    inspection_unit.included_units[index] = inspection_unit.included_unit_objects[index].plants.sum()
             elif in_inspection_unit == "random":
                 if not contamination_rate:
                     raise ValueError(
@@ -315,13 +315,13 @@ def add_contaminant_to_random_inspection_unit(config, consignment, contamination
                 indexes = np.random.choice(
                     inspection_unit.num_sample_units, num_contaminated_sample_units, replace=False
                 )
-                np.put(inspection_unit.sample_units, indexes, 1)
+                np.put(inspection_unit.included_units, indexes, 1)
                 # Plant contamination
-                if hasattr(inspection_unit, 'sample_unit_objects'):
+                if hasattr(inspection_unit, 'included_unit_objects'):
                     for idx in indexes:
-                        if hasattr(inspection_unit.sample_unit_objects[idx], 'plants'):
-                            inspection_unit.sample_unit_objects[idx].plants.fill(1)
-                            inspection_unit.sample_units[idx] = inspection_unit.sample_unit_objects[idx].plants.sum()
+                        if hasattr(inspection_unit.included_unit_objects[idx], 'plants'):
+                            inspection_unit.included_unit_objects[idx].plants.fill(1)
+                            inspection_unit.included_units[idx] = inspection_unit.included_unit_objects[idx].plants.sum()
 
 # modify to include clarke parameters -
 def get_contamination_rate(config):
@@ -384,6 +384,38 @@ def num_inspection_units_to_contaminate(config, num_inspection_units):
     return contaminated_inspection_units
 
 
+def synchronize_contamination_arrays_from_plants(consignment):
+    """Synchronize sample-unit and plant arrays to match plant-level contamination truth."""
+    if not hasattr(consignment, "inspection_units"):
+        return
+
+    global_sample_unit_idx = 0
+    global_plant_idx = 0
+    has_global_sample_units = hasattr(consignment, "sample_units") and consignment.sample_units is not None
+    has_global_plants = hasattr(consignment, "plants") and consignment.plants is not None
+
+    for inspection_unit in consignment.inspection_units:
+        sample_unit_objects = getattr(inspection_unit, "included_unit_objects", [])
+        for local_su_idx, sample_unit_object in enumerate(sample_unit_objects):
+            contaminated_plants_in_sample_unit = int(np.count_nonzero(sample_unit_object.plants))
+
+            if hasattr(inspection_unit, "included_units") and local_su_idx < len(inspection_unit.included_units):
+                inspection_unit.included_units[local_su_idx] = contaminated_plants_in_sample_unit
+
+            if has_global_sample_units and global_sample_unit_idx < len(consignment.sample_units):
+                consignment.sample_units[global_sample_unit_idx] = contaminated_plants_in_sample_unit
+            global_sample_unit_idx += 1
+
+            if has_global_plants:
+                plant_values = np.asarray(sample_unit_object.plants, dtype=np.int64)
+                n_plants = len(plant_values)
+                end_idx = min(global_plant_idx + n_plants, len(consignment.plants))
+                write_n = end_idx - global_plant_idx
+                if write_n > 0:
+                    consignment.plants[global_plant_idx:end_idx] = plant_values[:write_n]
+                global_plant_idx += n_plants
+
+
 def add_contaminant_uniform_random(config, consignment):
     """Add contaminants to consignment using uniform random distribution
 
@@ -410,7 +442,7 @@ def add_contaminant_uniform_random(config, consignment):
         # Mark ALL sample_units in ALL contaminated inspection_units as contaminated
         # When contaminating at inspection unit level, the entire inspection unit should be contaminated
         for inspection_unit_index in inspection_unit_indexes:
-            consignment.inspection_units[inspection_unit_index].sample_units.fill(1)
+            consignment.inspection_units[inspection_unit_index].included_units.fill(1)
 
         # Pooled plant-level contamination for all contaminated sample_units in all contaminated inspection_units
         if consignment.num_plants is not None:
@@ -427,7 +459,7 @@ def add_contaminant_uniform_random(config, consignment):
         if hasattr(consignment, 'sample_units'):
             sample_unit_idx = 0
             for inspection_unit in consignment.inspection_units:
-                for su_idx, su_value in enumerate(inspection_unit.sample_units):
+                for su_idx, su_value in enumerate(inspection_unit.included_units):
                     if sample_unit_idx < len(consignment.sample_units):
                         consignment.sample_units[sample_unit_idx] = su_value
                         sample_unit_idx += 1
@@ -453,7 +485,7 @@ def add_contaminant_uniform_random(config, consignment):
             # Synchronize global sample_units array with inspection unit arrays after contamination
             sample_unit_idx = 0
             for inspection_unit in consignment.inspection_units:
-                for su_idx, su_value in enumerate(inspection_unit.sample_units):
+                for su_idx, su_value in enumerate(inspection_unit.included_units):
                     consignment.sample_units[sample_unit_idx] = su_value
                     sample_unit_idx += 1
             
@@ -477,12 +509,12 @@ def add_contaminant_uniform_random(config, consignment):
                 return
         else:
             # Fallback fixed-rate contamination across all plants
-            total_plants = sum(len(su.plants) for iu in consignment.inspection_units for su in iu.sample_unit_objects)
+            total_plants = sum(len(su.plants) for iu in consignment.inspection_units for su in iu.included_unit_objects)
             contaminated_total = num_units_to_contaminate(config["contamination_rate"], total_plants)
             contaminated_plants = np.zeros(num_inspection_units, dtype=int)
             if contaminated_total > 0:
                 # Distribute proportionally by plant counts per inspection unit
-                unit_sizes = [sum(len(su.plants) for su in iu.sample_unit_objects) for iu in consignment.inspection_units]
+                unit_sizes = [sum(len(su.plants) for su in iu.included_unit_objects) for iu in consignment.inspection_units]
                 total_size = sum(unit_sizes)
                 for idx, size in enumerate(unit_sizes):
                     share = int(round(contaminated_total * size / total_size)) if total_size else 0
@@ -496,7 +528,7 @@ def add_contaminant_uniform_random(config, consignment):
             k = int(contaminated_plants[iu_idx]) if iu_idx < len(contaminated_plants) else 0
             if k <= 0:
                 continue
-            su_objs = inspection_unit.sample_unit_objects
+            su_objs = inspection_unit.included_unit_objects
             lengths = [len(su.plants) for su in su_objs]
             unit_total = sum(lengths)
             if unit_total <= 0:
@@ -516,7 +548,7 @@ def add_contaminant_uniform_random(config, consignment):
         # Update consignment.sample_units to sum of contaminated plants for each sample_unit
         sample_unit_counter = 0
         for inspection_unit in consignment.inspection_units:
-            for sample_unit_object in inspection_unit.sample_unit_objects:
+            for sample_unit_object in inspection_unit.included_unit_objects:
                 consignment.sample_units[sample_unit_counter] = sample_unit_object.plants.sum()
                 sample_unit_counter += 1
 
@@ -524,7 +556,7 @@ def add_contaminant_uniform_random(config, consignment):
         total_contaminated = sum(
             (sample_unit_object.plants == 1).sum()
             for inspection_unit in consignment.inspection_units
-            for sample_unit_object in inspection_unit.sample_unit_objects
+            for sample_unit_object in inspection_unit.included_unit_objects
         )
         if config["contamination_rate"]['distribution'] == 'beta-binomial':
             expected = int(np.sum(contaminated_plants))
@@ -649,7 +681,7 @@ def add_contaminant_clusters_to_inspection_units(config, consignment):
             start=cluster_start, stop=cluster_start + cluster_size
         )
         for cluster_index in cluster_indexes:
-            consignment.inspection_units[cluster_index].sample_units.fill(1)
+            consignment.inspection_units[cluster_index].included_units.fill(1)
     cluster_start = (
         contaminated_units_per_cluster * cluster_strata[len(cluster_sizes) - 1]
     )
@@ -657,7 +689,7 @@ def add_contaminant_clusters_to_inspection_units(config, consignment):
         start=cluster_start, stop=cluster_start + cluster_sizes[-1]
     )
     for cluster_index in cluster_indexes[:-1]:
-        consignment.inspection_units[cluster_index].sample_units.fill(1)
+        consignment.inspection_units[cluster_index].included_units.fill(1)
     partial_inspection_unit_proportion = math.modf(contaminated_inspection_units)[0]
     if partial_inspection_unit_proportion == 0.0:
         partial_inspection_unit_proportion = 1
@@ -677,7 +709,7 @@ def add_contaminant_clusters_to_inspection_units(config, consignment):
             cluster_indexes = np.arange(start=cluster_start, stop=cluster_start + cluster_size)
             for cluster_index in cluster_indexes:
                 for samp_index in range(consignment.inspection_units[cluster_index].num_sample_units):
-                    sample_unit_object = consignment.inspection_units[cluster_index].sample_unit_objects[samp_index]
+                    sample_unit_object = consignment.inspection_units[cluster_index].included_unit_objects[samp_index]
                     num_plants = len(sample_unit_object.plants)
                     for plant_idx in range(num_plants):
                         plant_tuples.append((cluster_index, samp_index, plant_idx))
@@ -698,7 +730,7 @@ def add_contaminant_clusters_to_inspection_units(config, consignment):
             consignment.inspection_units[cluster_indexes[-1]].num_sample_units * partial_inspection_unit_proportion
         )
         for samp_index in range(partial_inspection_unit_contaminated_stems):
-            sample_unit_object = consignment.inspection_units[cluster_indexes[-1]].sample_unit_objects[samp_index]
+            sample_unit_object = consignment.inspection_units[cluster_indexes[-1]].included_unit_objects[samp_index]
             num_plants = len(sample_unit_object.plants)
             for plant_idx in range(num_plants):
                 plant_tuples.append((cluster_indexes[-1], samp_index, plant_idx))
@@ -706,16 +738,16 @@ def add_contaminant_clusters_to_inspection_units(config, consignment):
         num_contaminated_plants = max(1, round(total_plants * perc_plants_contaminated))
         # Set all plants in all contaminated sample_units to 0 first
         for inspection_unit_idx, samp_index, plant_idx in plant_tuples:
-            consignment.inspection_units[inspection_unit_idx].sample_unit_objects[samp_index].plants[plant_idx] = 0
+            consignment.inspection_units[inspection_unit_idx].included_unit_objects[samp_index].plants[plant_idx] = 0
         # Randomly contaminate the required number of plants across all pooled plants
         contaminated_plant_indices = np.random.choice(total_plants, num_contaminated_plants, replace=False)
         for idx in contaminated_plant_indices:
             inspection_unit_idx, samp_index, plant_idx = plant_tuples[idx]
-            consignment.inspection_units[inspection_unit_idx].sample_unit_objects[samp_index].plants[plant_idx] = 1
+            consignment.inspection_units[inspection_unit_idx].included_unit_objects[samp_index].plants[plant_idx] = 1
         # Update sample_units array to sum of contaminated plants per sample_unit
         for inspection_unit_idx, inspection_unit in enumerate(consignment.inspection_units):
-            for samp_index, sample_unit_object in enumerate(inspection_unit.sample_unit_objects):
-                consignment.inspection_units[inspection_unit_idx].sample_units[samp_index] = sample_unit_object.plants.sum()
+            for samp_index, sample_unit_object in enumerate(inspection_unit.included_unit_objects):
+                consignment.inspection_units[inspection_unit_idx].included_units[samp_index] = sample_unit_object.plants.sum()
 
     # Check if correct number of inspection_units contaminated, should be rounded up
     # contaminated_inspection_units, or may be rounded down contaminated_inspection_units
@@ -781,7 +813,7 @@ def add_contaminant_clusters_to_sample_units_with_subset_clustering(config, cons
         plant_tuples = []
         for sample_unit_index in indexes:
             inspection_unit_idx, sample_unit_idx = consignment.get_inspection_unit_and_sample_unit_index(sample_unit_index)
-            num_plants = len(consignment.inspection_units[inspection_unit_idx].sample_unit_objects[sample_unit_idx].plants)
+            num_plants = len(consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants)
             for plant_idx in range(num_plants):
                 plant_tuples.append((sample_unit_index, inspection_unit_idx, sample_unit_idx, plant_idx))
         total_plants = len(plant_tuples)
@@ -791,15 +823,15 @@ def add_contaminant_clusters_to_sample_units_with_subset_clustering(config, cons
         # Set all plants in selected sample_units to 0 first
         for sample_unit_index in indexes:
             inspection_unit_idx, sample_unit_idx = consignment.get_inspection_unit_and_sample_unit_index(sample_unit_index)
-            consignment.inspection_units[inspection_unit_idx].sample_unit_objects[sample_unit_idx].plants.fill(0)
+            consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants.fill(0)
         # Set contaminated plants
         for idx in contaminated_plant_indices:
             sample_unit_index, inspection_unit_idx, sample_unit_idx, plant_idx = plant_tuples[idx]
-            consignment.inspection_units[inspection_unit_idx].sample_unit_objects[sample_unit_idx].plants[plant_idx] = 1
+            consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants[plant_idx] = 1
         # Update sample_units array for each sample_unit
         for sample_unit_index in indexes:
             inspection_unit_idx, sample_unit_idx = consignment.get_inspection_unit_and_sample_unit_index(sample_unit_index)
-            consignment.inspection_units[inspection_unit_idx].sample_units[sample_unit_idx] = consignment.inspection_units[inspection_unit_idx].sample_unit_objects[sample_unit_idx].plants.sum()
+            consignment.inspection_units[inspection_unit_idx].included_units[sample_unit_idx] = consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants.sum()
 
     assert np.count_nonzero(consignment.sample_units) == num_of_contaminated_sample_units
 
@@ -865,7 +897,7 @@ def add_contaminant_clusters_to_sample_units(config, consignment):
         plant_tuples = []
         for sample_unit_index in cluster_indexes:
             inspection_unit_idx, sample_unit_idx = consignment.get_inspection_unit_and_sample_unit_index(sample_unit_index)
-            num_plants = len(consignment.inspection_units[inspection_unit_idx].sample_unit_objects[sample_unit_idx].plants)
+            num_plants = len(consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants)
             for plant_idx in range(num_plants):
                 plant_tuples.append((sample_unit_index, inspection_unit_idx, sample_unit_idx, plant_idx))
         total_plants = len(plant_tuples)
@@ -875,15 +907,15 @@ def add_contaminant_clusters_to_sample_units(config, consignment):
         # Set all plants in selected sample_units to 0 first
         for sample_unit_index in cluster_indexes:
             inspection_unit_idx, sample_unit_idx = consignment.get_inspection_unit_and_sample_unit_index(sample_unit_index)
-            consignment.inspection_units[inspection_unit_idx].sample_unit_objects[sample_unit_idx].plants.fill(0)
+            consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants.fill(0)
         # Set contaminated plants
         for idx in contaminated_plant_indices:
             sample_unit_index, inspection_unit_idx, sample_unit_idx, plant_idx = plant_tuples[idx]
-            consignment.inspection_units[inspection_unit_idx].sample_unit_objects[sample_unit_idx].plants[plant_idx] = 1
+            consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants[plant_idx] = 1
         # Update sample_units array for each sample_unit
         for sample_unit_index in cluster_indexes:
             inspection_unit_idx, sample_unit_idx = consignment.get_inspection_unit_and_sample_unit_index(sample_unit_index)
-            consignment.inspection_units[inspection_unit_idx].sample_units[sample_unit_idx] = consignment.inspection_units[inspection_unit_idx].sample_unit_objects[sample_unit_idx].plants.sum()
+            consignment.inspection_units[inspection_unit_idx].included_units[sample_unit_idx] = consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants.sum()
         # For plant-level contamination, the assertion is more flexible since some sample_units
         # may end up with zero contaminated plants due to the probabilistic nature
         actual_contaminated = np.count_nonzero(consignment.sample_units)
@@ -944,7 +976,7 @@ def _apply_pooled_plant_level_contamination(consignment, sample_unit_indexes, pe
     if is_tuple:
         # inspection_unit-level: sample_unit_indexes are (inspection_unit_idx, samp_index) tuples
         for inspection_unit_idx, samp_index in sample_unit_indexes:
-            sample_unit_object = consignment.inspection_units[inspection_unit_idx].sample_unit_objects[samp_index]
+            sample_unit_object = consignment.inspection_units[inspection_unit_idx].included_unit_objects[samp_index]
             num_plants = len(sample_unit_object.plants)
             for plant_idx in range(num_plants):
                 plant_tuples.append((None, inspection_unit_idx, samp_index, plant_idx))
@@ -952,7 +984,7 @@ def _apply_pooled_plant_level_contamination(consignment, sample_unit_indexes, pe
         # sample_unit-level: sample_unit_indexes are sample_unit indices (int or numpy int)
         for sample_unit_index in sample_unit_indexes:
             inspection_unit_idx, sample_unit_idx = consignment.get_inspection_unit_and_sample_unit_index(int(sample_unit_index))
-            sample_unit_object = consignment.inspection_units[inspection_unit_idx].sample_unit_objects[sample_unit_idx]
+            sample_unit_object = consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx]
             num_plants = len(sample_unit_object.plants)
             for plant_idx in range(num_plants):
                 plant_tuples.append((sample_unit_index, inspection_unit_idx, sample_unit_idx, plant_idx))
@@ -962,21 +994,21 @@ def _apply_pooled_plant_level_contamination(consignment, sample_unit_indexes, pe
     num_contaminated_plants = max(1, round(total_plants * percentage))
     # Set all plants in all contaminated sample_units to 0 first
     for _, inspection_unit_idx, sample_unit_idx, plant_idx in plant_tuples:
-        consignment.inspection_units[inspection_unit_idx].sample_unit_objects[sample_unit_idx].plants[plant_idx] = 0
+        consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants[plant_idx] = 0
     contaminated_plant_indices = np.random.choice(total_plants, num_contaminated_plants, replace=False)
     for idx in contaminated_plant_indices:
         _, inspection_unit_idx, sample_unit_idx, plant_idx = plant_tuples[idx]
-        consignment.inspection_units[inspection_unit_idx].sample_unit_objects[sample_unit_idx].plants[plant_idx] = 1
+        consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants[plant_idx] = 1
     # Update sample_units array to sum of contaminated plants per sample_unit
     if not is_tuple:
         # sample_unit-level
         for sample_unit_index in sample_unit_indexes:
             inspection_unit_idx, sample_unit_idx = consignment.get_inspection_unit_and_sample_unit_index(int(sample_unit_index))
-            consignment.inspection_units[inspection_unit_idx].sample_units[sample_unit_idx] = consignment.inspection_units[inspection_unit_idx].sample_unit_objects[sample_unit_idx].plants.sum()
+            consignment.inspection_units[inspection_unit_idx].included_units[sample_unit_idx] = consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants.sum()
     else:
         # inspection_unit-level
         for inspection_unit_idx, samp_index in sample_unit_indexes:
-            consignment.inspection_units[inspection_unit_idx].sample_units[samp_index] = consignment.inspection_units[inspection_unit_idx].sample_unit_objects[samp_index].plants.sum()
+            consignment.inspection_units[inspection_unit_idx].included_units[samp_index] = consignment.inspection_units[inspection_unit_idx].included_unit_objects[samp_index].plants.sum()
 
 
 def consignment_matches_selection_rule(rule, consignment):
@@ -1077,3 +1109,6 @@ def get_contaminant_function(config):
     else:
         raise RuntimeError(f"Unknown contaminant arrangement: {arrangement}")
     return add_contaminant
+
+
+

@@ -119,8 +119,8 @@ Modifications:
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
 .. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
-.. codeauthor:: Gary Lin <Gary.Lin@jhuapl.edu>
-.. codeauthor:: Joseph Agor <Joseph.Agor@jhuapl.edu>
+.. codeauthor:: Gary Lin <Gary.Lin jhuapl edu>
+.. codeauthor:: Joseph Agor <Joseph.Agor jhuapl edu>
 """
 
 import csv
@@ -223,7 +223,7 @@ def pretty_consignment_inspection_units(consignment, config=None):
         separator = line
     header = pretty_header(consignment, config=config)
     body = separator.join(
-        [pretty_content(inspection_unit.sample_units, config=config) for inspection_unit in consignment["inspection_units"]]
+        [pretty_content(inspection_unit.included_units, config=config) for inspection_unit in consignment["inspection_units"]]
     )
     return f"{header}\n{body}"
 
@@ -714,6 +714,13 @@ def save_scenario_result_to_pandas(results, config_columns=None, result_columns=
     return pd.DataFrame.from_records(rows)
 
 
+def save_inspection_unit_detection_records_to_csv(records, filename):
+    """Save per-inspection-unit detection records to CSV and return DataFrame."""
+    df = pd.DataFrame.from_records(records)
+    df.to_csv(filename, index=False)
+    return df
+
+
 class SimData(object):
 
     def __init__(self):
@@ -869,7 +876,7 @@ class SimData(object):
         if sum(consignment.plants)>0:
             for inspection_unit in consignment.inspection_units:
                 num_contaminats_per_sample_unit = []
-                for sample_unit in inspection_unit.sample_unit_objects:
+                for sample_unit in inspection_unit.included_unit_objects:
                     num_contaminats_per_sample_unit.append(sum(sample_unit.plants))
                     if sum(sample_unit.plants)>0:
                         num_contaminated_inspection_units += 1
@@ -932,3 +939,5 @@ class SimData(object):
             # Add rows to synthetic data sets
             self.pis_synthetic_data.loc[len(self.pis_synthetic_data)] = default_row_pis
             self.rbs_calc_synthetic_data.loc[len(self.rbs_calc_synthetic_data)] = default_row_rbs_calc
+
+
