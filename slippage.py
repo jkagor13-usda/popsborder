@@ -47,7 +47,7 @@ def main():
     if historical:
         included_inspection_nums = synthetic_data_generator.input_data["INSPECTION_NUMBER"].sample(n=num_consignments_to_simulate)
         hist_data = synthetic_data_generator.input_data[synthetic_data_generator.input_data["INSPECTION_NUMBER"].isin(included_inspection_nums)]
-        hist_data['Row_ID'] = 'INS-' + (hist_data.index + 1).astype(str)
+        hist_data['Row_ID'] = 'CR-' + (hist_data.index + 1).astype(str)
         hist_out_path = data_dir / "Historical_PIS_SampleQuantity.csv"
         hist_data.to_csv(hist_out_path)
         config["consignment"]["input_file"]["file_name"] = "slippage_data/Historical_PIS_SampleQuantity.csv"

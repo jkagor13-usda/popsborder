@@ -201,6 +201,7 @@ class InspectionUnit:
         self.included_units = included_units
         self._included_unit_objects = []
         self.id = inspection_unit_id
+        self.inspection_print_id = inspection_print_id
 
         self.material_type = material_type
         self.producer = producer
