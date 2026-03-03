@@ -18,6 +18,12 @@ class DefaultPaths:
     def impact_data_dir(self) -> Path:
         return self.root / "impact_data"
 
+    def output_dir(self) -> Path:
+        return self.root / "output"
+
+    def validation_output_dir(self) -> Path:
+        return self.output_dir() / "validation_outputs"
+
 
 class BoxPaths:
 
