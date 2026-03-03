@@ -201,15 +201,6 @@ def simulation(
             print(f'\n   Number of Contaminated Inspection Units: {total_contaminated_inspection_units}')
             print(f'   Proportion of Contaminated Inspection Units (total # inspection units = {len(consignment.inspection_units)}): {total_contaminated_inspection_units/len(consignment.inspection_units)}')
 
-            if os.environ.get("SLIPPAGE_DEBUG_CONTAM_SUMMARY"):
-                print(
-                    f"[contam summary] consignment {i+1}: "
-                    f"plants={total_contaminated_units}, "
-                    f"sample_units={total_contaminated_sample_units}, "
-                    f"inspection_units={total_contaminated_inspection_units}"
-                )
-                sys.stdout.flush()
-
 
             #simData.add_consignment(consignment)
             if detailed:
