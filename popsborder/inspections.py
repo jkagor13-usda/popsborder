@@ -1001,7 +1001,6 @@ def get_detection_and_confidence(
             n_units_to_inspect[risk_unit_id] = (default_detection, default_confidence)
         return n_units_to_inspect
 
-    # TODO: Better variable matching approach
     attr_map = {
         "PATHWAY": "pathway",
         "COUNTRY_OF_ORIGIN_NAME": "origin",
@@ -1029,6 +1028,9 @@ def get_detection_and_confidence(
         else:
             key = tuple(values[attr] for attr in rbs_variables)
             result = compliance_table_dict.get(key, (default_detection, default_confidence))
+        
+        print(f"Finding RBS compliance level for {key}") 
+        print(f"Use compliance level: {result}") 
 
         n_units_to_inspect[risk_unit_id] = result
         if print_compliance_levels:
