@@ -220,14 +220,35 @@ def calculate_action_rates_by_scenario(
             # Perform two-sided t-test if we have valid rates
             if len(valid_rates) > 1:
                 from scipy import stats
-                # Two-sided one-sample t-test: H0: mean of valid_rates == ground_truth_action_rate
-                t_statistic, p_value = stats.ttest_1samp(valid_rates, gt_action_rate)
-                # If p-value > 0.05, we fail to reject null (they are statistically the same)
-                statistically_same = 1 if p_value > 0.05 else 0
+
+                # Calculate mean and std
+                mean_rate = np.mean(valid_rates)
+                std_rate = np.std(valid_rates, ddof=1)  # Use sample std deviation
+
+                # Check if rates are essentially identical (no variance)
+                if std_rate < 1e-10:  # Very small threshold for numerical stability
+                    # If all replications are the same, check if they match ground truth
+                    if abs(mean_rate - gt_action_rate) < 1e-10:
+                        statistically_same = 1
+                        p_value = 1.0  # Perfect match, maximum p-value
+                    else:
+                        statistically_same = 0
+                        p_value = 0.0  # Clear difference, minimum p-value
+                else:
+                    # Normal t-test when there is variance
+                    t_statistic, p_value = stats.ttest_1samp(valid_rates, gt_action_rate)
+                    # If p-value > 0.05, we fail to reject null (they are statistically the same)
+                    statistically_same = 1 if p_value > 0.05 else 0
+
             elif len(valid_rates) == 1:
                 # Can't perform t-test with only one observation
-                statistically_same = np.nan
-                p_value = np.nan
+                # Check if the single value matches ground truth
+                if abs(valid_rates[0] - gt_action_rate) < 1e-10:
+                    statistically_same = 1
+                    p_value = 1.0
+                else:
+                    statistically_same = np.nan  # Insufficient data for reliable test
+                    p_value = np.nan
             else:
                 # No valid rates
                 statistically_same = np.nan
