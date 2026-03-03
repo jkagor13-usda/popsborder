@@ -103,7 +103,7 @@ def calculate_action_rates_by_scenario(
         filter_fields: List[str],
         simulation_base_path: str = "latest",
         output_file: str = "synthetic_commodity_line_results_data.csv",
-        practical_equivalence_threshold: float = 0.01
+        practical_equivalence_threshold: float = 0.005
 ) -> Dict[str, pd.DataFrame]:
     """
     Calculate action rates from simulation data filtered by ground truth criteria.
