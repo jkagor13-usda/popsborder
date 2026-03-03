@@ -102,7 +102,8 @@ def calculate_action_rates_by_scenario(
         num_replications: int,
         filter_fields: List[str],
         simulation_base_path: str = "latest",
-        output_file: str = "synthetic_commodity_line_results_data.csv"
+        output_file: str = "synthetic_commodity_line_results_data.csv",
+        practical_equivalence_threshold: float = 0.01
 ) -> Dict[str, pd.DataFrame]:
     """
     Calculate action rates from simulation data filtered by ground truth criteria.
@@ -219,8 +220,6 @@ def calculate_action_rates_by_scenario(
 
             # Perform two-sided t-test if we have valid rates
             if len(valid_rates) > 1:
-                from scipy import stats
-
                 # Calculate mean and std
                 mean_rate = np.mean(valid_rates)
                 std_rate = np.std(valid_rates, ddof=1)  # Use sample std deviation
@@ -240,19 +239,37 @@ def calculate_action_rates_by_scenario(
                     # If p-value > 0.05, we fail to reject null (they are statistically the same)
                     statistically_same = 1 if p_value > 0.05 else 0
 
+                # Also check practical equivalence (e.g., within 5% or 0.01 absolute difference)
+                absolute_diff = abs(mean_rate - gt_action_rate)
+
+                # Consider practically equivalent if within threshold
+                practically_equivalent = 1 if (absolute_diff < practical_equivalence_threshold) else 0
+
             elif len(valid_rates) == 1:
                 # Can't perform t-test with only one observation
                 # Check if the single value matches ground truth
                 if abs(valid_rates[0] - gt_action_rate) < 1e-10:
                     statistically_same = 1
                     p_value = 1.0
+
+                    # Consider practically equivalent if within threshold
+                    absolute_diff = abs(valid_rates[0] - gt_action_rate)
+                    # Consider practically equivalent if within threshold
+                    practically_equivalent = 1 if (absolute_diff < 0.01) else 0
+
                 else:
                     statistically_same = np.nan  # Insufficient data for reliable test
                     p_value = np.nan
+                    practically_equivalent = np.nan
+                    absolute_diff = np.nan
             else:
                 # No valid rates
                 statistically_same = np.nan
                 p_value = np.nan
+                practically_equivalent = np.nan
+                absolute_diff = np.nan
+
+
 
             result_row = {
                 **combination_dict,
@@ -262,7 +279,10 @@ def calculate_action_rates_by_scenario(
                 'num_inspection_numbers': len(unique_inspections),
                 'num_valid_replications': len(valid_rates),
                 'simulation_action_rate_statistically_same_as_ground_truth': statistically_same,
-                'p_value': p_value
+                'p_value': p_value,
+                'practically_equivalent': practically_equivalent,
+                'practical_threshold': practical_equivalence_threshold,
+                'action_rate_abs_diff': absolute_diff
             }
 
             # Add individual replication rates (starting from rep_0)
@@ -347,10 +367,6 @@ def save_results(results: Dict[str, pd.DataFrame], output_dir: Path = DefaultPat
 
 
 
-
-
-
-
 def summarize_statistical_comparison(
         results: Dict[str, pd.DataFrame],
         filter_fields: List[str],
@@ -358,7 +374,7 @@ def summarize_statistical_comparison(
         output_dir: Path = DefaultPaths().validation_output_dir()
 ) -> Dict[str, Dict[str, pd.DataFrame]]:
     """
-    Create summary statistics for statistical comparison between simulation and ground truth.
+    Create summary statistics for statistical and practical comparison between simulation and ground truth.
 
     Parameters:
     -----------
@@ -375,8 +391,9 @@ def summarize_statistical_comparison(
     --------
     Dict[str, Dict[str, pd.DataFrame]]
         Nested dictionary with scenario names as keys, each containing:
-        - 'overall_summary': DataFrame with overall statistics
-        - 'different_combinations': DataFrame with combinations where rates differ
+        - 'overall_summary': DataFrame with overall statistics (both statistical and practical)
+        - 'statistically_different_combinations': DataFrame with combinations where rates differ statistically
+        - 'practically_different_combinations': DataFrame with combinations where rates differ practically
     """
     output_path = Path(output_dir)
     output_path.mkdir(exist_ok=True)
@@ -394,70 +411,113 @@ def summarize_statistical_comparison(
     for scenario, df in results.items():
         print(f"\nProcessing summary for {scenario}...")
 
-        # Filter out rows where statistical test couldn't be performed (NaN values)
-        df_valid = df[df['simulation_action_rate_statistically_same_as_ground_truth'].notna()].copy()
+        # Filter out rows where tests couldn't be performed (NaN values)
+        df_valid_stat = df[df['simulation_action_rate_statistically_same_as_ground_truth'].notna()].copy()
+        df_valid_pract = df[df['practically_equivalent'].notna()].copy()
 
-        # --- Summary 1: Overall Statistics ---
-        same_count = (df_valid['simulation_action_rate_statistically_same_as_ground_truth'] == 1).sum()
-        different_count = (df_valid['simulation_action_rate_statistically_same_as_ground_truth'] == 0).sum()
-        total_valid = same_count + different_count
+        # --- Calculate statistics for both tests ---
+        # Statistical test counts
+        stat_same_count = (df_valid_stat['simulation_action_rate_statistically_same_as_ground_truth'] == 1).sum()
+        stat_different_count = (df_valid_stat['simulation_action_rate_statistically_same_as_ground_truth'] == 0).sum()
+        stat_total_valid = stat_same_count + stat_different_count
 
-        # Calculate inspection numbers for each category
-        same_mask = df_valid['simulation_action_rate_statistically_same_as_ground_truth'] == 1
-        different_mask = df_valid['simulation_action_rate_statistically_same_as_ground_truth'] == 0
+        # Practical test counts
+        pract_same_count = (df_valid_pract['practically_equivalent'] == 1).sum()
+        pract_different_count = (df_valid_pract['practically_equivalent'] == 0).sum()
+        pract_total_valid = pract_same_count + pract_different_count
 
-        same_inspection_numbers = df_valid.loc[same_mask, 'num_inspection_numbers'].sum()
-        different_inspection_numbers = df_valid.loc[different_mask, 'num_inspection_numbers'].sum()
-        total_inspection_numbers = same_inspection_numbers + different_inspection_numbers
+        # Helper function to calculate metrics for a given mask and dataframe
+        def calculate_metrics(df_subset, mask):
+            inspection_nums = df_subset.loc[mask, 'num_inspection_numbers'].sum()
 
-        # Calculate number of rows in ground truth for each category
-        same_rows = 0
-        different_rows = 0
+            # Calculate rows in ground truth
+            rows = 0
+            for _, row in df_subset[mask].iterrows():
+                filter_condition = pd.Series([True] * len(ground_truth))
+                for field in filter_fields_lower:
+                    if field in ground_truth.columns:
+                        filter_condition &= (ground_truth[field] == row[field])
+                rows += filter_condition.sum()
 
-        for _, row in df_valid.iterrows():
-            # Build filter condition for this combination
-            filter_condition = pd.Series([True] * len(ground_truth))
-            for field in filter_fields_lower:
-                if field in ground_truth.columns:
-                    filter_condition &= (ground_truth[field] == row[field])
+            return inspection_nums, rows
 
-            # Count rows for this combination
-            num_rows = filter_condition.sum()
+        # Calculate metrics for statistical test
+        stat_same_mask = df_valid_stat['simulation_action_rate_statistically_same_as_ground_truth'] == 1
+        stat_different_mask = df_valid_stat['simulation_action_rate_statistically_same_as_ground_truth'] == 0
 
-            # Add to appropriate category
-            if row['simulation_action_rate_statistically_same_as_ground_truth'] == 1:
-                same_rows += num_rows
-            else:
-                different_rows += num_rows
+        stat_same_inspection_nums, stat_same_rows = calculate_metrics(df_valid_stat, stat_same_mask)
+        stat_different_inspection_nums, stat_different_rows = calculate_metrics(df_valid_stat, stat_different_mask)
+        stat_total_inspection_nums = stat_same_inspection_nums + stat_different_inspection_nums
+        stat_total_rows = stat_same_rows + stat_different_rows
 
-        total_rows = same_rows + different_rows
+        # Calculate metrics for practical test
+        pract_same_mask = df_valid_pract['practically_equivalent'] == 1
+        pract_different_mask = df_valid_pract['practically_equivalent'] == 0
 
+        pract_same_inspection_nums, pract_same_rows = calculate_metrics(df_valid_pract, pract_same_mask)
+        pract_different_inspection_nums, pract_different_rows = calculate_metrics(df_valid_pract, pract_different_mask)
+        pract_total_inspection_nums = pract_same_inspection_nums + pract_different_inspection_nums
+        pract_total_rows = pract_same_rows + pract_different_rows
+
+        # Create overall summary with both tests
         overall_summary = pd.DataFrame({
-            'comparison_result': ['Statistically Same', 'Statistically Different', 'Total Valid'],
-            'num_combinations': [same_count, different_count, total_valid],
+            'comparison_result': [
+                'Statistically Same',
+                'Statistically Different',
+                'Total Valid (Statistical)',
+                'Practically Same',
+                'Practically Different',
+                'Total Valid (Practical)'
+            ],
+            'num_combinations': [
+                stat_same_count,
+                stat_different_count,
+                stat_total_valid,
+                pract_same_count,
+                pract_different_count,
+                pract_total_valid
+            ],
             'percentage_of_combinations': [
-                (same_count / total_valid * 100) if total_valid > 0 else 0,
-                (different_count / total_valid * 100) if total_valid > 0 else 0,
+                (stat_same_count / stat_total_valid * 100) if stat_total_valid > 0 else 0,
+                (stat_different_count / stat_total_valid * 100) if stat_total_valid > 0 else 0,
+                100.0,
+                (pract_same_count / pract_total_valid * 100) if pract_total_valid > 0 else 0,
+                (pract_different_count / pract_total_valid * 100) if pract_total_valid > 0 else 0,
                 100.0
             ],
             'num_inspection_numbers': [
-                same_inspection_numbers,
-                different_inspection_numbers,
-                total_inspection_numbers
+                stat_same_inspection_nums,
+                stat_different_inspection_nums,
+                stat_total_inspection_nums,
+                pract_same_inspection_nums,
+                pract_different_inspection_nums,
+                pract_total_inspection_nums
             ],
             'percentage_of_inspection_numbers': [
-                (same_inspection_numbers / total_inspection_numbers * 100) if total_inspection_numbers > 0 else 0,
-                (different_inspection_numbers / total_inspection_numbers * 100) if total_inspection_numbers > 0 else 0,
+                (stat_same_inspection_nums / stat_total_inspection_nums * 100) if stat_total_inspection_nums > 0 else 0,
+                (
+                            stat_different_inspection_nums / stat_total_inspection_nums * 100) if stat_total_inspection_nums > 0 else 0,
+                100.0,
+                (
+                            pract_same_inspection_nums / pract_total_inspection_nums * 100) if pract_total_inspection_nums > 0 else 0,
+                (
+                            pract_different_inspection_nums / pract_total_inspection_nums * 100) if pract_total_inspection_nums > 0 else 0,
                 100.0
             ],
             'num_ground_truth_rows': [
-                same_rows,
-                different_rows,
-                total_rows
+                stat_same_rows,
+                stat_different_rows,
+                stat_total_rows,
+                pract_same_rows,
+                pract_different_rows,
+                pract_total_rows
             ],
             'percentage_of_ground_truth_rows': [
-                (same_rows / total_rows * 100) if total_rows > 0 else 0,
-                (different_rows / total_rows * 100) if total_rows > 0 else 0,
+                (stat_same_rows / stat_total_rows * 100) if stat_total_rows > 0 else 0,
+                (stat_different_rows / stat_total_rows * 100) if stat_total_rows > 0 else 0,
+                100.0,
+                (pract_same_rows / pract_total_rows * 100) if pract_total_rows > 0 else 0,
+                (pract_different_rows / pract_total_rows * 100) if pract_total_rows > 0 else 0,
                 100.0
             ]
         })
@@ -465,22 +525,22 @@ def summarize_statistical_comparison(
         # Add scenario information
         overall_summary.insert(0, 'scenario', scenario)
 
-        # --- Summary 2: Combinations Where Rates are Statistically Different ---
-        different_combinations = df_valid[
-            df_valid['simulation_action_rate_statistically_same_as_ground_truth'] == 0
+        # --- Statistically Different Combinations ---
+        stat_different_combinations = df_valid_stat[
+            df_valid_stat['simulation_action_rate_statistically_same_as_ground_truth'] == 0
             ].copy()
 
-        # Add row count for each different combination
-        row_counts = []
-        for _, row in different_combinations.iterrows():
+        # Add row count for each statistically different combination
+        stat_row_counts = []
+        for _, row in stat_different_combinations.iterrows():
             filter_condition = pd.Series([True] * len(ground_truth))
             for field in filter_fields_lower:
                 if field in ground_truth.columns:
                     filter_condition &= (ground_truth[field] == row[field])
-            row_counts.append(filter_condition.sum())
+            stat_row_counts.append(filter_condition.sum())
 
-        # Select relevant columns for the detailed view
-        columns_to_include = (
+        # Select relevant columns for statistically different combinations
+        stat_columns_to_include = (
                 filter_fields_lower +
                 [
                     'ground_truth_action_rate',
@@ -488,54 +548,103 @@ def summarize_statistical_comparison(
                     'std_simulation_action_rate',
                     'num_inspection_numbers',
                     'num_valid_replications',
-                    'p_value'
+                    'p_value',
+                    'action_rate_abs_diff',
+                    'practically_equivalent',
+                    'practical_threshold'
                 ]
         )
 
-        # Only include columns that exist in the dataframe
-        columns_to_include = [col for col in columns_to_include if col in different_combinations.columns]
-        different_combinations = different_combinations[columns_to_include].copy()
+        stat_columns_to_include = [col for col in stat_columns_to_include if col in stat_different_combinations.columns]
+        stat_different_combinations = stat_different_combinations[stat_columns_to_include].copy()
+        stat_different_combinations['num_ground_truth_rows'] = stat_row_counts
 
-        # Add row count column
-        different_combinations['num_ground_truth_rows'] = row_counts
-
-        # Calculate absolute and relative differences
-        different_combinations['absolute_difference'] = (
-                different_combinations['mean_simulation_action_rate'] -
-                different_combinations['ground_truth_action_rate']
-        )
-        different_combinations['relative_difference_pct'] = (
-                (different_combinations['absolute_difference'] /
-                 different_combinations['ground_truth_action_rate']) * 100
+        # Calculate relative difference
+        stat_different_combinations['relative_difference_pct'] = (
+                (stat_different_combinations['action_rate_abs_diff'] /
+                 stat_different_combinations['ground_truth_action_rate']) * 100
         )
 
-        # Sort by absolute difference (descending)
-        different_combinations = different_combinations.sort_values(
-            'absolute_difference',
-            ascending=False,
-            key=abs
+        # Sort by absolute difference
+        stat_different_combinations = stat_different_combinations.sort_values(
+            'action_rate_abs_diff',
+            ascending=False
         ).reset_index(drop=True)
 
-        # Add scenario information
-        different_combinations.insert(0, 'scenario', scenario)
+        stat_different_combinations.insert(0, 'scenario', scenario)
+
+        # --- Practically Different Combinations ---
+        pract_different_combinations = df_valid_pract[
+            df_valid_pract['practically_equivalent'] == 0
+            ].copy()
+
+        # Add row count for each practically different combination
+        pract_row_counts = []
+        for _, row in pract_different_combinations.iterrows():
+            filter_condition = pd.Series([True] * len(ground_truth))
+            for field in filter_fields_lower:
+                if field in ground_truth.columns:
+                    filter_condition &= (ground_truth[field] == row[field])
+            pract_row_counts.append(filter_condition.sum())
+
+        # Select relevant columns for practically different combinations
+        pract_columns_to_include = (
+                filter_fields_lower +
+                [
+                    'ground_truth_action_rate',
+                    'mean_simulation_action_rate',
+                    'std_simulation_action_rate',
+                    'num_inspection_numbers',
+                    'num_valid_replications',
+                    'action_rate_abs_diff',
+                    'practical_threshold',
+                    'p_value',
+                    'simulation_action_rate_statistically_same_as_ground_truth'
+                ]
+        )
+
+        pract_columns_to_include = [col for col in pract_columns_to_include if
+                                    col in pract_different_combinations.columns]
+        pract_different_combinations = pract_different_combinations[pract_columns_to_include].copy()
+        pract_different_combinations['num_ground_truth_rows'] = pract_row_counts
+
+        # Calculate relative difference
+        pract_different_combinations['relative_difference_pct'] = (
+                (pract_different_combinations['action_rate_abs_diff'] /
+                 pract_different_combinations['ground_truth_action_rate']) * 100
+        )
+
+        # Sort by absolute difference
+        pract_different_combinations = pract_different_combinations.sort_values(
+            'action_rate_abs_diff',
+            ascending=False
+        ).reset_index(drop=True)
+
+        pract_different_combinations.insert(0, 'scenario', scenario)
 
         # Store results
         all_summaries[scenario] = {
             'overall_summary': overall_summary,
-            'different_combinations': different_combinations
+            'statistically_different_combinations': stat_different_combinations,
+            'practically_different_combinations': pract_different_combinations
         }
 
         # Save to CSV
         overall_file = output_path / f"{scenario}_overall_summary.csv"
-        different_file = output_path / f"{scenario}_statistically_different_combinations.csv"
+        stat_different_file = output_path / f"{scenario}_statistically_different_combinations.csv"
+        pract_different_file = output_path / f"{scenario}_practically_different_combinations.csv"
 
         overall_summary.to_csv(overall_file, index=False)
-        different_combinations.to_csv(different_file, index=False)
+        stat_different_combinations.to_csv(stat_different_file, index=False)
+        pract_different_combinations.to_csv(pract_different_file, index=False)
 
         print(f"Saved overall summary to: {overall_file}")
-        print(f"Saved different combinations to: {different_file}")
-        print(f"  - {same_count} combinations statistically same ({same_rows:,} ground truth rows)")
-        print(f"  - {different_count} combinations statistically different ({different_rows:,} ground truth rows)")
+        print(f"Saved statistically different combinations to: {stat_different_file}")
+        print(f"Saved practically different combinations to: {pract_different_file}")
+        print(
+            f"  Statistical Test: {stat_same_count} same, {stat_different_count} different ({stat_different_rows:,} ground truth rows)")
+        print(
+            f"  Practical Test: {pract_same_count} same, {pract_different_count} different ({pract_different_rows:,} ground truth rows)")
 
     # Create combined summaries across all scenarios
     if len(results) > 1:
@@ -548,21 +657,25 @@ def summarize_statistical_comparison(
         combined_overall.to_csv(combined_overall_file, index=False)
         print(f"\nSaved combined overall summary to: {combined_overall_file}")
 
-        # Combine different combinations
-        combined_different = pd.concat(
-            [summary['different_combinations'] for summary in all_summaries.values()],
+        # Combine statistically different combinations
+        combined_stat_different = pd.concat(
+            [summary['statistically_different_combinations'] for summary in all_summaries.values()],
             ignore_index=True
         )
-        combined_different_file = output_path / "all_scenarios_statistically_different_combinations.csv"
-        combined_different.to_csv(combined_different_file, index=False)
-        print(f"Saved combined different combinations to: {combined_different_file}")
+        combined_stat_different_file = output_path / "all_scenarios_statistically_different_combinations.csv"
+        combined_stat_different.to_csv(combined_stat_different_file, index=False)
+        print(f"Saved combined statistically different combinations to: {combined_stat_different_file}")
+
+        # Combine practically different combinations
+        combined_pract_different = pd.concat(
+            [summary['practically_different_combinations'] for summary in all_summaries.values()],
+            ignore_index=True
+        )
+        combined_pract_different_file = output_path / "all_scenarios_practically_different_combinations.csv"
+        combined_pract_different.to_csv(combined_pract_different_file, index=False)
+        print(f"Saved combined practically different combinations to: {combined_pract_different_file}")
 
     return all_summaries
-
-
-
-
-
 
 
 
