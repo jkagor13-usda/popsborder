@@ -200,7 +200,7 @@ def main():
         #scenario["contamination/contamination_rate/beta_binomial_parameters/theta"] = inputs.theta
         #scenario["contamination/contamination_rate/value"] = None
         #scenario["contamination/contamination_rate/value"] = 1.23456
-        scenario[f"contamination/arrangement"] = "clustered"
+        #scenario[f"contamination/arrangement"] = "clustered"
 
         # Setting actual paramters vaues
         for key in res.keys():
