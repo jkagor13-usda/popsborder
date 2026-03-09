@@ -889,7 +889,7 @@ class SyntheticConsignmentDataGenerator:
                 )
 
                 # 4) Generate each row belonging to this risk unit.
-                for _ in range(num_rows_for_risk_unit):
+                for row_id in range(num_rows_for_risk_unit):
                     subset = base_subset
                     sample = dict(base_sample)
 
@@ -905,6 +905,8 @@ class SyntheticConsignmentDataGenerator:
                     )
 
                     sample['SAMPLING_UNITS_FOR_INSPECTION_UNIT'] = num_sample_units
+
+
 
                     for col in columns:
                         # Do not multinomial-sample INSPECTION_NUMBER; we set it explicitly
@@ -929,21 +931,13 @@ class SyntheticConsignmentDataGenerator:
                                 sample[rem_col] = np.random.choice(values, p=probs)
                             break
 
-                    # Now set inspection ID for this row
+                    # Now set inspection and row ID for this row
                     sample[inspection_col] = ins_id
+                    sample['Row_ID'] = f"{ins_id}_{row_id}"
 
                     samples.append(sample)
 
         sampled_df = pd.DataFrame(samples)
-
-        # Optional: enforce column order to match `columns`
-        sampled_df = sampled_df[[c for c in columns if c in sampled_df.columns]]
-
-        # Keep helper columns out of final output unless requested.
-        if not include_inspection_col_in_output and inspection_col in sampled_df.columns:
-            sampled_df = sampled_df.drop(columns=[inspection_col])
-        if not include_risk_unit_number_in_output and risk_unit_number_col in sampled_df.columns:
-            sampled_df = sampled_df.drop(columns=[risk_unit_number_col])
 
         return sampled_df
 
@@ -1247,8 +1241,6 @@ class SyntheticConsignmentDataGenerator:
         # Define columns to use for sampling
         available_cols = self.input_data.columns.tolist()
         target_cols = [col for col in available_cols if col in [
-            'NSPECTION_ID',  # included for compatibility with requested spelling
-            'INSPECTION_ID',
             'INSPECTION_NUMBER',
             'COMMODITY_COMMON_NAME',
             'COUNTRY_OF_ORIGIN_NAME',
@@ -1285,7 +1277,7 @@ class SyntheticConsignmentDataGenerator:
             synthetic_data = self.sequential_multinomial_sample(
                 self.input_data, target_cols, n_consignments, random_state=42
             )
-        elif method == "gmm":
+        elif method == "gmm": # Experimental
             synthetic_data = self.gmm_sample(
                 self.input_data, target_cols, n_consignments, random_state=42
             )
@@ -1297,6 +1289,7 @@ class SyntheticConsignmentDataGenerator:
             raise ValueError(f"Unknown sampling method: {method}")
         
         return synthetic_data
+    
    
     def calculate_quality_metrics(self, original_df, synthetic_df):
         """Calculate quality metrics comparing original and synthetic data
