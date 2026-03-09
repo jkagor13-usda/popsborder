@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 import pandas as pd
+import random
 
 # Import functions from popsborder
 from popsborder.scenarios import run_scenarios
@@ -35,15 +36,16 @@ def main():
     scenario_file = data_dir / "test_scenario.csv"
 
     pis_data_updated = shared_ppq_data_path / 'updated_pis_data.csv'  # PIS data
-    pis_data_updated = data_dir / "TEST_PIS_SampleQuantity.csv"       # Test data
-    
+    #pis_data_updated = data_dir / "TEST_PIS_SampleQuantity.csv"       # Test data
+
     # Load configuration and compliance table
     config = load_configuration(config_file)
 
-    historical = True
+    # Synthetic data generation
+    historical = False
     num_consignments_to_simulate = 5 # Added input parameter to be the number of consignments you want simulated
     synthetic_data_generator = SyntheticConsignmentDataGenerator(input_data_file=pis_data_updated)
-    
+
     if historical:
         included_inspection_nums = synthetic_data_generator.input_data["INSPECTION_NUMBER"].sample(n=num_consignments_to_simulate)
         hist_data = synthetic_data_generator.input_data[synthetic_data_generator.input_data["INSPECTION_NUMBER"].isin(included_inspection_nums)]
@@ -53,7 +55,7 @@ def main():
         config["consignment"]["input_file"]["file_name"] = "slippage_data/Historical_PIS_SampleQuantity.csv"
     else:
         synth_data = synthetic_data_generator.generate_from_input_data(
-            n_consignments=num_consignments_to_simulate, 
+            n_consignments=num_consignments_to_simulate,
             sampling_method="sequential"
         )
         synth_out_path = data_dir / "Syntehtic_PIS_SampleQuantity.csv"
@@ -72,47 +74,59 @@ def main():
     ### Read in Data ###
     ####################
 
-    # Load in PIS Data
-    df_pis_data = pd.read_csv(pis_data_updated)
+    # # Load in PIS Data
+    # df_pis_data = pd.read_csv(pis_data_updated)
+    #
+    # #############################################################
+    # ##### TODO: Replace this block with the appropriate data ####
+    # #############################################################
+    #
+    # ### Generate clarke inputs via input data
+    # inputs_by_quantity = gen_clarke_model_inputs(df_pis_data)
+    #
+    # # Run clarke model
+    # res = {}
+    # print(f'\nNow Executing Clarke Model Based on Quantities')
+    # for (lower, upper), inputs in inputs_by_quantity.items():
+    #     print(f'   Calculating for Quantity Range:  {(lower, upper)}')
+    #     res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
+    #                                     inputs.b,
+    #                                     inputs.B,
+    #                                     inputs.Nbar,
+    #                                     inputs.freq,
+    #                                     inputs.theta,
+    #                                     inputs.R,
+    #                                     inputs.start_val,
+    #                                     inputs.se)
+    #
+    # print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
+    # for (lower, upper), results in res.items():
+    #     print(f'   For quantities ranging in {(lower, upper)}:')
+    #     print(f'      Alpha = {results["alpha"]}')
+    #     print(f'      Beta = {results["beta"]}')
+    #     #print(f'      Theta (from inputs) = {results.theta}')
+    #     #print('\n      Full Clarke model result payload:')
+    #     # for k, v in results.items():
+    #     #     print(f'   {k}: {v}')
+    #     print('')
 
-    #############################################################
-    ##### TODO: Replace this block with the appropriate data ####
-    #############################################################
-
-    ### Generate clarke inputs via input data
-    inputs_by_quantity = gen_clarke_model_inputs(df_pis_data)
-
-    # Run clarke model
+    # Setting values for testing
     res = {}
-    print(f'\nNow Executing Clarke Model Based on Quantities')
-    for (lower, upper), inputs in inputs_by_quantity.items():
-        print(f'   Calculating for Quantity Range:  {(lower, upper)}')
-        res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
-                                        inputs.b,
-                                        inputs.B,
-                                        inputs.Nbar,
-                                        inputs.freq,
-                                        inputs.theta,
-                                        inputs.R,
-                                        inputs.start_val,
-                                        inputs.se)
-
-    print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
-    for (lower, upper), results in res.items():
-        print(f'   For quantities ranging in {(lower, upper)}:')
-        print(f'      Alpha = {results["alpha"]}')
-        print(f'      Beta = {results["beta"]}')
-        #print(f'      Theta (from inputs) = {results.theta}')
-        #print('\n      Full Clarke model result payload:')
-        # for k, v in results.items():
-        #     print(f'   {k}: {v}')
-        print('')
-
-    # Update original parameters of config
-    #config['contamination']['contamination_rate']['parameters'][0] = res["alpha"]
-    #config['contamination']['contamination_rate']['parameters'][1] = res["beta"]
-    config['contamination']['contamination_rate']['parameters'][0] = 0.194628
-    config['contamination']['contamination_rate']['parameters'][1] = 4.7609372
+    inputs_by_quantity = {}
+    for key in [(-0.001, 10.0),
+                (10.0, 50.0),
+                (50.0, 150.0),
+                (150.0, 300.0),
+                (300.0, 579.0),
+                (579.0, 1000.0)]:
+        inputs_by_quantity[key] = {'theta': np.inf, 'B': 200}
+        res[key] = {
+            'alpha': random.uniform(0.01, 0.25),
+            "beta": random.uniform(2, 8),
+            'mu': 0.0,
+            'rho': 0.0,
+            'D': 0.0
+        }
 
 
     ####################################################################
@@ -181,10 +195,27 @@ def main():
     for scenario in scenarios:
         #scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = res["alpha"]
         #scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] =  res["beta"]
-        scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = 0.194628
-        scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] = 4.1 #20.12345
+        #scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = 0.194628
+        #scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] = 4.1 #20.12345
         #scenario["contamination/contamination_rate/beta_binomial_parameters/theta"] = inputs.theta
-        scenario["contamination/contamination_rate/value"] = None
+        #scenario["contamination/contamination_rate/value"] = None
+        #scenario["contamination/contamination_rate/value"] = 1.23456
+        #scenario[f"contamination/arrangement"] = "clustered"
+
+        # Setting actual paramters vaues
+        for key in res.keys():
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/alpha"] = res[key]['alpha']
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/beta"] = res[key]['beta']
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/mu"] = res[key]['mu']
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/rho"] = res[key]['rho']
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/D"] = res[key]['D']
+            # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[key].theta
+            # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = inputs_by_quantity[
+            #     key].B
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[
+                key]['theta']
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = inputs_by_quantity[
+                key]['B']
 
     ####################################################################
     ####################################################################
