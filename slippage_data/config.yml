@@ -79,7 +79,7 @@ contamination:
           N_bar: 200
           I: 1
           J: 10
-          p: 0.95 # How clustered within the sampling unit the contamination is 0 = completely random, 1 = "Fully Clustered"
+          p: 0 # How clustered among the sampling units the contamination is 0 = completely random, 1 = "Fully Clustered"
   arrangement: random
   clustered:
     percentage_plants_contaminated: .9

@@ -232,7 +232,7 @@ def add_contaminant_beta_binomial_for_groups(config, group_sizes, rng=None):
 def add_contaminant_beta_binomial(beta_binomial_config):
     """
     Args:
-        beta_binomial_config:  Dictionary with the folowing beta-binomial parameters as keys:
+        beta_binomial_config:  Dictionary with the following beta-binomial parameters as keys:
                                alpha: float
                                beta : float
                                theta : float or array-like
@@ -265,44 +265,74 @@ def add_contaminant_beta_binomial(beta_binomial_config):
     rng = 1
     rng = np.random.default_rng() if rng is None else np.random.default_rng(rng)
 
+
+    #############################################################
     # 1) p_i ~ Beta(alpha, beta), shape (I,)
-    p_i = rng.beta(alpha, beta, size=I)
-    # --- Broadcast theta to (I, J)
-    theta = np.asarray(theta)
-    if theta.ndim == 0:
-        theta_ij = np.full((I, J), theta, dtype=float)
-    elif theta.shape == (I,):
-        theta_ij = np.repeat(theta[:, None], J, axis=1)
-    elif theta.shape == (I, 1) or theta.shape == (1, J) or theta.shape == (I, J):
-        theta_ij = np.broadcast_to(theta, (I, J)).astype(float)
-    else:
-        theta_ij = np.broadcast_to(theta, (I, J)).astype(float)
-    # Calculate p_ij | p_i
-    # Start with the degenerate case p_ij = p_i for all cells,
-    # then overwrite where theta is finite.
-    p_ij = np.broadcast_to(p_i[:, None], (I, J)).copy()
-    finite_mask = np.isfinite(theta_ij)  # True where theta is finite
-    if np.any(finite_mask):
-        # Parameters only where theta is finite
-        a_ij = theta_ij * p_i[:, None]
-        b_ij = theta_ij * (1.0 - p_i[:, None])
+    p_i = rng.beta(alpha, beta)
 
-        # Draw only for finite cells (masked 1D arrays)
-        a = a_ij[finite_mask]
-        b = b_ij[finite_mask]
-
-        # NOTE: rng.beta accepts array-shaped a,b and returns matching shape
-        p_ij[finite_mask] = rng.beta(a, b)
-    # Calculate X_ij | p_ij ~ Binomial(N_bar, p_ij)
-    N_bar = np.asarray(N_bar)
-    if N_bar.ndim == 0:
-        N_ij = np.full((I, J), int(N_bar))
+    if np.isinf(theta):
+        # Degenerate case: p_ij = p_i for all J cells
+        p_ij = np.full(J, p_i)
     else:
-        N_ij = np.broadcast_to(N_bar, (I, J)).astype(int)
-    X = rng.binomial(N_ij, p_ij)
-    if len(X)>0: X = X[0]
+        # Draw J samples from Beta(theta*p_i, theta*(1-p_i))
+        p_ij = rng.beta(theta * p_i, theta * (1 - p_i), size=J)
+
+    # Draw X_ij from Binomial(N_bar, p_ij) for each of the J cells
+    X = rng.binomial(N_bar, p_ij)
+
+    ################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+    # # 1) p_i ~ Beta(alpha, beta), shape (I,)
+    # p_i = rng.beta(alpha, beta, size=I)
+    # # --- Broadcast theta to (I, J)
+    # theta = np.asarray(theta)
+    # if theta.ndim == 0:
+    #     theta_ij = np.full((I, J), theta, dtype=float)
+    # elif theta.shape == (I,):
+    #     theta_ij = np.repeat(theta[:, None], J, axis=1)
+    # elif theta.shape == (I, 1) or theta.shape == (1, J) or theta.shape == (I, J):
+    #     theta_ij = np.broadcast_to(theta, (I, J)).astype(float)
+    # else:
+    #     theta_ij = np.broadcast_to(theta, (I, J)).astype(float)
+    # # Calculate p_ij | p_i
+    # # Start with the degenerate case p_ij = p_i for all cells,
+    # # then overwrite where theta is finite.
+    # p_ij = np.broadcast_to(p_i[:, None], (I, J)).copy()
+    # finite_mask = np.isfinite(theta_ij)  # True where theta is finite
+    # if np.any(finite_mask):
+    #     # Parameters only where theta is finite
+    #     a_ij = theta_ij * p_i[:, None]
+    #     b_ij = theta_ij * (1.0 - p_i[:, None])
+    #
+    #     # Draw only for finite cells (masked 1D arrays)
+    #     a = a_ij[finite_mask]
+    #     b = b_ij[finite_mask]
+    #
+    #     # NOTE: rng.beta accepts array-shaped a,b and returns matching shape
+    #     p_ij[finite_mask] = rng.beta(a, b)
+    # # Calculate X_ij | p_ij ~ Binomial(N_bar, p_ij)
+    # N_bar = np.asarray(N_bar)
+    # if N_bar.ndim == 0:
+    #     N_ij = np.full((I, J), int(N_bar))
+    # else:
+    #     N_ij = np.broadcast_to(N_bar, (I, J)).astype(int)
+    # X = rng.binomial(N_ij, p_ij)
+    # if len(X)>0: X = X[0]
 
     # Apply clustering
+    if sum(X)>0:
+        print('')
     if beta_binomial_config['p'] > 0 and sum(X)>0:
         n = min(int(round(J * (1-beta_binomial_config['p']), 0)),len(X))
         m = len(X)
