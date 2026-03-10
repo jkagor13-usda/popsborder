@@ -716,6 +716,11 @@ def save_scenario_result_to_pandas(results, config_columns=None, result_columns=
     return pd.DataFrame.from_records(rows)
 
 
+def inspection_unit_detection_records_to_pandas(records):
+    """Convert per-inspection-unit detection records (list of dicts) to DataFrame."""
+    return pd.DataFrame.from_records(records)
+
+
 def save_inspection_unit_detection_records_to_csv(records, filename):
     """Save per-inspection-unit detection records to CSV and return DataFrame."""
     df = pd.DataFrame.from_records(records)
@@ -1067,7 +1072,7 @@ class PISSimData:
                     - num_plants: Total number of plants in consignment
                     - plants: List/array of contamination counts
                     - inspection_units: List of InspectionUnit objects, each containing
-                      sample_unit_objects with plants attributes
+                      included_unit_objects with plants attributes
 
             Notes:
                 - Contamination is determined by checking if sum(consignment.plants) > 0
@@ -1159,7 +1164,7 @@ class PISSimData:
                     unit_has_contamination = False
 
                     # Check each sample unit within the inspection unit
-                    for sample_unit in inspection_unit.sample_unit_objects:
+                    for sample_unit in inspection_unit.included_unit_objects:
                         contamination_count = sum(sample_unit.plants) if sample_unit.plants is not None else 0
                         contaminants_per_sample_unit.append(contamination_count)
 
@@ -1259,10 +1264,10 @@ class PISSimData:
             inspected_counts_by_inspection_unit[inspection_unit_index] += 1
 
         for inspection_unit_index, inspection_unit in enumerate(consignment.inspection_units):
-            sample_unit_objects = getattr(inspection_unit, "sample_unit_objects", [])
-            num_plants_in_inspection_unit = sum(len(su.plants) for su in sample_unit_objects)
+            included_unit_objects = getattr(inspection_unit, "included_unit_objects", [])
+            num_plants_in_inspection_unit = sum(len(su.plants) for su in included_unit_objects)
             infected_plants_in_inspection_unit = sum(
-                int(np.count_nonzero(su.plants)) for su in sample_unit_objects
+                int(np.count_nonzero(su.plants)) for su in included_unit_objects
             )
             risk_unit_id = None
             risk_unit_ids = getattr(inspection_unit, "risk_unit_ids", None)
@@ -1279,7 +1284,7 @@ class PISSimData:
                     "inspection_unit_index": inspection_unit_index,
                     "inspection_unit_id": getattr(inspection_unit, "id", inspection_unit_index),
                     "risk_unit_id": risk_unit_id,
-                    "num_sample_units": getattr(inspection_unit, "num_sample_units", len(sample_unit_objects)),
+                    "num_sample_units": getattr(inspection_unit, "num_sample_units", len(included_unit_objects)),
                     "num_plants": num_plants_in_inspection_unit,
                     "infected_plants": infected_plants_in_inspection_unit,
                     "is_infected": is_infected,
