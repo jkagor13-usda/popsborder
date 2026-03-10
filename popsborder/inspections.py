@@ -686,7 +686,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     # sample_units to detection and completion
     ret = types.SimpleNamespace(
         inspected_sample_unit_indexes=[],
-        insepcted_box_indexes=[],
+        inspected_box_indexes=[],
         inspected_box_result=[],
         inspection_units_opened_completion=0,
         inspection_units_opened_detection=0,
