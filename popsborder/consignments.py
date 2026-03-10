@@ -159,7 +159,7 @@ class RiskUnit:
             return len(self.sample_units)
 
     @property
-    def N_for_hypergeom(self):
+    def n_for_hypergeom(self):
         """Population size N used by hypergeometric sampling (fixed to sample unit count)."""
         return len(self.sample_unit_ids) if self.sample_unit_ids else self.num_sample_units
 
