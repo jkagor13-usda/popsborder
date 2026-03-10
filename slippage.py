@@ -27,34 +27,6 @@ from slippage_model_utils.paths import BoxPaths, DefaultPaths
 
 def main():
     default_paths = DefaultPaths()
-    # Create and run the variable creator
-    creator = VariableCreator(repo_root=default_paths.root)
-
-    # Run all functions
-    summary = creator.run_all()
-
-    # Or call individual functions
-    creator.function1(param1=42, param2=25)
-    #creator.function2(data=[1.0, 2.0, 3.0, 4.0, 5.0])
-
-    # Create sample dataframe
-    df = pd.DataFrame({
-        'col1': [1, 2, 3, 4, 5],
-        'col2': [10, 20, 30, 40, 50],
-        'name': ['A', 'B', 'C', 'D', 'E']
-    })
-
-    print("Original DataFrame:")
-    print(df)
-
-    # Call function3 with the dataframe
-    #result_df = creator.function3(df)
-    result_df = creator.function4(df, operation="product", multiplier=2.5)
-
-    print("\nResult DataFrame:")
-    print(result_df)
-
-
     # Set up data folder and file names
     box_paths = BoxPaths()
     shared_ppq_data_path = box_paths.shared_ppq_data()
@@ -201,6 +173,49 @@ def main():
 
     # Update the compliance table variable names to be used later in sim to match attributes of consignment object
     compliance_table['rbs_variables'] = updated
+
+
+
+    ################## Testing for R helper functions to create new variables ############################
+    # # Create and run the variable creator
+    # creator = VariableCreator(repo_root=default_paths.root)
+    #
+    # # Run all functions
+    # summary = creator.run_all()
+    #
+    # # Or call individual functions
+    # creator.function1(param1=42, param2=25)
+    # # creator.function2(data=[1.0, 2.0, 3.0, 4.0, 5.0])
+    #
+    # # Create sample dataframe
+    # df = pd.DataFrame({
+    #     'col1': [1, 2, 3, 4, 5],
+    #     'col2': [10, 20, 30, 40, 50],
+    #     'name': ['A', 'B', 'C', 'D', 'E']
+    # })
+    #
+    # print("Original DataFrame:")
+    # print(df)
+    #
+    # # Call function3 with the dataframe
+    # # result_df = creator.function3(df)
+    # result_df = creator.function4(df, operation="product", multiplier=2.5)
+    #
+    # print("\nResult DataFrame:")
+    # print(result_df)
+
+    ########################################################################################################
+
+
+
+
+
+
+
+
+
+
+
 
     ##################################################################
     ##################################################################
