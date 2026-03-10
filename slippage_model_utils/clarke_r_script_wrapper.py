@@ -12,6 +12,7 @@ import platform
 import sys
 from math import isinf
 import time
+import pandas as pd
 
 # === CONFIG ===
 # Name of the conda environment that contains R + required R packages.
@@ -106,6 +107,221 @@ def _find_conda_exe() -> Optional[Path]:
     return None
 
 
+def _find_conda_env_dir(env_name: str) -> Optional[Path]:
+    """
+    Locate the directory of a conda environment by name.
+
+    Args:
+        env_name: Name of the conda environment
+
+    Returns:
+        Path to the environment directory, or None if not found
+    """
+    # Check for explicit override first
+    override = os.getenv("POPS_CONDA_ENV_DIR")
+    if override:
+        override_path = Path(override)
+        if override_path.exists() and override_path.is_dir():
+            return override_path.resolve()
+
+    conda_exe = _find_conda_exe()
+    if not conda_exe:
+        return None
+
+    # Method 1: Try 'conda env list --json'
+    try:
+        result = subprocess.run(
+            [str(conda_exe), "env", "list", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=30.0,
+            check=True,
+        )
+
+        # Parse JSON more robustly - find the JSON object in the output
+        stdout = result.stdout.strip()
+
+        # Try to find JSON object boundaries
+        json_start = stdout.find('{')
+        json_end = stdout.rfind('}')
+
+        if json_start != -1 and json_end != -1:
+            json_str = stdout[json_start:json_end + 1]
+            env_data = json.loads(json_str)
+
+            # Method 1a: Check 'envs' list (paths only)
+            envs = env_data.get("envs", [])
+            for env_path in envs:
+                env_path_obj = Path(env_path)
+                if env_path_obj.name == env_name:
+                    return env_path_obj
+
+            # Method 1b: Check 'envs_details' dict (more detailed info)
+            envs_details = env_data.get("envs_details", {})
+            for env_path_str, details in envs_details.items():
+                if details.get("name") == env_name:
+                    env_path_obj = Path(env_path_str)
+                    if env_path_obj.exists():
+                        return env_path_obj
+
+    except (subprocess.CalledProcessError, json.JSONDecodeError, subprocess.TimeoutExpired) as e:
+        # Silent fallback to other methods
+        pass
+
+    # Method 2: Try 'conda info --envs' (plain text parsing)
+    try:
+        result = subprocess.run(
+            [str(conda_exe), "info", "--envs"],
+            capture_output=True,
+            text=True,
+            timeout=30.0,
+            check=True,
+        )
+
+        # Parse output like:
+        # # conda environments:
+        # #
+        # base                  *  C:\Users\user\anaconda3
+        # rbb                      C:\Users\user\anaconda3\envs\rbb
+
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            # Skip comments and empty lines
+            if not line or line.startswith('#'):
+                continue
+
+            # Split by whitespace, handle asterisk for active env
+            parts = line.split()
+            if not parts:
+                continue
+
+            # First part is env name, last part is path
+            curr_env_name = parts[0]
+            env_path_str = parts[-1]
+
+            if curr_env_name == env_name:
+                env_path_obj = Path(env_path_str)
+                if env_path_obj.exists():
+                    return env_path_obj
+
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        # Silent fallback to other methods
+        pass
+
+    # Method 3: Try common conda environment locations manually
+    if conda_exe:
+        conda_root = conda_exe.parent.parent  # Go up from Scripts/bin to conda root
+
+        # Common env locations relative to conda installation
+        candidates = [
+            conda_root / "envs" / env_name,  # Standard location
+            Path.home() / ".conda" / "envs" / env_name,  # User envs
+            Path.home() / "anaconda3" / "envs" / env_name,
+            Path.home() / "miniconda3" / "envs" / env_name,
+        ]
+
+        if platform.system() == "Windows":
+            local_appdata = os.getenv("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))
+            candidates += [
+                Path(local_appdata) / "anaconda" / "envs" / env_name,
+                Path(local_appdata) / "anaconda3" / "envs" / env_name,
+                Path(local_appdata) / "miniconda3" / "envs" / env_name,
+            ]
+
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_dir():
+                # Verify it's actually a conda env by checking for key files
+                if platform.system() == "Windows":
+                    if (candidate / "Scripts" / "activate.bat").exists() or \
+                            (candidate / "python.exe").exists():
+                        return candidate
+                else:
+                    if (candidate / "bin" / "activate").exists() or \
+                            (candidate / "bin" / "python").exists():
+                        return candidate
+
+    return None
+
+
+def _pick_rscript_command() -> Tuple[List[str], Dict[str, str]]:
+    """
+    Determine command to run Rscript and environment variables.
+
+    Returns:
+        Tuple of (command_list, env_dict)
+        - command_list: The command to execute
+        - env_dict: Environment variables to use (or empty dict to use conda run)
+    """
+    if not CONDA_ENV_NAME:
+        raise RuntimeError(
+            "CONDA_ENV_NAME is not set. "
+            "Set POPS_R_CONDA_ENV to the name of a conda environment "
+            "that contains R and required packages."
+        )
+
+    # Test the conda environment detection
+    conda_exe = _find_conda_exe()
+
+    # On Windows, we need to directly invoke Rscript with proper env vars
+    # On Unix, conda run works better
+    if platform.system() == "Windows":
+        env_dir = _find_conda_env_dir(CONDA_ENV_NAME)
+        if not env_dir:
+            # Provide detailed debugging information
+            try:
+                result = subprocess.run(
+                    [str(conda_exe), "env", "list"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30.0,
+                )
+                available_envs = result.stdout
+            except:
+                available_envs = "(could not retrieve environment list)"
+
+            raise RuntimeError(
+                f"Could not find conda environment '{CONDA_ENV_NAME}'.\n\n"
+                f"Conda executable found at: {conda_exe}\n\n"
+                f"Available environments:\n{available_envs}\n\n"
+                "Please ensure the environment exists and try:\n"
+                f"  conda activate {CONDA_ENV_NAME}\n"
+                f"  conda list | findstr R\n\n"
+                "Or set the environment path explicitly:\n"
+                f"  set POPS_CONDA_ENV_DIR=C:\\path\\to\\envs\\{CONDA_ENV_NAME}"
+            )
+
+        # Build the command to directly invoke Rscript
+        rscript = env_dir / "Scripts" / "Rscript.exe"
+        if not rscript.exists():
+            raise RuntimeError(
+                f"Rscript.exe not found in environment '{CONDA_ENV_NAME}'.\n"
+                f"Expected at: {rscript}\n"
+                f"Environment directory: {env_dir}\n\n"
+                "Please ensure R is installed in the environment:\n"
+                f"  conda activate {CONDA_ENV_NAME}\n"
+                "  conda install r-base"
+            )
+
+        # Build environment variables
+        env = os.environ.copy()
+
+        # Critical conda DLL locations for R + packages
+        prepend = [
+            str(env_dir / "Library" / "bin"),
+            str(env_dir / "Scripts"),
+            str(env_dir),
+        ]
+        env["PATH"] = os.pathsep.join(prepend + [env.get("PATH", "")])
+
+        # Help R find its home
+        env["R_HOME"] = str(env_dir / "Lib" / "R")
+
+        return [str(rscript)], env
+
+    else:
+        # On Unix, conda run works well
+        return [str(conda_exe), "run", "-n", CONDA_ENV_NAME, "Rscript"], {}
+
 # ---- Nested schema for `optim` ----
 class OptimResult(TypedDict):
     value: float
@@ -116,72 +332,11 @@ class OptimResult(TypedDict):
     hessian: Tuple[Tuple[float, float], Tuple[float, float]]  # 2x2 matrix
 
 
-# ---- Top-level result ----
-class BBResult(TypedDict):
-    optim: OptimResult
-
-    # point estimates
-    alpha: float
-    beta: float
-    mu: float
-    rho: float
-    D: float
-
-    # derived quantities / diagnostics
-    E_leak: float
-    prob_leak: float
-    log_prob_leak: float
-    pty0: float
-
-    # standard errors (scalars)
-    se_alpha: float
-    se_beta: float
-    se_mu: float
-    se_rho: float
-    se_D: float
-
-    # standard errors (vector)
-    se_par: Sequence[float]
-
-def _pick_rscript_command() -> list[str]:
-    """
-    Determine command to run Rscript via:
-      conda run -n <env> Rscript
-
-    Conda executable is auto-discovered, or can be explicitly set via:
-      POPS_CONDA_EXE or CONDA_EXE environment variables.
-    """
-
-    if not CONDA_ENV_NAME:
-        raise RuntimeError(
-            "CONDA_ENV_NAME is not set. "
-            "Set POPS_R_CONDA_ENV to the name of a conda environment "
-            "that contains R and required packages."
-        )
-
-    conda_exe = _find_conda_exe()
-    if conda_exe:
-        return [str(conda_exe), "run", "-n", CONDA_ENV_NAME, "Rscript"]
-
-    raise RuntimeError(
-        "Could not locate the conda executable.\n\n"
-        "Tried:\n"
-        "  - POPS_CONDA_EXE environment variable\n"
-        "  - CONDA_EXE environment variable\n"
-        "  - conda on PATH\n"
-        "  - common Anaconda / Miniconda install locations\n\n"
-        "Fix one of the following:\n"
-        "  1) Run this command from an Anaconda Prompt\n"
-        "  2) Add conda to your PATH\n"
-        "  3) Set POPS_CONDA_EXE to your conda executable, e.g.:\n"
-        "       setx POPS_CONDA_EXE \"C:\\Users\\<you>\\miniconda3\\Scripts\\conda.exe\"\n\n"
-        f"Expected conda environment name: '{CONDA_ENV_NAME}'"
-    )
 
 def _parse_json_from_r_stdout(stdout: str) -> dict[str, Any]:
     """
     Extract the final JSON object from mixed R stdout (startup messages, warnings, etc.).
-    Returns a raw dict; use parse_bb_result(...) to validate/narrow to BBResult.
+    Returns a raw dict
     """
     lines = [ln.strip() for ln in stdout.splitlines() if ln.strip()]
     for ln in reversed(lines):
@@ -208,7 +363,7 @@ def run_clarke_bb_group_model(
     se: bool,
     *,
     timeout_sec: float = 120.0,
-) -> BBResult:
+) -> dict[str, Any]:
     """
     Runs the Clarke BB group model via an R script and returns parsed JSON.
     Raises:
@@ -221,7 +376,7 @@ def run_clarke_bb_group_model(
     if not Path(r_script_path_bb_cli).exists():
         raise FileNotFoundError(f"R script not found: {r_script_path_bb_cli}")
 
-    cmd = _pick_rscript_command()
+    cmd, env = _pick_rscript_command()
 
     #theta_json = "Inf" if (isinstance(theta, float) and np.isinf(theta)) else float(theta)
     theta_json = None if isinf(float(theta)) else float(theta)
@@ -240,13 +395,18 @@ def run_clarke_bb_group_model(
     }
 
     try:
+        # Use custom env if provided (Windows), otherwise use current env
+        subprocess_env = env if env else None
+
         proc: subprocess.CompletedProcess[str] = subprocess.run(
             cmd + [str(Path(r_script_path_bb_cli)), json.dumps(payload, allow_nan=False)],
             capture_output=True,
             text=True,
             check=False,
             timeout=timeout_sec,
+            env=subprocess_env,
         )
+
     except subprocess.TimeoutExpired as e:
         raise TimeoutError(
             f"R script timed out after {timeout_sec}s. "
@@ -263,9 +423,8 @@ def run_clarke_bb_group_model(
 
     # Parse the final line as JSON (ignore startup messages)
     try:
-        return _parse_json_from_r_stdout(proc.stdout)  # must return BBResult
+        return _parse_json_from_r_stdout(proc.stdout)
     except ValueError as e:
-        # fall back to a shorter preview for debugging
         preview = proc.stdout[:500].replace("\n", "\\n")
         raise ValueError(f"Expected JSON from R; got (preview): {preview}") from e
 
@@ -286,12 +445,12 @@ class VariableCreator:
         Initialize variable creator
 
         Args:
-            repo_root: Root directory of the repository. If None, uses current directory
+            repo_root: Root directory of the repository. If None, attempts auto-detection
         """
-        self.repo_root = repo_root if repo_root is not None else os.getcwd()
+        self.repo_root = Path(repo_root) if repo_root is not None else None
         self.function_execution_times: List[Tuple[str, float]] = []
 
-        # List of functions to execute: (name, method, args_dict)
+        # List of functions to execute: (name, method)
         self.functions_to_execute: List[Tuple[str, Callable[..., bool]]] = [
             ('Function1', self.function1),
             ('Function2', self.function2),
@@ -307,10 +466,11 @@ class VariableCreator:
         Raises:
             FileNotFoundError: If script cannot be found
         """
-        # Try from provided/detected repo root
-        candidate = Path(self.repo_root) / self.R_SCRIPT_REL
-        if candidate.exists():
-            return candidate.resolve()
+        # Try from provided repo root first
+        if self.repo_root:
+            candidate = self.repo_root / self.R_SCRIPT_REL
+            if candidate.exists():
+                return candidate.resolve()
 
         # Try using the existing repo root finder
         repo_root = _find_repo_root()
@@ -321,7 +481,7 @@ class VariableCreator:
 
         raise FileNotFoundError(
             f"Could not locate 'variable_creator.R'.\n"
-            f"Searched in: {self.repo_root}\n"
+            f"Searched in: {self.repo_root if self.repo_root else 'auto-detected locations'}\n"
             f"Expected relative path: {self.R_SCRIPT_REL}"
         )
 
@@ -350,22 +510,26 @@ class VariableCreator:
         """
         r_script_path = str(self._get_r_script_path())
 
-        # Get the Rscript command (uses existing infrastructure)
-        cmd = _pick_rscript_command()
+        # Get the Rscript command and environment (uses existing infrastructure)
+        cmd, env = _pick_rscript_command()
 
-        # Build payload
+        # Build payload with explicit type conversions (matching run_clarke_bb_group_model pattern)
         payload: Dict[str, Any] = {
             "function": function_name,
             "args": args if args is not None else {}
         }
 
         try:
+            # Use custom env if provided (Windows), otherwise use current env
+            subprocess_env = env if env else None
+
             proc = subprocess.run(
                 cmd + [r_script_path, json.dumps(payload, allow_nan=False)],
                 capture_output=True,
                 text=True,
                 check=False,
                 timeout=timeout_sec,
+                env=subprocess_env,
             )
         except subprocess.TimeoutExpired as e:
             raise TimeoutError(
@@ -381,7 +545,7 @@ class VariableCreator:
                 stderr=proc.stderr,
             )
 
-        # Parse JSON output
+        # Parse JSON output (reuses existing parser)
         try:
             return _parse_json_from_r_stdout(proc.stdout)
         except ValueError as e:
@@ -390,24 +554,24 @@ class VariableCreator:
                 f"Expected JSON from R function '{function_name}'; got (preview): {preview}"
             ) from e
 
-    def function1(self, param1: Optional[int] = None, param2: Optional[int]  = None) -> bool:
+    def function1(self, param1: Optional[int] = None, param2: Optional[int] = None) -> bool:
         """
         Executes R function1 to create variable 1
 
         Args:
             param1: Optional integer parameter
-            param2: Optional string parameter
+            param2: Optional integer parameter
 
         Returns:
             True if successful, False otherwise
         """
         try:
-            # Prepare arguments for R function
-            args = {}
+            # Prepare arguments for R function with explicit type conversion
+            args: Dict[str, Any] = {}
             if param1 is not None:
-                args["param1"] = param1
+                args["param1"] = int(param1)
             if param2 is not None:
-                args["param2"] = param2
+                args["param2"] = int(param2)
 
             # Call R function
             result = self._call_r_function("function1", args)
@@ -431,10 +595,10 @@ class VariableCreator:
             True if successful, False otherwise
         """
         try:
-            # Prepare arguments for R function
-            args = {}
+            # Prepare arguments for R function with explicit type conversion
+            args: Dict[str, Any] = {}
             if data is not None:
-                args["data"] = data
+                args["data"] = [float(x) for x in data]
 
             # Call R function
             result = self._call_r_function("function2", args)
@@ -447,6 +611,73 @@ class VariableCreator:
             print(f"Error in function2: {e}")
             return False
 
+    def function3(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Executes R function3 to add a column to a dataframe
+
+        Args:
+            df: Pandas DataFrame to process
+
+        Returns:
+            Pandas DataFrame with the new column added
+        """
+        try:
+            # Convert pandas DataFrame to dict (orient='list' matches R's column format)
+            df_dict = df.to_dict(orient='list')
+
+            # Prepare arguments for R function
+            args: Dict[str, Any] = {
+                "df": df_dict
+            }
+
+            # Call R function
+            result = self._call_r_function("function3", args)
+
+            # Convert result back to pandas DataFrame
+            # Result should be a dict with column names as keys
+            if isinstance(result, dict):
+                result_df = pd.DataFrame(result)
+                print(f"Function3 result: Added column(s), shape: {result_df.shape}")
+                return result_df
+            else:
+                raise ValueError(f"Expected dict from R, got {type(result)}")
+
+        except Exception as e:
+            print(f"Error in function3: {e}")
+            raise
+
+    def function4(self, df: pd.DataFrame, operation: str = "sum", multiplier: float = 1.0) -> pd.DataFrame:
+        """
+        Executes R function3 with custom parameters
+
+        Args:
+            df: Pandas DataFrame to process
+            operation: Type of operation ('sum', 'product', 'mean')
+            multiplier: Multiplier to apply
+
+        Returns:
+            Pandas DataFrame with the new column added
+        """
+        try:
+            df_dict = df.to_dict(orient='list')
+
+            args: Dict[str, Any] = {
+                "df": df_dict,
+                "operation": operation,
+                "multiplier": float(multiplier)
+            }
+
+            result = self._call_r_function("function4", args)
+
+            if isinstance(result, dict):
+                return pd.DataFrame(result)
+            else:
+                raise ValueError(f"Expected dict from R, got {type(result)}")
+
+        except Exception as e:
+            print(f"Error in function3: {e}")
+            raise
+
     def run(self) -> Dict[str, Any]:
         """
         Execute all registered functions and track their execution times
@@ -454,7 +685,7 @@ class VariableCreator:
         Returns:
             Dictionary containing execution summary with timing information
         """
-        results = {}
+        results: Dict[str, Any] = {}
         self.function_execution_times = []
 
         print(f"Executing {len(self.functions_to_execute)} functions...")
@@ -496,8 +727,6 @@ class VariableCreator:
         print(f"{'=' * 50}\n")
 
         return results
-
-
 
 
 
