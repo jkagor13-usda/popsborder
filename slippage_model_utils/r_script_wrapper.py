@@ -454,6 +454,8 @@ class VariableCreator:
         self.functions_to_execute: List[Tuple[str, Callable[..., bool]]] = [
             ('Function1', self.function1),
             ('Function2', self.function2),
+            ('Function3', self.function3),
+            ('Function4', self.function4),
         ]
 
     def _get_r_script_path(self) -> Path:
@@ -678,7 +680,7 @@ class VariableCreator:
             print(f"Error in function3: {e}")
             raise
 
-    def run(self) -> Dict[str, Any]:
+    def run_all(self) -> Dict[str, Any]:
         """
         Execute all registered functions and track their execution times
 

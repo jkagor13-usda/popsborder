@@ -31,7 +31,7 @@ def main():
     creator = VariableCreator(repo_root=default_paths.root)
 
     # Run all functions
-    #summary = creator.run()
+    summary = creator.run_all()
 
     # Or call individual functions
     creator.function1(param1=42, param2=25)
@@ -54,11 +54,6 @@ def main():
     print("\nResult DataFrame:")
     print(result_df)
 
-
-
-    # Check execution times
-    for func_name, elapsed in creator.function_execution_times:
-        print(f"{func_name}: {elapsed:.2f}s")
 
     # Set up data folder and file names
     box_paths = BoxPaths()
