@@ -225,7 +225,7 @@ def pretty_consignment_inspection_units(consignment, config=None):
         separator = line
     header = pretty_header(consignment, config=config)
     body = separator.join(
-        [pretty_content(inspection_unit.sample_units, config=config) for inspection_unit in consignment["inspection_units"]]
+        [pretty_content(inspection_unit.included_units, config=config) for inspection_unit in consignment["inspection_units"]]
     )
     return f"{header}\n{body}"
 
@@ -716,14 +716,9 @@ def save_scenario_result_to_pandas(results, config_columns=None, result_columns=
     return pd.DataFrame.from_records(rows)
 
 
-def inspection_unit_detection_records_to_pandas(records):
-    """Convert per-inspection-unit detection records (list of dicts) to DataFrame."""
-    return pd.DataFrame.from_records(records)
-
-
 def save_inspection_unit_detection_records_to_csv(records, filename):
     """Save per-inspection-unit detection records to CSV and return DataFrame."""
-    df = inspection_unit_detection_records_to_pandas(records)
+    df = pd.DataFrame.from_records(records)
     df.to_csv(filename, index=False)
     return df
 
@@ -1341,4 +1336,6 @@ class PISSimData:
 
             # Add to collections (efficient batch approach)
             self.rbs_records.append(rbs_record)
+
+
 
