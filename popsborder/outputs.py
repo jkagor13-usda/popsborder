@@ -135,7 +135,7 @@ import os
 from pathlib import Path
 
 from .inspections import count_contaminated_boxes
-from slippage_model_utils.clarke_r_script_wrapper import _find_repo_root
+from slippage_model_utils.r_script_wrapper import _find_repo_root
 
 # TODO: Update how we save out any output data (currently will save to an "outputs" folder in the repository similar to what is done in slippage.py)
 # Define output directory for the simulated data

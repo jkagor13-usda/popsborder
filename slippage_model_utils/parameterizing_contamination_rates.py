@@ -1,6 +1,6 @@
 # © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
-from slippage_model_utils.clarke_r_script_wrapper import *
+from slippage_model_utils.r_script_wrapper import *
 from slippage_model_utils.clarke_model_support_functions import *
 from JoeFiles.pis_rbs_calculator_data import *
 
