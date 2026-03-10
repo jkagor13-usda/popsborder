@@ -31,7 +31,7 @@ def main():
     shared_ppq_data_path = box_paths.shared_ppq_data()
     default_paths = DefaultPaths()
     data_dir = default_paths.slippage_data_dir()
-    config_file = data_dir / "config.yml"
+    config_file = "config_test.yml"
     compliance_file = data_dir / "compliance_table.csv"
     scenario_file = data_dir / "test_scenario.csv"
 
