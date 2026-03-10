@@ -26,10 +26,25 @@ from slippage_model_utils.paths import BoxPaths, DefaultPaths
 
 
 def main():
+    default_paths = DefaultPaths()
+    # Create and run the variable creator
+    creator = VariableCreator(repo_root=default_paths.root)
+
+    # Run all functions
+    #summary = creator.run()
+
+    # Or call individual functions
+    creator.function1(param1=42, param2=25)
+    #creator.function2(data=[1.0, 2.0, 3.0, 4.0, 5.0])
+
+    # Check execution times
+    for func_name, elapsed in creator.function_execution_times:
+        print(f"{func_name}: {elapsed:.2f}s")
+
     # Set up data folder and file names
     box_paths = BoxPaths()
     shared_ppq_data_path = box_paths.shared_ppq_data()
-    default_paths = DefaultPaths()
+
     data_dir = default_paths.slippage_data_dir()
     config_file = "config_test.yml"
     compliance_file = data_dir / "compliance_table.csv"
