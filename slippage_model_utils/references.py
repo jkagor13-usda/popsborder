@@ -67,3 +67,23 @@ pm_type_names = {
     'Propagative Material Type', 'Propagative Material', 'PM Type',
     'PM', 'Material', 'Material Type'
 }
+
+possible_pis_stations = {
+    'Atlanta PIS',
+    'Beltsville PIS',
+    'Carolina PIS',
+    'Guam PIS',
+    'Honolulu PIS',
+    'Houston PIS',
+    'JFK PIS',
+    'Linden PIS',
+    'Los Angeles PIS',
+    'Los Indios PIS',
+    'Miami PIS',
+    'Nogales PIS',
+    'Orlando PIS',
+    'San Diego PIS',
+    'San Francisco PIS',
+    'Seattle PIS'
+}
+

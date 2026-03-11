@@ -120,9 +120,14 @@ import numpy as np
 
 from .inputs import get_validated_effectiveness, load_compliance_lookup_csv
 
-from slippage_model_utils.references import country_of_origin_names, pm_type_names
+from slippage_model_utils.references import (
+    country_of_origin_names,
+    pm_type_names,
+    possible_pis_stations
+)
 import re
 from collections import defaultdict
+from difflib import get_close_matches
 
 
 def inspect_first(consignment):
@@ -290,6 +295,33 @@ def sample_rbs(config, consignment, compliance_table_dict):
 
     unit = config["inspection"]["unit"]
     debug_print = config.get("debug", {}).get("print_compliance_levels", False)
+
+
+    # Get the PIS Station for the consignment and the corresponding Risk Unit Group variables
+
+    rbs_calculator_grouping_variables_stations = list(config["inspection"]["rbs_calculator_grouping_variables"].keys())
+    match = get_close_matches(consignment.port, rbs_calculator_grouping_variables_stations, n=1, cutoff=0.6)
+    pis_station  = match[0] if match else None
+
+    if pis_station is None:
+        print(f'WARNING:  PIS Station {consignment.port} for the consignment not found in config.\n'
+              f'Default risk unit grouping variables being used (Origin and PM Type).')
+        risk_unit_grouping_variables, mapping, unmapped = normalize_rbs_variables_against_consignment(
+            ['origin', 'PM Type'],
+            consignment
+        )
+    else:
+        if len(config["inspection"]["rbs_calculator_grouping_variables"][pis_station]) == 0:
+            print(f'WARNING:  PIS Station {consignment.port} found in config. \n'
+                  f'However, no grouping variables found in the config, so default risk unit grouping variables being used (Origin and PM Type).')
+            risk_unit_grouping_variables, mapping, unmapped = normalize_rbs_variables_against_consignment(
+                ['origin', 'PM Type'],
+                consignment
+            )
+        else:
+            risk_unit_grouping_variables = [x.lower() for x in config["inspection"]["rbs_calculator_grouping_variables"][pis_station]]
+
+
     detection_confidence_levels = get_detection_and_confidence(
         consignment, compliance_table_dict, print_compliance_levels=debug_print
     )
@@ -1105,6 +1137,8 @@ def normalize_rbs_variables_against_consignment(
         auto_aliases['origin'].update(country_of_origin_names)
     if 'material_type' in canonical_attrs:
         auto_aliases['material_type'].update(pm_type_names)
+    if 'port' in canonical_attrs:
+        auto_aliases['port'].update(possible_pis_stations)
 
     # Build a lookup: normalized alias -> canonical attribute
     alias_index = {}

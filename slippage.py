@@ -75,30 +75,30 @@ def main():
     ### Read in Data ###
     ####################
 
-    # Load in PIS Data
-    df_pis_data = pd.read_csv(pis_data_updated)
-
-    #############################################################
-    ##### TODO: Replace this block with the appropriate data ####
-    #############################################################
-
-    ### Generate clarke inputs via input data
-    inputs_by_quantity = gen_clarke_model_inputs(df_pis_data)
-
-    # Run clarke model
-    res = {}
-    print(f'\nNow Executing Clarke Model Based on Quantities')
-    for (lower, upper), inputs in inputs_by_quantity.items():
-        print(f'   Calculating for Quantity Range:  {(lower, upper)}')
-        res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
-                                        inputs.b,
-                                        inputs.B,
-                                        inputs.Nbar,
-                                        inputs.freq,
-                                        inputs.theta,
-                                        inputs.R,
-                                        inputs.start_val,
-                                        inputs.se)
+    # # Load in PIS Data
+    # df_pis_data = pd.read_csv(pis_data_updated)
+    #
+    # #############################################################
+    # ##### TODO: Replace this block with the appropriate data ####
+    # #############################################################
+    #
+    # ### Generate clarke inputs via input data
+    # inputs_by_quantity = gen_clarke_model_inputs(df_pis_data)
+    #
+    # # Run clarke model
+    # res = {}
+    # print(f'\nNow Executing Clarke Model Based on Quantities')
+    # for (lower, upper), inputs in inputs_by_quantity.items():
+    #     print(f'   Calculating for Quantity Range:  {(lower, upper)}')
+    #     res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
+    #                                     inputs.b,
+    #                                     inputs.B,
+    #                                     inputs.Nbar,
+    #                                     inputs.freq,
+    #                                     inputs.theta,
+    #                                     inputs.R,
+    #                                     inputs.start_val,
+    #                                     inputs.se)
 
     # Setting values for testing
     res = {}
@@ -119,10 +119,20 @@ def main():
         }
 
     print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
+
+    n = 1000
     for (lower, upper), results in res.items():
+        alpha = results["alpha"]
+        beta = results["beta"]
+
+
+        mean = n * alpha / (alpha + beta)
+        variance = (n * alpha * beta * (alpha + beta + n)) / ((alpha + beta) ** 2 * (alpha + beta + 1))
+        std_dev = variance ** 0.5
+
         print(f'   For quantities ranging in {(lower, upper)}:')
-        print(f'      Alpha = {results["alpha"]}')
-        print(f'      Beta = {results["beta"]}')
+        print(f'      α={alpha:.4f}, β={beta:.4f} | '
+              f'Mean={mean:.2f}, SD={std_dev:.2f} (N={n})')
         # print(f'      Theta (from inputs) = {results.theta}')
         # print('\n      Full Clarke model result payload:')
         # for k, v in results.items():
