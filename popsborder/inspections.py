@@ -7,6 +7,8 @@ Modifications:
 - 10/3/2025: Modifications described below (Gary Lin and Joseph Agor)
     New Functions Added
     ----------------
+    - construct_risk_units():
+        * Takes in data and a config file to reassign inspection units to risk units
     - sample_rbs():
         * Implements risk-based sampling methodology using compliance-based detection levels
         * Retrieves country/propagative material specific compliance parameters from lookup table
@@ -117,6 +119,7 @@ import random
 import types
 
 import numpy as np
+import pandas as pd
 
 from .inputs import get_validated_effectiveness, load_compliance_lookup_csv
 
@@ -128,6 +131,51 @@ from slippage_model_utils.references import (
 import re
 from collections import defaultdict
 from difflib import get_close_matches
+
+
+def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
+    """Takes in data and a config file to reassign inspection units to risk units
+
+    :param config: Configuration to be used
+    :param data: Dataframe that has as rows inspection units/commodity lines
+    """
+
+    unit = config["inspection"]["unit"]
+
+    # Get the PIS Station for the consignment and the corresponding Risk Unit Group variables
+    rbs_calculator_grouping_variables_stations = list(config["inspection"]["rbs_calculator_grouping_variables"].keys())
+
+    def process_inspection_group(group):
+        """Process each unique inspection number"""
+        group = group.copy()
+        port_name = list(group['INSPECTION_LOCATION_NAME'])[0]
+
+        match = get_close_matches(port_name, rbs_calculator_grouping_variables_stations, n=1, cutoff=0.6)
+        pis_station = match[0] if match else None
+
+        if pis_station is None:
+            print(f'WARNING:  PIS Station {port_name} for the consignment not found in config.\n'
+                  f'Default risk unit grouping variables being used (Origin and PM Type).')
+            risk_unit_grouping_variables = ['origin','material_type']
+        else:
+            if len(config["inspection"]["rbs_calculator_grouping_variables"][pis_station]) == 0:
+                print(f'WARNING:  PIS Station {port_name} found in config. \n'
+                      f'However, no grouping variables found in the config, so default risk unit grouping variables being used (Origin and PM Type).')
+                risk_unit_grouping_variables = ['origin','material_type']
+            else:
+                risk_unit_grouping_variables = [x.lower() for x in
+                                                config["inspection"]["rbs_calculator_grouping_variables"][pis_station]]
+
+        return group
+
+    # Apply processing
+    data_updated = data.groupby('INSPECTION_NUMBER', group_keys=False).apply(process_inspection_group)
+
+
+
+
+
+
 
 
 def inspect_first(consignment):
@@ -295,31 +343,6 @@ def sample_rbs(config, consignment, compliance_table_dict):
 
     unit = config["inspection"]["unit"]
     debug_print = config.get("debug", {}).get("print_compliance_levels", False)
-
-
-    # Get the PIS Station for the consignment and the corresponding Risk Unit Group variables
-
-    rbs_calculator_grouping_variables_stations = list(config["inspection"]["rbs_calculator_grouping_variables"].keys())
-    match = get_close_matches(consignment.port, rbs_calculator_grouping_variables_stations, n=1, cutoff=0.6)
-    pis_station  = match[0] if match else None
-
-    if pis_station is None:
-        print(f'WARNING:  PIS Station {consignment.port} for the consignment not found in config.\n'
-              f'Default risk unit grouping variables being used (Origin and PM Type).')
-        risk_unit_grouping_variables, mapping, unmapped = normalize_rbs_variables_against_consignment(
-            ['origin', 'PM Type'],
-            consignment
-        )
-    else:
-        if len(config["inspection"]["rbs_calculator_grouping_variables"][pis_station]) == 0:
-            print(f'WARNING:  PIS Station {consignment.port} found in config. \n'
-                  f'However, no grouping variables found in the config, so default risk unit grouping variables being used (Origin and PM Type).')
-            risk_unit_grouping_variables, mapping, unmapped = normalize_rbs_variables_against_consignment(
-                ['origin', 'PM Type'],
-                consignment
-            )
-        else:
-            risk_unit_grouping_variables = [x.lower() for x in config["inspection"]["rbs_calculator_grouping_variables"][pis_station]]
 
 
     detection_confidence_levels = get_detection_and_confidence(
