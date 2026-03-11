@@ -79,7 +79,7 @@ from .outputs import (
     PrintReporter,
     SuccessRates,
     pretty_consignment,
-    SimData,
+    PISSimData,
 )
 from .skipping import get_inspection_needed_function
 from .inputs import load_input_consignment_data
@@ -99,6 +99,7 @@ def simulation(
     verbose=False,
     pretty=None,
     detailed=False,
+    output_dir_rep=None,
 ):
     """Simulate consignments, their contamination, and their inspection
 
@@ -112,7 +113,7 @@ def simulation(
     if seed is not None:
         random_seed(seed)
 
-    simData = SimData()
+    pis_sim_data = PISSimData(output_dir_rep=output_dir_rep, config=config)
 
     # allow for an empty disposition code specification
     disposition_codes = config.get("disposition_codes", {})
@@ -202,7 +203,7 @@ def simulation(
             print(f'   Proportion of Contaminated Inspection Units (total # inspection units = {len(consignment.inspection_units)}): {total_contaminated_inspection_units/len(consignment.inspection_units)}')
 
 
-            #simData.add_consignment(consignment)
+            pis_sim_data.add_consignment(consignment)
             if detailed:
                 for inspection_unit in consignment.inspection_units:
                     sample_unit_details.append(inspection_unit.included_units)
@@ -218,8 +219,8 @@ def simulation(
                 n_units_to_inspect = sample(consignment)
                 print(f"   Requested sample units to inspect (total): {n_units_to_inspect}")
                 ret = inspect(config, consignment, n_units_to_inspect, detailed)
+                pis_sim_data.add_to_pis_synthetic_data(ret, consignment, n_units_to_inspect)
                 print(f"   Completed inspection. Sample units inspected: {ret.sample_units_inspected_completion}")
-                #simData.add_to_synthetic_data(ret, consignment, n_units_to_inspect)
                 consignment_checked_ok = ret.consignment_checked_ok
                 num_inspections += 1
                 total_num_inspection_units += consignment.num_inspection_units
@@ -332,7 +333,8 @@ def simulation(
             pass
 
     # Write out simulated data
-    #simData.write_synthetic_data_to_csv()
+    pis_sim_data.finalize_dataframes()
+    pis_sim_data.write_synthetic_data_to_csv()
 
     num_contaminated = num_consignments - success_rates.ok
     if num_contaminated:
@@ -460,6 +462,7 @@ def run_simulation(
     verbose=False,
     pretty=None,
     detailed=False,
+    output_dir=None,
 ):
     """Run the simulation function specified number of times
 
@@ -527,6 +530,11 @@ def run_simulation(
         print(f'\n\n======================================================================')
         print(f'======= RUNNING REPLICATION {i + 1} OUT OF {num_simulations} =========')
         print(f'======================================================================')
+
+        # Define output replication directory for the simulated data
+        output_dir_rep = output_dir / f"rep_{i}"
+        output_dir_rep.mkdir(parents=True, exist_ok=True)
+
         result = simulation(
             config=config,
             num_consignments=num_consignments,
@@ -536,6 +544,7 @@ def run_simulation(
             verbose=verbose,
             pretty=pretty,
             detailed=detailed,
+            output_dir_rep=output_dir_rep,
         )
 
         ##############################
