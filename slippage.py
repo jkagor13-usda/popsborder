@@ -17,7 +17,7 @@ from popsborder.outputs import save_inspection_unit_detection_records_to_csv
 from popsborder.generator import SyntheticConsignmentDataGenerator, save_to_csv
 from popsborder.consignments import get_consignment_generator
 
-from popsborder.inspections import normalize_rbs_variables_against_consignment
+from popsborder.inspections import normalize_rbs_variables_against_consignment, construct_risk_units
 
 # Import utility functions for contamination module
 from slippage_model_utils.r_script_wrapper import *
@@ -38,14 +38,20 @@ def main():
 
     pis_data_updated = shared_ppq_data_path / 'updated_pis_data.csv'  # PIS data
     #pis_data_updated = data_dir / "TEST_PIS_SampleQuantity.csv"       # Test data
+    producer_group_mapping_path = box_paths.disambiguated_producer_table_mapping()
 
     # Load configuration and compliance table
     config = load_configuration(config_file)
 
+    # Load producer group mapping
+    producer_group_mapping = pd.read_csv(producer_group_mapping_path)
+
     # Synthetic data generation
     historical = False
     num_consignments_to_simulate = 5 # Added input parameter to be the number of consignments you want simulated
-    synthetic_data_generator = SyntheticConsignmentDataGenerator(input_data_file=pis_data_updated)
+    synthetic_data_generator = SyntheticConsignmentDataGenerator(config=config,
+                                                                 producer_group_mapping=producer_group_mapping,
+                                                                 input_data_file=pis_data_updated)
 
     if historical:
         included_inspection_nums = synthetic_data_generator.input_data["INSPECTION_NUMBER"].sample(n=num_consignments_to_simulate)
