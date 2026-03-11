@@ -139,7 +139,6 @@ from typing import Optional, Dict, List, Any, Union
 from types import SimpleNamespace
 
 from .inspections import count_contaminated_boxes
-from slippage_model_utils.clarke_r_script_wrapper import _find_repo_root
 from .consignments import Consignment
 
 
