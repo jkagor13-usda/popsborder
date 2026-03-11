@@ -36,3 +36,15 @@ class BoxPaths:
 
     def rbs_calc_data(self) -> Path:
          return self.shared_ppq_data() / "PIS_RBS_calculator.xlsx"
+
+    def apl_created_data_folder(self) -> Path:
+         return self.shared_ppq_data() / "APL Created Data Related Items"
+
+    def disambiguated_look_up_tables_folder(self) -> Path:
+         return self.apl_created_data_folder() / "disambiguated_look-up_tables"
+
+    def producer_folder(self) -> Path:
+         return self.disambiguated_look_up_tables_folder() / "producer"
+
+    def disambiguated_producer_table_mapping(self) -> Path:
+         return self.producer_folder() / "parquet" / "train.csv"
