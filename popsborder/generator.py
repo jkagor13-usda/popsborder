@@ -64,6 +64,7 @@ import warnings
 import re
 from typing import Optional, Union
 from scipy import stats
+from popsborder.inspections import construct_risk_units
 
 
 class SyntheticConsignmentDataGenerator:
@@ -74,13 +75,27 @@ class SyntheticConsignmentDataGenerator:
     sampling methods for preserving statistical relationships in the data.
     """
     
-    def __init__(self, input_data_file):
+    def __init__(self,
+                 config: dict = None,
+                 producer_group_mapping: pd.DataFrame=None,
+                 input_data_file: Path = None) -> None:
         """Initialize the synthetic data generator
-        
+
+        :param config: Optional path to input data file for training
+        :param producer_group_mapping: Optional path to input data file for training
         :param input_data_file: Optional path to input data file for training
         """
 
         self.input_data = self._load_input_data(input_data_file)
+
+        # Create a mapping dictionary
+        producer_to_group = producer_group_mapping.set_index('PRODUCER_NAME')['grouping'].to_dict()
+
+        # Map the values, using 'NO_GROUP_MATCH' as default
+        self.input_data['producer_group'] = self.input_data['PRODUCER_NAME'].map(producer_to_group).fillna(
+            'NO_GROUP_MATCH')
+
+        self.input_data  = construct_risk_units(config=config, data=self.input_data)
         
         # Initialize random seed for reproducible results
         random.seed(42)
