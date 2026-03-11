@@ -68,6 +68,11 @@ pm_type_names = {
     'PM', 'Material', 'Material Type'
 }
 
+producer_names = {
+    'PRODUCER_NAME', 'Producer', 'Producer Name',
+    'Prod', 'Producer Group', 'PRODUCER'
+}
+
 possible_pis_stations = {
     'Atlanta PIS',
     'Beltsville PIS',
