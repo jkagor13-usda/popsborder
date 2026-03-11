@@ -42,7 +42,7 @@ from .simulation import run_simulation
 from datetime import datetime
 from pathlib import Path
 
-from slippage_model_utils.clarke_r_script_wrapper import _find_repo_root
+from slippage_model_utils.r_script_wrapper import _find_repo_root
 
 def run_scenarios(
     config, scenario_table, seed, num_simulations, num_consignments, compliance_table=None, 
