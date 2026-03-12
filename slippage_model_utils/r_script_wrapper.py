@@ -456,6 +456,7 @@ class VariableCreator:
             ('Function2', self.function2),
             ('Function3', self.function3),
             ('Function4', self.function4),
+            ('basic_text_preproc', self.basic_text_preproc),
         ]
 
     def _get_r_script_path(self) -> Path:
@@ -487,6 +488,7 @@ class VariableCreator:
             f"Expected relative path: {self.R_SCRIPT_REL}"
         )
 
+
     def _call_r_function(
             self,
             function_name: str,
@@ -495,31 +497,20 @@ class VariableCreator:
     ) -> Dict[str, Any]:
         """
         Call a specific R function from variable_creator.R
-
-        Args:
-            function_name: Name of the R function to call
-            args: Dictionary of arguments to pass to the R function
-            timeout_sec: Maximum execution time in seconds
-
-        Returns:
-            Dictionary containing the R function's return value
-
-        Raises:
-            FileNotFoundError: If R script not found
-            subprocess.CalledProcessError: If R subprocess fails
-            TimeoutError: If execution exceeds timeout
-            ValueError: If R output is not valid JSON
         """
         r_script_path = str(self._get_r_script_path())
 
         # Get the Rscript command and environment (uses existing infrastructure)
         cmd, env = _pick_rscript_command()
 
-        # Build payload with explicit type conversions (matching run_clarke_bb_group_model pattern)
+        # Build payload - use "func_name" instead of "function" (reserved in R)
         payload: Dict[str, Any] = {
-            "function": function_name,
+            "func_name": function_name,  # Changed from "function"
             "args": args if args is not None else {}
         }
+
+        # DEBUG: Print the payload
+        print(f"DEBUG - Payload being sent: {json.dumps(payload)}")
 
         try:
             # Use custom env if provided (Windows), otherwise use current env
@@ -540,6 +531,18 @@ class VariableCreator:
             ) from e
 
         if proc.returncode != 0:
+            # Enhanced error message showing R's actual error
+            error_msg = (
+                f"R function '{function_name}' failed with return code {proc.returncode}\n"
+                f"{'=' * 60}\n"
+                f"STDOUT:\n{proc.stdout}\n"
+                f"{'=' * 60}\n"
+                f"STDERR:\n{proc.stderr}\n"
+                f"{'=' * 60}\n"
+                f"Command: {' '.join(proc.args)}\n"
+                f"{'=' * 60}"
+            )
+            print(error_msg)  # Print for immediate visibility
             raise subprocess.CalledProcessError(
                 returncode=proc.returncode,
                 cmd=proc.args,
@@ -555,6 +558,59 @@ class VariableCreator:
             raise ValueError(
                 f"Expected JSON from R function '{function_name}'; got (preview): {preview}"
             ) from e
+
+    def basic_text_preproc(
+            self,
+            text_field: str,
+            suffix_string: Optional[str] = None,
+            prefix_string: Optional[str] = None
+    ) -> str:
+        """
+        Executes R basic_text_preproc function to clean and normalize text
+
+        Args:
+            text_field: Text string to process
+            suffix_string: Optional custom suffix patterns to remove (regex)
+            prefix_string: Optional custom prefix patterns to remove (regex)
+
+        Returns:
+            Processed text string
+
+        Raises:
+            ValueError: If R function fails or returns unexpected format
+        """
+        try:
+            # Prepare arguments for R function with explicit type conversion
+            args: Dict[str, Any] = {
+                "text_field": str(text_field)
+            }
+
+            if suffix_string is not None:
+                args["suffix_string"] = str(suffix_string)
+            if prefix_string is not None:
+                args["prefix_string"] = str(prefix_string)
+
+            # Call R function
+            result = self._call_r_function("basic_text_preproc", args)
+
+            # Check if R returned an error
+            if isinstance(result, dict):
+                if result.get("status") == "error":
+                    error_msg = result.get("error", "Unknown error from R")
+                    raise ValueError(f"R function error: {error_msg}")
+
+                if "processed_text" in result:
+                    processed_text = result["processed_text"]
+                    print(f"basic_text_preproc result: '{processed_text}'")
+                    return processed_text
+
+            raise ValueError(
+                f"Expected dict with 'processed_text' key from R, got: {result}"
+            )
+
+        except Exception as e:
+            print(f"Error in execution of basic_text_preproc function: {e}")
+            raise
 
     def function1(self, param1: Optional[int] = None, param2: Optional[int] = None) -> bool:
         """
