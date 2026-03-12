@@ -434,6 +434,9 @@ COLUMN_NAME_ALIASES = {
         'row_id', 'row id', 'rowid', 'id', 'record_id', 'record id',
         'index', 'row_number', 'row number', 'record_number',
         'record number', 'pk', 'primary_key', 'primary key'
+    ],
+    'producer_group': [
+        'producer', 'producer group', 'producer_group'
     ]
 }
 
