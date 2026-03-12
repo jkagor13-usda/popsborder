@@ -76,6 +76,7 @@ import re
 from typing import Optional, Union
 from scipy import stats
 from popsborder.inspections import construct_risk_units
+from slippage_model_utils.r_script_wrapper import VariableCreator
 
 
 ### Support functions:
@@ -237,6 +238,17 @@ class SyntheticConsignmentDataGenerator:
         )
 
         self.input_data  = construct_risk_units(config=config, data=self.input_data)
+
+        # Pull in the VariableCreator object to use R code to create engineered columns
+        creator = VariableCreator()
+
+        quantity_binary_variables = creator.generate_quantity_binaries(self.input_data,quantity_threshold=200, group_cols=['RISK_UNIT'])
+
+        self.input_data = self.input_data.merge(
+            quantity_binary_variables,
+            on='RISK_UNIT',
+            how='left'
+        )
         
         # Initialize random seed for reproducible results
         random.seed(42)
