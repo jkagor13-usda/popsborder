@@ -9,6 +9,8 @@ Modifications:
     ----------------
     - construct_risk_units():
         * Takes in data and a config file to reassign inspection units to risk units
+    - relabel_risk_units():
+        * Relabel RISK_UNIT IDs based on unique combinations of grouping variables.
     - sample_rbs():
         * Implements risk-based sampling methodology using compliance-based detection levels
         * Retrieves country/propagative material specific compliance parameters from lookup table
