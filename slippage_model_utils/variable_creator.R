@@ -49,6 +49,45 @@ remove_extra_chars <- function(suffix_string, prefix_string, text) {
   return(text)
 }
 
+# Helper function to properly convert JSON list to data.frame
+json_list_to_dataframe <- function(json_list) {
+  # json_list is a named list where each element is a vector (column)
+
+  if (!is.list(json_list)) {
+    stop("Input must be a list")
+  }
+
+  if (length(json_list) == 0) {
+    stop("Input list is empty")
+  }
+
+  # Get column names
+  col_names <- names(json_list)
+
+  if (is.null(col_names) || any(col_names == "")) {
+    stop("All list elements must be named")
+  }
+
+  # Check all columns have same length
+  lengths <- sapply(json_list, length)
+  if (length(unique(lengths)) > 1) {
+    stop(paste("All columns must have same length. Got:", paste(lengths, collapse=", ")))
+  }
+
+  n_rows <- lengths[1]
+
+  # Create empty data.frame with correct number of rows
+  df <- data.frame(row.names = 1:n_rows, stringsAsFactors = FALSE)
+
+  # Add each column
+  for (col_name in col_names) {
+    df[[col_name]] <- json_list[[col_name]]
+  }
+
+  return(df)
+}
+
+
 # ===== Main Functions =====
 
 basic_text_preproc <- function(text_field, suffix_string = NULL, prefix_string = NULL) {
@@ -86,6 +125,100 @@ basic_text_preproc <- function(text_field, suffix_string = NULL, prefix_string =
     status = "success"
   ))
 }
+
+
+
+
+# ===== Quantity Threshold Binary Function =====
+generate_quantity_binaries <- function(df,
+                                      quantity_threshold = 200,
+                                      group_cols = c("RISK_UNIT")) {
+  if (is.null(df)) {
+    stop("df argument is required")
+  }
+
+  # Properly convert to data frame
+  if (!is.data.frame(df)) {
+    df <- json_list_to_dataframe(df)
+  }
+
+  # Ensure QUANTITY is numeric
+  df$QUANTITY <- as.numeric(df$QUANTITY)
+
+  # Ensure group_cols is a character vector (flatten if nested list)
+  if (is.list(group_cols) && !is.data.frame(group_cols)) {
+    group_cols <- unlist(group_cols, recursive = TRUE)
+  }
+  group_cols <- as.character(group_cols)
+
+  # Remove any NA or empty strings
+  group_cols <- group_cols[!is.na(group_cols) & nchar(group_cols) > 0]
+
+  if (length(group_cols) == 0) {
+    stop("group_cols must contain at least one valid column name")
+  }
+
+  # Ensure required columns exist
+  required_cols <- c("QUANTITY", group_cols)
+  missing_cols <- setdiff(required_cols, names(df))
+  if (length(missing_cols) > 0) {
+    available_cols <- names(df)
+    stop(paste0(
+      "Missing required columns: ", paste(missing_cols, collapse = ", "), "\n",
+      "Available columns: ", paste(available_cols, collapse = ", ")
+    ))
+  }
+
+  # Use !! and sym() for dynamic column selection
+  if (length(group_cols) == 1) {
+    # Single grouping column - use simpler approach
+    dt <- df %>%
+      group_by(.data[[group_cols[1]]]) %>%
+      summarize(
+        TOTAL_QTY = sum(QUANTITY, na.rm = TRUE),
+        MIN_QTY = min(QUANTITY, na.rm = TRUE),
+        MEDIAN_QTY = median(QUANTITY, na.rm = TRUE),
+        FRAC_SMALL = mean(QUANTITY < quantity_threshold, na.rm = TRUE),
+        MEDIAN_QTY_LT200 = median(QUANTITY, na.rm = TRUE) < quantity_threshold,
+        FRAC_SMALL_GT07 = mean(QUANTITY < quantity_threshold, na.rm = TRUE) > 0.7,
+        ANY_SMALL = as.integer(any(QUANTITY < quantity_threshold, na.rm = TRUE)),
+        n_commodity_lines = n(),
+        .groups = "drop"
+      )
+  } else {
+    # Multiple grouping columns
+    dt <- df %>%
+      group_by(across(all_of(group_cols))) %>%
+      summarize(
+        TOTAL_QTY = sum(QUANTITY, na.rm = TRUE),
+        MIN_QTY = min(QUANTITY, na.rm = TRUE),
+        MEDIAN_QTY = median(QUANTITY, na.rm = TRUE),
+        FRAC_SMALL = mean(QUANTITY < quantity_threshold, na.rm = TRUE),
+        MEDIAN_QTY_LT200 = median(QUANTITY, na.rm = TRUE) < quantity_threshold,
+        FRAC_SMALL_GT07 = mean(QUANTITY < quantity_threshold, na.rm = TRUE) > 0.7,
+        ANY_SMALL = as.integer(any(QUANTITY < quantity_threshold, na.rm = TRUE)),
+        n_commodity_lines = n(),
+        .groups = "drop"
+      )
+  }
+
+  # Convert to data.frame
+  dt <- as.data.frame(dt, stringsAsFactors = FALSE)
+
+  # Convert to list format for JSON transfer
+  result_list <- as.list(dt)
+
+  # Ensure character/factor columns are converted to character vectors
+  for (col in names(result_list)) {
+    if (is.factor(result_list[[col]])) {
+      result_list[[col]] <- as.character(result_list[[col]])
+    }
+  }
+
+  return(result_list)
+}
+
+
 
 
 
@@ -166,6 +299,7 @@ result <- tryCatch({
   switch(
     func_name,
     "basic_text_preproc" = do.call(basic_text_preproc, input$args),
+    "generate_quantity_binaries" = do.call(generate_quantity_binaries, input$args),
     "function1" = do.call(function1, input$args),
     "function2" = do.call(function2, input$args),
     "function3" = do.call(function3, input$args),
