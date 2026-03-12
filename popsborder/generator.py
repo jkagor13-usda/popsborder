@@ -2,44 +2,55 @@
 # Copyright (C) 2018-2022 Vaclav Petras and others (see below)
 # © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
-# Modifications:
-# 
-# - 2/17/2026 – 
-# New Classes Added:
-# SyntheticConsignmentDataGenerator:
-#     * Generates synthetic consignment data for testing and simulation purposes
-#     * Creates realistic consignment records with randomized attributes
-#     * Uses advanced sampling techniques including Gaussian copulas
-#     * Supports multiple sampling methods: naive, sequential, GMM, gaussian_copula
-#     * Integrates with real PIS data for training synthetic data generation
+"""
+Modifications:
 
-# Sampling Methods Implemented:
-# ----------------------------
-# - multinomial_sample(): Naive approach sampling each column independently
-# - sequential_multinomial_sample(): Sequential sampling preserving conditional dependencies
-# - gmm_sample(): Gaussian Mixture Model sampling for numeric columns
-# - gaussian_copula_sample(): Category-conditional Gaussian copula preserving correlations
+- 2/17/2026 –
+New Classes Added:
+SyntheticConsignmentDataGenerator:
+    * Generates synthetic consignment data for testing and simulation purposes
+    * Creates realistic consignment records with randomized attributes
+    * Uses advanced sampling techniques including Gaussian copulas
+    * Supports multiple sampling methods: naive, sequential, GMM, gaussian_copula
+    * Integrates with real PIS data for training synthetic data generation
 
-# Data Generation Features:
-# ------------------------
-# - Configurable consignment attributes (origins, ports, pathways, commodities)
-# - Propagative material and flower commodity support
-# - Contamination modeling with configurable probability and quantities
-# - Quality metrics calculation comparing original and synthetic data
-# - Multiple output formats (CSV, JSON) with comprehensive statistics
+Sampling Methods Implemented:
+----------------------------
+- multinomial_sample(): Naive approach sampling each column independently
+- sequential_multinomial_sample(): Sequential sampling preserving conditional dependencies
+- gmm_sample(): Gaussian Mixture Model sampling for numeric columns
+- gaussian_copula_sample(): Category-conditional Gaussian copula preserving correlations
 
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation; either version 2 of the License, or (at your option) any later
-# version.
+Data Generation Features:
+------------------------
+- Configurable consignment attributes (origins, ports, pathways, commodities)
+- Propagative material and flower commodity support
+- Contamination modeling with configurable probability and quantities
+- Quality metrics calculation comparing original and synthetic data
+- Multiple output formats (CSV, JSON) with comprehensive statistics
 
-# This program is distributed in the hope that it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
-# details.
+New Functions Created:
+------------------------
+- preprocess_producer_name()
+    * Preprocess a single producer name according to specified rules.
+- create_producer_mapping()
+    * Create a mapping dictionary from producer names to groups.
+- apply_producer_grouping()
+    * Apply producer name preprocessing and grouping to input data.
 
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
+"""
 
 """
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
