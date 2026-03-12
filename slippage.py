@@ -36,8 +36,9 @@ def main():
     compliance_file = data_dir / "compliance_table.csv"
     scenario_file = data_dir / "test_scenario.csv"
 
-    pis_data_updated = shared_ppq_data_path / 'updated_pis_data.csv'  # PIS data
+    #pis_data_updated = shared_ppq_data_path / 'updated_pis_data.csv'  # PIS data
     #pis_data_updated = data_dir / "TEST_PIS_SampleQuantity.csv"       # Test data
+    pis_data_updated = data_dir / "Synthetic_PIS_SampleQuantity_test.csv"       # Test data
     producer_group_mapping_path = box_paths.disambiguated_producer_table_mapping()
 
     # Load configuration and compliance table
@@ -47,7 +48,7 @@ def main():
     producer_group_mapping = pd.read_csv(producer_group_mapping_path)
 
     # Synthetic data generation
-    historical = False
+    historical = True
     num_consignments_to_simulate = 5 # Added input parameter to be the number of consignments you want simulated
     synthetic_data_generator = SyntheticConsignmentDataGenerator(config=config,
                                                                  producer_group_mapping=producer_group_mapping,
