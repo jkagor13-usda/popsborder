@@ -457,6 +457,7 @@ class VariableCreator:
             ('Function3', self.function3),
             ('Function4', self.function4),
             ('basic_text_preproc', self.basic_text_preproc),
+            ('generate_quantity_binaries', self.generate_quantity_binaries),
         ]
 
     def _get_r_script_path(self) -> Path:
@@ -508,9 +509,6 @@ class VariableCreator:
             "func_name": function_name,  # Changed from "function"
             "args": args if args is not None else {}
         }
-
-        # DEBUG: Print the payload
-        print(f"DEBUG - Payload being sent: {json.dumps(payload)}")
 
         try:
             # Use custom env if provided (Windows), otherwise use current env
@@ -611,6 +609,61 @@ class VariableCreator:
         except Exception as e:
             print(f"Error in execution of basic_text_preproc function: {e}")
             raise
+
+    def generate_quantity_binaries(
+            self,
+            df: pd.DataFrame,
+            quantity_threshold: float=200.0,
+            group_cols: Optional[List[str]] = None
+    ) -> pd.DataFrame:
+        """
+        Aggregate data by inspection (or custom grouping) and calculate quantity features
+        """
+        try:
+            if 'QUANTITY' not in df.columns:
+                raise ValueError("DataFrame must contain 'QUANTITY' column")
+
+            df_dict = df.to_dict(orient='list')
+
+            args: Dict[str, Any] = {
+                "df": df_dict,
+                "quantity_threshold": float(quantity_threshold)
+            }
+
+            if group_cols is not None:
+                args["group_cols"] = list(group_cols)
+
+            result = self._call_r_function("generate_quantity_binaries", args)
+
+            if isinstance(result, dict):
+                if result.get("status") == "error":
+                    raise ValueError(f"R function error: {result.get('error')}")
+
+                # Check if all values are scalars (single row result)
+                all_scalars = all(
+                    not isinstance(v, (list, tuple))
+                    for k, v in result.items()
+                    if k != "status"
+                )
+
+                if all_scalars:
+                    # Convert scalars to single-element lists
+                    result_dict = {k: [v] for k, v in result.items() if k != "status"}
+                    result_df = pd.DataFrame(result_dict)
+                else:
+                    # Normal case - lists already
+                    result_df = pd.DataFrame(result)
+                print(f"Aggregated to {result_df.shape[0]} groups")
+                return result_df
+            else:
+                raise ValueError(f"Expected dict from R, got {type(result)}")
+
+        except Exception as e:
+            print(f"Error in aggregate_by_inspection: {e}")
+            raise
+
+
+
 
     def function1(self, param1: Optional[int] = None, param2: Optional[int] = None) -> bool:
         """
