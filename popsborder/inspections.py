@@ -131,6 +131,46 @@ from slippage_model_utils.references import (
 import re
 from collections import defaultdict
 from difflib import get_close_matches
+from slippage_model_utils.references import find_column_name
+
+
+def relabel_risk_units(group, risk_unit_grouping_variables):
+    """
+    Relabel RISK_UNIT IDs based on unique combinations of grouping variables.
+
+    Parameters:
+    -----------
+    group : pd.DataFrame
+        DataFrame with RISK_UNIT column
+    risk_unit_grouping_variables : list
+        List of column names to group by for creating unique IDs
+
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame with relabeled RISK_UNIT column
+    """
+    # Extract the base number (before underscore)
+    first_risk_unit = group['RISK_UNIT'].iloc[0]
+    base_number = first_risk_unit.split('_')[0]
+
+    # Create unique combinations of grouping variables
+    # Use factorize to assign sequential IDs to unique combinations
+    group_combinations = group[risk_unit_grouping_variables].apply(
+        lambda row: '_'.join(row.astype(str)), axis=1
+    )
+
+    # Get unique IDs for each combination (1-indexed)
+    _, unique_ids = pd.factorize(group_combinations)
+    unique_id_map = {combo: idx + 1 for idx, combo in enumerate(unique_ids)}
+
+    # Map each row to its new ID
+    new_ids = group_combinations.map(unique_id_map)
+
+    # Create new RISK_UNIT values
+    group['RISK_UNIT'] = base_number + '_' + new_ids.astype(str)
+
+    return group
 
 
 def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
@@ -154,17 +194,43 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
         pis_station = match[0] if match else None
 
         if pis_station is None:
-            print(f'WARNING:  PIS Station {port_name} for the consignment not found in config.\n'
-                  f'Default risk unit grouping variables being used (Origin and PM Type).')
-            risk_unit_grouping_variables = ['origin','material_type']
+            if ('default' in config["inspection"]["rbs_calculator_grouping_variables"].keys()
+                    and len(config["inspection"]["rbs_calculator_grouping_variables"]['default'])>0):
+                print(f'WARNING\nPIS Station {port_name} for the consignment not found in config.\n'
+                      f'Using defaults found in config for risk unit grouping variables...')
+                risk_unit_grouping_variables = [
+                    x.lower().replace(' ', '_').replace('-', '_').replace('.', '_')
+                    for x in config["inspection"]["rbs_calculator_grouping_variables"]['default']
+                ]
+            else:
+                print(f'WARNING\nPIS Station {port_name} for the consignment not found in config.\n'
+                      f'Also, no defaults found in config so risk unit group variables being defaulted to...')
+                risk_unit_grouping_variables = ['origin','material_type']
         else:
             if len(config["inspection"]["rbs_calculator_grouping_variables"][pis_station]) == 0:
                 print(f'WARNING:  PIS Station {port_name} found in config. \n'
                       f'However, no grouping variables found in the config, so default risk unit grouping variables being used (Origin and PM Type).')
                 risk_unit_grouping_variables = ['origin','material_type']
             else:
-                risk_unit_grouping_variables = [x.lower() for x in
-                                                config["inspection"]["rbs_calculator_grouping_variables"][pis_station]]
+                risk_unit_grouping_variables = [
+                    x.lower().replace(' ', '_').replace('-', '_').replace('.', '_')
+                    for x in config["inspection"]["rbs_calculator_grouping_variables"][pis_station]
+                ]
+
+        # Print out risk unit variables being used
+        count = 0
+        for var in risk_unit_grouping_variables:
+            matching_column_name = find_column_name(var,list(group.columns))
+            if matching_column_name is not None:
+                risk_unit_grouping_variables[count] = matching_column_name
+            else:
+                raise ValueError(f'Variable {var} not a valid column for risk unit construction. ')
+            #print(f'  Variable {count + 1}: {var}')
+            count += 1
+
+        # Relabel risk units based on grouping variables
+        group = relabel_risk_units(group, risk_unit_grouping_variables)
+
 
         return group
 
