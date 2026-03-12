@@ -105,6 +105,9 @@ inspection:
   compliance_table:
     file_name: data/compliance_table.csv
   rbs_calculator_grouping_variables:
+    default:
+      - Origin
+      - PM Type
     Miami:
       - Origin
       - PM Type
