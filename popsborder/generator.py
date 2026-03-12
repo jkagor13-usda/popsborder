@@ -84,60 +84,65 @@ from popsborder.inspections import construct_risk_units
 import pandas as pd
 import re
 
-
-def preprocess_producer_name(name):
+def preprocess_producer_name(name, suffix_string=None, prefix_string=None):
     """
     Preprocess a single producer name according to specified rules.
+    Mimics the R function basic_text_preproc.
 
     Args:
         name: Raw producer name string
+        suffix_string: Custom regex pattern for suffixes to remove
+        prefix_string: Custom regex pattern for prefixes to remove
 
     Returns:
         Preprocessed and truncated name (max 15 chars)
     """
-    # Handle NA/Not Selected - these are "known" names that don't get preprocessed
-    if pd.isna(name) or str(name).strip().upper() in ['NA', 'NOT SELECTED', '']:
-        return 'NA/NOT SELECTED'
+    # Convert to string and lowercase FIRST
+    text = str(name).lower() if pd.notna(name) else name
 
-    # Convert to string and lowercase
-    name = str(name).lower()
+    # Handle NA/Not Selected - convert to "missing"
+    if pd.isna(text) or text.strip() == "not selected":
+        return "missing"  # Changed from 'NA/NOT SELECTED' to match R
+
+    # Remove punctuation (this happens BEFORE box removal in R)
+    text = re.sub(r'[^\w\s]', '', text)
 
     # Remove end of string starting with "box"
-    name = re.sub(r'\bbox\b.*$', '', name)
+    # R code finds position of "box" and truncates there
+    box_match = re.search(r'box', text)
+    if box_match:
+        box_position = box_match.start()
+        if box_position > 0:
+            text = text[:box_position]
+        # If box_position == 0, keep the whole string (mimics R's if_else logic)
 
     # Remove stand-alone numeric sequences
-    name = re.sub(r'\b\d+\b', '', name)
+    text = re.sub(r'\b\d+\b', '', text)
 
-    # Remove punctuation
-    name = re.sub(r'[^\w\s]', '', name)
+    # Replace multiple blanks with single blank AND strip leading/trailing
+    # (str_squish in R does both)
+    text = re.sub(r'\s+', ' ', text).strip()
 
-    # Replace multiple blanks with single blank
-    name = re.sub(r'\s+', ' ', name)
+    # Define default suffix pattern if not provided
+    if suffix_string is None:
+        # Note: R uses " sa| s a|sociedad" (space before "sa", no space before "|sociedad")
+        suffix_string = r'( sa| s a|sociedad anonima| inc| llc| ltd| ltda| cv| rl| co| co ltd| corp| bv| b v| corporation| company| limited)$'
 
-    # Delete leading and trailing blanks
-    name = name.strip()
+    # Define default prefix pattern if not provided
+    if prefix_string is None:
+        prefix_string = r'^(mr |m r )'
 
-    # Remove end of string starting with common corporate suffixes
-    suffixes = [
-        r'\bsa\s*$', r'\bs\s+a\s*$', r'\bsociedad anonima\s*$',
-        r'\binc\s*$', r'\bllc\s*$', r'\bltd\s*$', r'\bltda\s*$',
-        r'\bcv\s*$', r'\brl\s*$', r'\bco\s*$', r'\bco ltd\s*$',
-        r'\bcorp\s*$', r'\bbv\s*$', r'\bb\s+v\s*$',
-        r'\bcorporation\s*$', r'\bcompany\s*$', r'\blimited\s*$'
-    ]
-    for suffix in suffixes:
-        name = re.sub(suffix, '', name)
+    # Remove suffixes and prefixes
+    text = re.sub(suffix_string, '', text)
+    text = re.sub(prefix_string, '', text)
 
-    # Remove start of string starting with "mr "
-    name = re.sub(r'^mr\s+', '', name)
-
-    # Final cleanup: remove any trailing/leading spaces and multiple spaces
-    name = re.sub(r'\s+', ' ', name).strip()
+    # Final cleanup after suffix/prefix removal
+    text = re.sub(r'\s+', ' ', text).strip()
 
     # Truncate to first 15 characters
-    name = name[:15]
+    text = text[:15]
 
-    return name
+    return text
 
 
 def create_producer_mapping(producer_group_mapping_df, use_shortest_name=True):
