@@ -155,6 +155,7 @@ def relabel_risk_units(group, risk_unit_grouping_variables):
     # Extract the base number (before underscore)
     first_risk_unit = group['RISK_UNIT'].iloc[0]
     base_number = first_risk_unit.split('_')[0]
+    inspection_num = str(group['INSPECTION_NUMBER'].iloc[0])
 
     # Create unique combinations of grouping variables
     # Use factorize to assign sequential IDs to unique combinations
@@ -170,7 +171,7 @@ def relabel_risk_units(group, risk_unit_grouping_variables):
     new_ids = group_combinations.map(unique_id_map)
 
     # Create new RISK_UNIT values
-    group['RISK_UNIT'] = base_number + '_' + new_ids.astype(str)
+    group['RISK_UNIT'] = inspection_num + '_' + 'risk_unit' + '_' + new_ids.astype(str)
 
     return group
 
@@ -239,7 +240,7 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
     # Apply processing
     data_updated = data.groupby('INSPECTION_NUMBER', group_keys=False).apply(
         process_inspection_group,
-        include_groups=False
+        include_groups=True
     )
     return data_updated
 
