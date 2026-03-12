@@ -190,7 +190,12 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
 
     def process_inspection_group(group):
         """Process each unique inspection number"""
-        group = group.copy()
+        # Get the inspection number from the group name
+        inspection_number = group.name
+        # Add the INSPECTION_NUMBER column back to the result
+        group = group.copy()  # Make a copy to avoid SettingWithCopyWarning
+        group['INSPECTION_NUMBER'] = inspection_number
+
         port_name = list(group['INSPECTION_LOCATION_NAME'])[0]
 
         match = get_close_matches(port_name, rbs_calculator_grouping_variables_stations, n=1, cutoff=0.6)
@@ -199,19 +204,22 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
         if pis_station is None:
             if ('default' in config["inspection"]["rbs_calculator_grouping_variables"].keys()
                     and len(config["inspection"]["rbs_calculator_grouping_variables"]['default'])>0):
-                print(f'WARNING\nPIS Station {port_name} for the consignment not found in config.\n'
-                      f'Using defaults found in config for risk unit grouping variables...')
+                default_list = config["inspection"]["rbs_calculator_grouping_variables"]['default']
+                print(f'\nWARNING\nPIS Station ---{port_name}--- for the consignment not found in config.\n'
+                      f'Using defaults found in config for risk unit grouping variables...'
+                      f'{default_list}')
                 risk_unit_grouping_variables = [
                     x.lower().replace(' ', '_').replace('-', '_').replace('.', '_')
                     for x in config["inspection"]["rbs_calculator_grouping_variables"]['default']
                 ]
             else:
-                print(f'WARNING\nPIS Station {port_name} for the consignment not found in config.\n'
-                      f'Also, no defaults found in config so risk unit group variables being defaulted to...')
+                default_list = ['origin','material_type']
+                print(f'\nWARNING\nPIS Station ---{port_name}--- for the consignment not found in config.\n'
+                      f'Also, no defaults found in config so risk unit group variables being defaulted to...{default_list}')
                 risk_unit_grouping_variables = ['origin','material_type']
         else:
             if len(config["inspection"]["rbs_calculator_grouping_variables"][pis_station]) == 0:
-                print(f'WARNING:  PIS Station {port_name} found in config. \n'
+                print(f'\nWARNING\n  PIS Station ---{port_name}--- found in config. \n'
                       f'However, no grouping variables found in the config, so default risk unit grouping variables being used (Origin and PM Type).')
                 risk_unit_grouping_variables = ['origin','material_type']
             else:
@@ -235,12 +243,14 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
         group = relabel_risk_units(group, risk_unit_grouping_variables)
 
 
+
+
         return group
 
     # Apply processing
     data_updated = data.groupby('INSPECTION_NUMBER', group_keys=False).apply(
         process_inspection_group,
-        include_groups=True
+        include_groups=False
     )
     return data_updated
 

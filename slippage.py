@@ -56,18 +56,33 @@ def main():
 
     if historical:
         included_inspection_nums = synthetic_data_generator.input_data["INSPECTION_NUMBER"].sample(n=num_consignments_to_simulate)
-        hist_data = synthetic_data_generator.input_data[synthetic_data_generator.input_data["INSPECTION_NUMBER"].isin(included_inspection_nums)]
-        hist_data['Row_ID'] = 'CR-' + (hist_data.index + 1).astype(str)
-        hist_out_path = data_dir / "Historical_PIS_SampleQuantity.csv"
-        hist_data.to_csv(hist_out_path)
+        synth_data = synthetic_data_generator.input_data[synthetic_data_generator.input_data["INSPECTION_NUMBER"].isin(included_inspection_nums)]
+        synth_data.loc[:, 'Row_ID'] = 'CR-' + (synth_data.index + 1).astype(str)
+        synth_out_path = data_dir / "Historical_PIS_SampleQuantity.csv"
         config["consignment"]["input_file"]["file_name"] = "slippage_data/Historical_PIS_SampleQuantity.csv"
     else:
         synth_data = synthetic_data_generator.generate_from_input_data(
             n_consignments=num_consignments_to_simulate,
             sampling_method="sequential"
         )
-        synth_out_path = data_dir / "Syntehtic_PIS_SampleQuantity.csv"
-        synth_data.to_csv(synth_out_path)
+        synth_out_path = data_dir / "Synthetic_PIS_SampleQuantity.csv"
+        config["consignment"]["input_file"]["file_name"] = "slippage_data/Synthetic_PIS_SampleQuantity.csv"
+
+    # Pull in the VariableCreator object to use R code to create engineered columns
+    creator = VariableCreator()
+
+    quantity_binary_variables = creator.generate_quantity_binaries(synth_data, quantity_threshold=500,
+                                                                   group_cols=['RISK_UNIT'])
+
+    synth_data = synth_data.merge(
+        quantity_binary_variables,
+        on='RISK_UNIT',
+        how='left'
+    )
+
+    synth_data.to_csv(synth_out_path)
+
+    print('')
 
 
 

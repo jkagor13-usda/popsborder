@@ -238,17 +238,6 @@ class SyntheticConsignmentDataGenerator:
         )
 
         self.input_data  = construct_risk_units(config=config, data=self.input_data)
-
-        # Pull in the VariableCreator object to use R code to create engineered columns
-        creator = VariableCreator()
-
-        quantity_binary_variables = creator.generate_quantity_binaries(self.input_data,quantity_threshold=200, group_cols=['RISK_UNIT'])
-
-        self.input_data = self.input_data.merge(
-            quantity_binary_variables,
-            on='RISK_UNIT',
-            how='left'
-        )
         
         # Initialize random seed for reproducible results
         random.seed(42)
