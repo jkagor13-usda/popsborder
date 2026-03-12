@@ -110,6 +110,8 @@ import random
 from datetime import datetime, timedelta
 
 import numpy as np
+import pandas as pd
+from slippage_model_utils.UnitAttributes import RiskUnitConfig
 
 
 class RiskUnit:
@@ -126,17 +128,8 @@ class RiskUnit:
                  sample_unit_ids=None,
                  inspection_unit_ids=None,
                  plant_ids=None,
-                 material_type=None,
-                 producer=None,
-                 origin=None,
-                 port=None,
-                 pathway=None):
-        """Store reference to associated sample_units
-
-        :param sample_units: Array-like object of sample_units
-        :param material_type: Material type for this inspection unit
-        :param producer: Producer name for this inspection unit
-        """
+                 **kwargs):  # Catch all other attributes
+        """Store reference to associated sample_units"""
         self.sample_units = sample_units
         self.id = risk_unit_id
         self.sample_unit_ids = sample_unit_ids if sample_unit_ids is not None else []
@@ -144,11 +137,40 @@ class RiskUnit:
             inspection_unit_ids if inspection_unit_ids is not None else []
         )
         self.plant_ids = plant_ids if plant_ids is not None else []
-        self.material_type = material_type
-        self.producer = producer
-        self.origin = origin
-        self.port = port
-        self.pathway = pathway
+
+        # Set all other attributes dynamically
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+    # def __init__(self,
+    #              sample_units,
+    #              risk_unit_id=None,
+    #              sample_unit_ids=None,
+    #              inspection_unit_ids=None,
+    #              plant_ids=None,
+    #              material_type=None,
+    #              producer=None,
+    #              origin=None,
+    #              port=None,
+    #              pathway=None):
+    #     """Store reference to associated sample_units
+    #
+    #     :param sample_units: Array-like object of sample_units
+    #     :param material_type: Material type for this inspection unit
+    #     :param producer: Producer name for this inspection unit
+    #     """
+    #     self.sample_units = sample_units
+    #     self.id = risk_unit_id
+    #     self.sample_unit_ids = sample_unit_ids if sample_unit_ids is not None else []
+    #     self.inspection_unit_ids = (
+    #         inspection_unit_ids if inspection_unit_ids is not None else []
+    #     )
+    #     self.plant_ids = plant_ids if plant_ids is not None else []
+    #     self.material_type = material_type
+    #     self.producer = producer
+    #     self.origin = origin
+    #     self.port = port
+    #     self.pathway = pathway
 
     @property
     def num_sample_units(self):
@@ -645,7 +667,7 @@ class PISConsignmentGenerator:
             file_name: "path/to/pis_data.csv"
     """
 
-    def __init__(self, filename, separator=","):
+    def __init__(self, filename, separator=",", risk_unit_config: RiskUnitConfig=RiskUnitConfig()):
         """Initialize PIS record-based consignment generator
 
         :param filename: CSV file containing PIS records with columns:
@@ -657,12 +679,14 @@ class PISConsignmentGenerator:
                         - CREATED_DATETIME: Timestamp in MM:SS.S format (optional)
                         - PRODUCER: Producer name (optional)
         :param separator: CSV field separator
+        :param risk_unit_config: RiskUnitConfig instance for attribute mapping
         """
-        import pandas as pd
+
         self.df = pd.read_csv(filename, sep=separator)
         # Group by inspection number to create consignments
         self.consignment_groups = list(self.df.groupby('INSPECTION_NUMBER'))
         self.current_consignment_index = 0
+        self.risk_unit_config = risk_unit_config or RiskUnitConfig()
 
     def generate_consignment(self):
         """Generate a new consignment from PIS records"""
@@ -739,11 +763,14 @@ class PISConsignmentGenerator:
             # Use the actual quantities from the PIS data
             inspection_unit_sample_units = int(record["SAMPLING_UNITS_FOR_INSPECTION_UNIT"])
             inspection_unit_plants = int(record["QUANTITY"])
-            inspection_unit_producer = record.get("PRODUCER_NAME", None)
+            inspection_unit_producer = record.get("producer_group", None)
             inspection_unit_origin = record.get("COUNTRY_OF_ORIGIN_NAME", origin)
             inspection_unit_port = record.get("INSPECTION_LOCATION_NAME", port)
             inspection_unit_pathway = record.get("PATHWAY", pathway)
             inspection_unit_row_id = record.get("Row_ID", pathway)
+
+            # Extract attributes using configuration
+            risk_unit_attrs = self.risk_unit_config.get_attributes_from_record(record)
 
             # Calculate plants per sample_unit for this inspection unit
             if inspection_unit_sample_units > 0:
@@ -820,17 +847,15 @@ class PISConsignmentGenerator:
             inspection_unit.included_unit_objects = sample_unit_objects
             inspection_units.append(inspection_unit)
 
+            # Use configured attributes when creating bucket
             if risk_unit_id not in risk_unit_buckets:
                 risk_unit_buckets[risk_unit_id] = {
                     "inspection_unit_ids": [],
                     "sample_unit_ids": [],
                     "plant_ids": [],
-                    "material_type": material_type,
-                    "producer": inspection_unit_producer,
-                    "origin": inspection_unit_origin,
-                    "port": inspection_unit_port,
-                    "pathway": inspection_unit_pathway,
+                    **risk_unit_attrs  # Unpack configured attributes
                 }
+
             risk_bucket = risk_unit_buckets[risk_unit_id]
             risk_bucket["inspection_unit_ids"].append(inspection_unit_id)
             risk_bucket["sample_unit_ids"].extend(inspection_sample_unit_ids)
@@ -838,17 +863,34 @@ class PISConsignmentGenerator:
 
         # Create risk units from accumulated hierarchy links
         for risk_unit_id, bucket in risk_unit_buckets.items():
+            # risk_unit = RiskUnit(
+            #     np.zeros(len(bucket["sample_unit_ids"]), dtype=np.int64),
+            #     risk_unit_id=risk_unit_id,
+            #     sample_unit_ids=bucket["sample_unit_ids"],
+            #     inspection_unit_ids=bucket["inspection_unit_ids"],
+            #     plant_ids=bucket["plant_ids"],
+            #     material_type=bucket["material_type"],
+            #     producer=bucket["producer"],
+            #     origin=bucket["origin"],
+            #     port=bucket["port"],
+            #     pathway=bucket["pathway"],
+            # )
+            # Build kwargs dynamically from bucket
+            risk_unit_kwargs = {
+                "risk_unit_id": risk_unit_id,
+                "sample_unit_ids": bucket["sample_unit_ids"],
+                "inspection_unit_ids": bucket["inspection_unit_ids"],
+                "plant_ids": bucket["plant_ids"],
+            }
+
+            # Add all configured attributes from the bucket
+            for attr_name in self.risk_unit_config.enabled_attributes:
+                if attr_name in bucket:
+                    risk_unit_kwargs[attr_name] = bucket[attr_name]
+
             risk_unit = RiskUnit(
                 np.zeros(len(bucket["sample_unit_ids"]), dtype=np.int64),
-                risk_unit_id=risk_unit_id,
-                sample_unit_ids=bucket["sample_unit_ids"],
-                inspection_unit_ids=bucket["inspection_unit_ids"],
-                plant_ids=bucket["plant_ids"],
-                material_type=bucket["material_type"],
-                producer=bucket["producer"],
-                origin=bucket["origin"],
-                port=bucket["port"],
-                pathway=bucket["pathway"],
+                **risk_unit_kwargs
             )
             risk_units.append(risk_unit)
 
