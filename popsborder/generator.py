@@ -67,6 +67,132 @@ from scipy import stats
 from popsborder.inspections import construct_risk_units
 
 
+### Support functions:
+
+
+import pandas as pd
+import re
+
+
+def preprocess_producer_name(name):
+    """
+    Preprocess a single producer name according to specified rules.
+
+    Args:
+        name: Raw producer name string
+
+    Returns:
+        Preprocessed and truncated name (max 15 chars)
+    """
+    # Handle NA/Not Selected - these are "known" names that don't get preprocessed
+    if pd.isna(name) or str(name).strip().upper() in ['NA', 'NOT SELECTED', '']:
+        return 'NA/NOT SELECTED'
+
+    # Convert to string and lowercase
+    name = str(name).lower()
+
+    # Remove end of string starting with "box"
+    name = re.sub(r'\bbox\b.*$', '', name)
+
+    # Remove stand-alone numeric sequences
+    name = re.sub(r'\b\d+\b', '', name)
+
+    # Remove punctuation
+    name = re.sub(r'[^\w\s]', '', name)
+
+    # Replace multiple blanks with single blank
+    name = re.sub(r'\s+', ' ', name)
+
+    # Delete leading and trailing blanks
+    name = name.strip()
+
+    # Remove end of string starting with common corporate suffixes
+    suffixes = [
+        r'\bsa\s*$', r'\bs\s+a\s*$', r'\bsociedad anonima\s*$',
+        r'\binc\s*$', r'\bllc\s*$', r'\bltd\s*$', r'\bltda\s*$',
+        r'\bcv\s*$', r'\brl\s*$', r'\bco\s*$', r'\bco ltd\s*$',
+        r'\bcorp\s*$', r'\bbv\s*$', r'\bb\s+v\s*$',
+        r'\bcorporation\s*$', r'\bcompany\s*$', r'\blimited\s*$'
+    ]
+    for suffix in suffixes:
+        name = re.sub(suffix, '', name)
+
+    # Remove start of string starting with "mr "
+    name = re.sub(r'^mr\s+', '', name)
+
+    # Final cleanup: remove any trailing/leading spaces and multiple spaces
+    name = re.sub(r'\s+', ' ', name).strip()
+
+    # Truncate to first 15 characters
+    name = name[:15]
+
+    return name
+
+
+def create_producer_mapping(producer_group_mapping_df, use_shortest_name=True):
+    """
+    Create a mapping dictionary from producer names to groups.
+
+    Args:
+        producer_group_mapping_df: DataFrame with 'PRODUCER_NAME' and 'grouping' columns
+        use_shortest_name: If True, use shortest raw name as group label instead of numeric grouping
+
+    Returns:
+        Dictionary mapping preprocessed producer names to group labels
+    """
+    # Create a copy to avoid modifying original
+    mapping_df = producer_group_mapping_df.copy()
+
+    # Preprocess all producer names in the mapping file
+    mapping_df['producer_name_preprocessed'] = mapping_df['PRODUCER_NAME'].apply(preprocess_producer_name)
+
+    # If using shortest name as group label
+    if use_shortest_name:
+        # For each group, find the shortest original name
+        group_labels = (
+            mapping_df.groupby('grouping')['PRODUCER_NAME']
+            .apply(lambda x: min(x, key=len))
+            .to_dict()
+        )
+        # Map each preprocessed name to its group's shortest name
+        mapping_df['group_label'] = mapping_df['grouping'].map(group_labels)
+    else:
+        # Use the numeric grouping as-is
+        mapping_df['group_label'] = mapping_df['grouping']
+
+    # Create the mapping dictionary
+    producer_to_group = mapping_df.set_index('producer_name_preprocessed')['group_label'].to_dict()
+
+    return producer_to_group
+
+
+def apply_producer_grouping(input_data, producer_group_mapping_df, use_shortest_name=True):
+    """
+    Apply producer name preprocessing and grouping to input data.
+
+    Args:
+        input_data: DataFrame with 'PRODUCER_NAME' column
+        producer_group_mapping_df: DataFrame with 'PRODUCER_NAME' and 'grouping' columns
+        use_shortest_name: If True, use shortest raw name as group label.  If False, use the numeric grouping number
+
+    Returns:
+        DataFrame with added 'producer_name_preprocessed' and 'producer_group' columns
+    """
+    # Create a copy to avoid modifying original
+    data = input_data.copy()
+
+    # Preprocess producer names in input data
+    data['producer_name_preprocessed'] = data['PRODUCER_NAME'].apply(preprocess_producer_name)
+
+    # Create the mapping dictionary
+    producer_to_group = create_producer_mapping(producer_group_mapping_df, use_shortest_name)
+
+    # Apply the mapping, using 'NO_GROUP_MATCH' for unknown names
+    data['producer_group'] = data['producer_name_preprocessed'].map(producer_to_group).fillna('NO_GROUP_MATCH')
+
+    return data
+
+
 class SyntheticConsignmentDataGenerator:
     """Generate synthetic consignment data using advanced sampling techniques
     
@@ -88,12 +214,11 @@ class SyntheticConsignmentDataGenerator:
 
         self.input_data = self._load_input_data(input_data_file)
 
-        # Create a mapping dictionary
-        producer_to_group = producer_group_mapping.set_index('PRODUCER_NAME')['grouping'].to_dict()
-
-        # Map the values, using 'NO_GROUP_MATCH' as default
-        self.input_data['producer_group'] = self.input_data['PRODUCER_NAME'].map(producer_to_group).fillna(
-            'NO_GROUP_MATCH')
+        self.input_data = apply_producer_grouping(
+            self.input_data,
+            producer_group_mapping,
+            use_shortest_name=True  # Set to False to use numeric grouping labels
+        )
 
         self.input_data  = construct_risk_units(config=config, data=self.input_data)
         
