@@ -235,7 +235,11 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
         return group
 
     # Apply processing
-    data_updated = data.groupby('INSPECTION_NUMBER', group_keys=False).apply(process_inspection_group)
+    data_updated = data.groupby('INSPECTION_NUMBER', group_keys=False).apply(
+        process_inspection_group,
+        include_groups=False
+    )
+    return data_updated
 
 
 
