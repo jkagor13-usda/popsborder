@@ -6,7 +6,16 @@ from typing import Dict, List, Any, Optional
 
 @dataclass
 class RiskUnitConfig:
-    """Configuration for RiskUnit attribute mapping"""
+    """Configuration for RiskUnit attribute mapping
+
+    How to add an attribute:
+    1. Add to the 'attribute_mapping' dictionary
+        * Key being the name in all lowercase convention and underscores for spaces
+        * Value being how the variable is specified in the synthetic data being used to create the consignments/shipments
+    2. Add to the 'defaults' dictionary
+    3. Add to the 'enabled_attributes' dictionary (this controls what will be an attribute in a RiskUnit within PoPS Border)
+    4. If new attribute is boolean, add to the 'boolean_attributes' dictionary in the 'get_attributes_from_record' method
+    """
 
     # Map RiskUnit attribute names to PIS CSV column names
     attribute_mapping: Dict[str, str] = field(default_factory=lambda: {
