@@ -123,7 +123,7 @@ import types
 import numpy as np
 import pandas as pd
 
-from .inputs import get_validated_effectiveness, load_compliance_lookup_csv
+from .inputs import get_validated_effectiveness
 
 from slippage_model_utils.references import (
     country_of_origin_names,
