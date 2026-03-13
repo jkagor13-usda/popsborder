@@ -48,3 +48,6 @@ class BoxPaths:
 
     def disambiguated_producer_table_mapping(self) -> Path:
          return self.producer_folder() / "parquet" / "train.csv"
+
+    def model_testing_data_folder(self) -> Path:
+        return self.apl_created_data_folder() / "Model_Testing"
