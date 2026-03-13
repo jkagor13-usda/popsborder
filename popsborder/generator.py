@@ -744,7 +744,8 @@ class SyntheticConsignmentDataGenerator:
         sampled_count = int(np.random.choice(counts, p=probs))
         return sampled_count
 
-    def best_fit_discrete_distribution(self, data, candidate_dists=None):
+    @staticmethod
+    def best_fit_discrete_distribution(data, candidate_dists=None):
         """
         Fit multiple SciPy *discrete* distributions and return:
             (best_dist_name, best_dist_obj, best_params, best_aic)
@@ -1195,14 +1196,16 @@ class SyntheticConsignmentDataGenerator:
         sampled = sampled[[c for c in columns if c in sampled.columns]]
 
         return sampled
-    
-    def _make_psd(self, S):
+
+    @staticmethod
+    def _make_psd(s):
         """Clip tiny negative eigenvalues to ensure PSD."""
-        w, V = np.linalg.eigh(S)
+        w, V = np.linalg.eigh(s)
         w = np.maximum(w, 1e-8)
         return (V * w) @ V.T
-    
-    def _rank_to_z(self, mat):
+
+    @staticmethod
+    def _rank_to_z(mat):
         """Empirical CDF per column -> latent normal; expects a 2D numpy array."""
         eps = 1e-6
         n, m = mat.shape
@@ -1443,8 +1446,8 @@ class SyntheticConsignmentDataGenerator:
         
         return synthetic_data
     
-   
-    def calculate_quality_metrics(self, original_df, synthetic_df):
+    @staticmethod
+    def calculate_quality_metrics(original_df, synthetic_df):
         """Calculate quality metrics comparing original and synthetic data
         
         :param original_df: Original DataFrame for comparison
@@ -1496,8 +1499,9 @@ class SyntheticConsignmentDataGenerator:
                     metrics[f"wasserstein_{col}"] = distance
         
         return metrics
-    
-    def generate_statistics(self, dataset):
+
+    @staticmethod
+    def generate_statistics(dataset):
         """Generate statistics about the synthetic dataset
         
         :param dataset: DataFrame to analyze
