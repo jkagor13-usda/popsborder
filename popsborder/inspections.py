@@ -137,7 +137,7 @@ from difflib import get_close_matches
 from slippage_model_utils.references import find_column_name
 import warnings
 
-from typing import List, Dict, Tuple, Set
+from typing import List, Dict, Tuple, Set, Any
 from slippage_model_utils.UnitAttributes import RiskUnitConfig
 
 
@@ -465,7 +465,7 @@ def sample_rbs(config, consignment, compliance_table_dict):
                 risk_unit = risk_unit_by_id.get(risk_unit_id)
                 if risk_unit is None:
                     continue
-                population_n = risk_unit.N_for_hypergeom
+                population_n = risk_unit.n_for_hypergeom
                 if population_n <= 0:
                     continue
 
@@ -1138,21 +1138,19 @@ def consignment_contamination_rate(consignment):
     count = np.count_nonzero(consignment.sample_units)
     return count / consignment.num_sample_units
 
-
 def get_detection_and_confidence(
-    consignment,
-    compliance_table_dict,
-    default_detection=0.01,
-    default_confidence=0.8,
-    print_compliance_levels: bool = False,
+        consignment,
+        compliance_table_dict,
+        default_detection=0.01,
+        default_confidence=0.95,
+        print_compliance_levels: bool = False,
 ):
     """
-    Fetch detection and confidence levels for specified RBS variables at risk-unit level.
-    If not found, defaults to low compliance values.
-    Returns dict keyed by risk_unit.id (or risk-unit index fallback).
+    Fetch detection and confidence levels using RiskUnitConfig for attribute extraction.
     """
+    risk_unit_config = RiskUnitConfig()
     rbs_variables = compliance_table_dict['rbs_variables']
-    n_units_to_inspect = {}
+    detect_confidence_levels = {}
     risk_units = consignment.risk_units if consignment.risk_units else []
     if not risk_units:
         risk_units = consignment.inspection_units
@@ -1160,48 +1158,97 @@ def get_detection_and_confidence(
     if len(rbs_variables) == 0:
         for risk_unit_idx, risk_unit in enumerate(risk_units):
             risk_unit_id = getattr(risk_unit, "id", risk_unit_idx)
-            n_units_to_inspect[risk_unit_id] = (default_detection, default_confidence)
-        return n_units_to_inspect
-
-    attr_map = {
-        "PATHWAY": "pathway",
-        "COUNTRY_OF_ORIGIN_NAME": "origin",
-        "PROPAGATIVE_MATERIAL_TYPE": "material_type",
-        "INSPECTION_LOCATION_NAME": "port",
-        "PRODUCER_NAME": "producer",
-    }
+            detect_confidence_levels[risk_unit_id] = (default_detection, default_confidence)
+        return detect_confidence_levels
 
     for risk_unit_idx, risk_unit in enumerate(risk_units):
         risk_unit_id = getattr(risk_unit, "id", risk_unit_idx)
-        values = {}
-        for attr in rbs_variables:
-            attr_key = str(attr)
-            mapped = attr_map.get(attr_key.upper())
-            if mapped and hasattr(risk_unit, mapped):
-                values[attr_key] = getattr(risk_unit, mapped, None)
-            elif hasattr(risk_unit, attr_key):
-                values[attr_key] = getattr(risk_unit, attr_key, None)
-            else:
-                values[attr_key] = getattr(risk_unit, attr_key.lower(), None)
 
-        if any(v is None for v in values.values()):
+        # Use RiskUnitConfig to extract all enabled attributes
+        # Assuming risk_unit has a method or dict-like interface
+        if hasattr(risk_unit, '__dict__'):
+            risk_unit_dict = risk_unit.__dict__
+        else:
+            risk_unit_dict = dict(risk_unit)
+
+        # Extract only the RBS variables we need
+        values = {}
+        for var in rbs_variables:
+            # Get value using flexible lookup
+            value = _get_risk_unit_attribute(risk_unit, var, risk_unit_config)
+            values[var] = value
+
+        # Check for missing values
+        missing = [var for var, val in values.items() if val is None]
+        if missing:
             key = None
             result = (default_detection, default_confidence)
+            if print_compliance_levels:
+                print(
+                    f"Warning: Risk unit {risk_unit_id} missing values for: {missing}. "
+                    f"Using defaults: detection={default_detection}, confidence={default_confidence}"
+                )
         else:
             key = tuple(values[attr] for attr in rbs_variables)
             result = compliance_table_dict.get(key, (default_detection, default_confidence))
-        
-        print(f"Finding RBS compliance level for {key}") 
-        print(f"Use compliance level: {result}") 
 
-        n_units_to_inspect[risk_unit_id] = result
         if print_compliance_levels:
             key_str = key if key is not None else "<missing>"
             print(
-                f"Compliance level for risk unit {risk_unit_id}: "
-                f"key={key_str} detection={result[0]} confidence={result[1]}"
+                f"Risk unit {risk_unit_id}: key={key_str} -> "
+                f"detection={result[0]}, confidence={result[1]}"
             )
-    return n_units_to_inspect
+
+        detect_confidence_levels[risk_unit_id] = result
+
+    return detect_confidence_levels
+
+
+def _get_risk_unit_attribute(
+        risk_unit,
+        attribute_name: str,
+        risk_unit_config: RiskUnitConfig
+) -> Any:
+    """
+    Get an attribute value from a risk unit, trying multiple name variations.
+
+    Args:
+        risk_unit: Risk unit object
+        attribute_name: Canonical attribute name to retrieve
+        risk_unit_config: RiskUnitConfig for mapping hints
+
+    Returns:
+        Attribute value or None if not found
+    """
+    # List of possible attribute names to try, in order of preference
+    names_to_try = [
+        attribute_name,  # Exact match (e.g., "material_type")
+    ]
+
+    # Add CSV column name if mapped
+    if attribute_name in risk_unit_config.attribute_mapping:
+        csv_name = risk_unit_config.attribute_mapping[attribute_name]
+        names_to_try.extend([
+            csv_name,
+            csv_name.lower(),
+        ])
+
+    # Add common variations
+    names_to_try.extend([
+        attribute_name.lower(),
+        attribute_name.upper(),
+        attribute_name.replace('_', ' '),
+        attribute_name.replace(' ', '_'),
+    ])
+
+    # Try each possible name
+    for name in names_to_try:
+        if hasattr(risk_unit, name):
+            value = getattr(risk_unit, name, None)
+            if value is not None:
+                return value
+
+    return None
 
 
 def count_contaminated_inspection_units(consignment):
