@@ -103,7 +103,7 @@ inspection:
   fixed_n: 10
   selection_strategy: random  # Random selection of sample units
   compliance_table:
-    file_name: data/compliance_table.csv
+    file_name: compliance_lookup_final.pkl
   rbs_calculator_grouping_variables:
     default:
       - Origin

@@ -23,6 +23,9 @@ from popsborder.inspections import normalize_rbs_variables_against_consignment, 
 from slippage_model_utils.r_script_wrapper import *
 from slippage_model_utils.clarke_model_support_functions import *
 from slippage_model_utils.paths import BoxPaths, DefaultPaths
+from pathlib import Path
+import pickle
+import time
 
 
 def main():
@@ -43,6 +46,7 @@ def main():
     compliance_file = data_dir / "compliance_table.csv"
     scenario_file = data_dir / "test_scenario.csv"
     base_compliance_table = data_dir / "base_compliance_table.csv"
+    base_compliance_table_with_producer = data_dir / "base_compliance_table_with_producer.csv"
     compliance_mapping_to_detection_confidence = data_dir / "compliance_mapping_detection_confidence_levels.csv"
 
     ### PIS Inspection/RBS Calculator Data
@@ -185,10 +189,8 @@ def main():
     #################################################################
 
     # Load compliance table
-    compliance_table = load_compliance_lookup_csv(compliance_file)
-
     compliance_table = build_compliance_lookup_table(
-        compliance_table_filepath=base_compliance_table,
+        compliance_table_filepath=base_compliance_table_with_producer,
         mapping_filepath=compliance_mapping_to_detection_confidence
     )
 
@@ -227,6 +229,15 @@ def main():
 
     # Update the compliance table variable names to be used later in sim to match attributes of consignment object
     compliance_table['rbs_variables'] = updated
+
+    # Output files
+    compliance_lookup_pkl = default_paths.compliance_dir() / 'compliance_lookup_final.pkl'
+
+    # Now use these throughout your code
+    with open(compliance_lookup_pkl, 'wb') as f:
+        pickle.dump(compliance_table, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    config["inspection"]["compliance_table"]['file_name'] = 'compliance_lookup_final.pkl'
 
 
 
