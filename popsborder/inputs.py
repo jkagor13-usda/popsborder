@@ -968,61 +968,6 @@ def _load_compliance_mapping_with_encoding(filepath: Path, encoding: str) -> Dic
     return mapping
 
 
-def load_compliance_table_csv_old(filepath: Path) -> Dict:
-    """
-    Load the compliance table.
-
-    Expected columns: [...key columns...] | Compliance
-
-    Args:
-        filepath: Path to compliance table CSV file
-
-    Returns:
-        Dictionary with:
-        - 'rbs_variables': List of key column names
-        - tuple keys: N-tuples from key columns mapping to Compliance value
-
-    Raises:
-        ValueError: If required columns are missing or file is empty
-        FileNotFoundError: If filepath doesn't exist
-    """
-    if not filepath.exists():
-        raise FileNotFoundError(f"Compliance table file not found: {filepath}")
-
-    # Auto-detect encoding if not provided
-    try:
-        encoding = detect_encoding(filepath)
-        print(f"Auto-detected encoding for {filepath.name}: {encoding}")
-    except Exception as e:
-        warnings.warn(f"Could not detect encoding, trying common encodings: {e}")
-        encoding = 'utf-8'
-
-    # Try multiple encodings
-    encodings_to_try = [
-        encoding,
-        'utf-8-sig',
-        'utf-8',
-        'latin-1',
-        'iso-8859-1',
-        'cp1252',
-        'windows-1252'
-    ]
-
-    last_error = None
-    for enc in encodings_to_try:
-        try:
-            return _load_compliance_table_with_encoding(filepath, enc)
-        except UnicodeDecodeError as e:
-            last_error = e
-            continue
-        except Exception as e:
-            raise
-
-    raise UnicodeDecodeError(
-        'utf-8', b'', 0, 1,
-        f"Failed to decode file with any encoding. Last error: {last_error}"
-    )
-
 
 def load_compliance_table_csv(
         filepath: Path,
@@ -1274,18 +1219,3 @@ def build_compliance_lookup_table(
             )
 
     return comp_table
-
-def load_input_consignment_data(file_path):
-    """
-    Load custom csv data to generate consignment. 
-    """
-    from collections import defaultdict
-
-    # Create dictionary where each inspection number maps to a list of rows
-    inspection_dict = defaultdict(list)
-
-    for _, row in inspection_dict.iterrows():
-        inspection_dict[row["INSPECTION_NUMBER"]].append(row.to_dict())
-
-    # Convert back to normal dict if needed
-    inspection_dict = dict(inspection_dict)

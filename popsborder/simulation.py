@@ -82,7 +82,6 @@ from .outputs import (
     PISSimData,
 )
 from .skipping import get_inspection_needed_function
-from .inputs import load_input_consignment_data
 
 def random_seed(seed):
     """Set seed for all generators used"""
