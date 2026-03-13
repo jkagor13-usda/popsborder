@@ -60,7 +60,7 @@ def main():
     producer_group_mapping = pd.read_csv(producer_group_mapping_path)
 
     ### Synthetic data generation
-    historical = True
+    historical = False
     num_consignments_to_simulate = 5 # Added input parameter to be the number of consignments you want simulated
     synthetic_data_generator = SyntheticConsignmentDataGenerator(config=config,
                                                                  producer_group_mapping=producer_group_mapping,
