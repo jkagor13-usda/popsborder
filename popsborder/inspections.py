@@ -11,6 +11,8 @@ Modifications:
         * Takes in data and a config file to reassign inspection units to risk units
     - relabel_risk_units():
         * Relabel RISK_UNIT IDs based on unique combinations of grouping variables.
+    - load_compliance_lookup():
+        * Loads compliance lookup dictionary from pickle file.
     - sample_rbs():
         * Implements risk-based sampling methodology using compliance-based detection levels
         * Retrieves country/propagative material specific compliance parameters from lookup table
@@ -33,6 +35,13 @@ Modifications:
     - normalize_rbs_variables_against_consignment():
         * Maps free-form field names in rbs_variables to actual attributes on a Consignment
           instance, using case-insensitive aliasing
+
+    - fuzzy_match_attribute():
+        * Attempts fuzzy matching using substring/word matching.
+
+    - normalize_rbs_variables_using_risk_unit_config():
+        * Map free-form field names in rbs_variables to actual RiskUnit attributes defined
+          in RiskUnitConfig, using case-insensitive aliasing.
     ----------------
 
     Following Functions Modified
@@ -1401,7 +1410,7 @@ def normalize_rbs_variables_against_consignment(
     return updated_vars, mapping, unmapped
 
 
-def _fuzzy_match_attribute(original: str, canonical_attrs: Set[str]) -> str | None:
+def fuzzy_match_attribute(original: str, canonical_attrs: Set[str]) -> str | None:
     """
     Attempt fuzzy matching using substring/word matching.
 
@@ -1520,7 +1529,7 @@ def normalize_rbs_variables_using_risk_unit_config(
             updated_vars.append(canonical)
         else:
             # Heuristic fallback: try to match substrings
-            matched = _fuzzy_match_attribute(original, canonical_attrs)
+            matched = fuzzy_match_attribute(original, canonical_attrs)
 
             if matched:
                 mapping[original] = matched
