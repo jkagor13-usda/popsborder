@@ -56,43 +56,43 @@ def main():
     # Load configuration and compliance table
     config = load_configuration(config_file)
 
-    # # Load producer group mapping
-    # producer_group_mapping = pd.read_csv(producer_group_mapping_path)
-    #
-    # ### Synthetic data generation
-    # historical = True
-    # num_consignments_to_simulate = 5 # Added input parameter to be the number of consignments you want simulated
-    # synthetic_data_generator = SyntheticConsignmentDataGenerator(config=config,
-    #                                                              producer_group_mapping=producer_group_mapping,
-    #                                                              input_data_file=pis_data_updated)
-    #
-    # if historical:
-    #     included_inspection_nums = synthetic_data_generator.input_data["INSPECTION_NUMBER"].sample(n=num_consignments_to_simulate)
-    #     synth_data = synthetic_data_generator.input_data[synthetic_data_generator.input_data["INSPECTION_NUMBER"].isin(included_inspection_nums)]
-    #     synth_data.loc[:, 'Row_ID'] = 'CR-' + (synth_data.index + 1).astype(str)
-    #     synth_out_path = data_dir / "Historical_PIS_SampleQuantity.csv"
-    #     config["consignment"]["input_file"]["file_name"] = "slippage_data/Historical_PIS_SampleQuantity.csv"
-    # else:
-    #     synth_data = synthetic_data_generator.generate_from_input_data(
-    #         n_consignments=num_consignments_to_simulate,
-    #         sampling_method="sequential"
-    #     )
-    #     synth_out_path = data_dir / "Synthetic_PIS_SampleQuantity.csv"
-    #     config["consignment"]["input_file"]["file_name"] = "slippage_data/Synthetic_PIS_SampleQuantity.csv"
-    #
-    # # Pull in the VariableCreator object to use R code to create engineered columns
-    # creator = VariableCreator()
-    #
-    # quantity_binary_variables = creator.generate_quantity_binaries(synth_data, quantity_threshold=500,
-    #                                                                group_cols=['RISK_UNIT'])
-    #
-    # synth_data = synth_data.merge(
-    #     quantity_binary_variables,
-    #     on='RISK_UNIT',
-    #     how='left'
-    # )
-    #
-    # synth_data.to_csv(synth_out_path)
+    # Load producer group mapping
+    producer_group_mapping = pd.read_csv(producer_group_mapping_path)
+
+    ### Synthetic data generation
+    historical = True
+    num_consignments_to_simulate = 5 # Added input parameter to be the number of consignments you want simulated
+    synthetic_data_generator = SyntheticConsignmentDataGenerator(config=config,
+                                                                 producer_group_mapping=producer_group_mapping,
+                                                                 input_data_file=pis_data_updated)
+
+    if historical:
+        included_inspection_nums = synthetic_data_generator.input_data["INSPECTION_NUMBER"].sample(n=num_consignments_to_simulate)
+        synth_data = synthetic_data_generator.input_data[synthetic_data_generator.input_data["INSPECTION_NUMBER"].isin(included_inspection_nums)]
+        synth_data.loc[:, 'Row_ID'] = 'CR-' + (synth_data.index + 1).astype(str)
+        synth_out_path = data_dir / "Historical_PIS_SampleQuantity.csv"
+        config["consignment"]["input_file"]["file_name"] = "slippage_data/Historical_PIS_SampleQuantity.csv"
+    else:
+        synth_data = synthetic_data_generator.generate_from_input_data(
+            n_consignments=num_consignments_to_simulate,
+            sampling_method="sequential"
+        )
+        synth_out_path = data_dir / "Synthetic_PIS_SampleQuantity.csv"
+        config["consignment"]["input_file"]["file_name"] = "slippage_data/Synthetic_PIS_SampleQuantity.csv"
+
+    # Pull in the VariableCreator object to use R code to create engineered columns
+    creator = VariableCreator()
+
+    quantity_binary_variables = creator.generate_quantity_binaries(synth_data, quantity_threshold=500,
+                                                                   group_cols=['RISK_UNIT'])
+
+    synth_data = synth_data.merge(
+        quantity_binary_variables,
+        on='RISK_UNIT',
+        how='left'
+    )
+
+    synth_data.to_csv(synth_out_path)
 
 
 
@@ -132,44 +132,44 @@ def main():
     #                                     inputs.start_val,
     #                                     inputs.se)
 
-    # # Setting values for testing
-    # res = {}
-    # inputs_by_quantity = {}
-    # for key in [(-0.001, 10.0),
-    #             (10.0, 50.0),
-    #             (50.0, 150.0),
-    #             (150.0, 300.0),
-    #             (300.0, 579.0),
-    #             (579.0, 1000.0)]:
-    #     inputs_by_quantity[key] = {'theta': np.inf, 'B': 200}
-    #     res[key] = {
-    #         'alpha': random.uniform(0.01, 0.25),
-    #         "beta": random.uniform(2, 8),
-    #         'mu': 0.0,
-    #         'rho': 0.0,
-    #         'D': 0.0
-    #     }
-    #
-    # print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
-    #
-    # n = 1000
-    # for (lower, upper), results in res.items():
-    #     alpha = results["alpha"]
-    #     beta = results["beta"]
-    #
-    #
-    #     mean = n * alpha / (alpha + beta)
-    #     variance = (n * alpha * beta * (alpha + beta + n)) / ((alpha + beta) ** 2 * (alpha + beta + 1))
-    #     std_dev = variance ** 0.5
-    #
-    #     print(f'   For quantities ranging in {(lower, upper)}:')
-    #     print(f'      α={alpha:.4f}, β={beta:.4f} | '
-    #           f'Mean={mean:.2f}, SD={std_dev:.2f} (N={n})')
-    #     # print(f'      Theta (from inputs) = {results.theta}')
-    #     # print('\n      Full Clarke model result payload:')
-    #     # for k, v in results.items():
-    #     #     print(f'   {k}: {v}')
-    #     print('')
+    # Setting values for testing
+    res = {}
+    inputs_by_quantity = {}
+    for key in [(-0.001, 10.0),
+                (10.0, 50.0),
+                (50.0, 150.0),
+                (150.0, 300.0),
+                (300.0, 579.0),
+                (579.0, 1000.0)]:
+        inputs_by_quantity[key] = {'theta': np.inf, 'B': 200}
+        res[key] = {
+            'alpha': random.uniform(0.01, 0.25),
+            "beta": random.uniform(2, 8),
+            'mu': 0.0,
+            'rho': 0.0,
+            'D': 0.0
+        }
+
+    print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
+
+    n = 1000
+    for (lower, upper), results in res.items():
+        alpha = results["alpha"]
+        beta = results["beta"]
+
+
+        mean = n * alpha / (alpha + beta)
+        variance = (n * alpha * beta * (alpha + beta + n)) / ((alpha + beta) ** 2 * (alpha + beta + 1))
+        std_dev = variance ** 0.5
+
+        print(f'   For quantities ranging in {(lower, upper)}:')
+        print(f'      α={alpha:.4f}, β={beta:.4f} | '
+              f'Mean={mean:.2f}, SD={std_dev:.2f} (N={n})')
+        # print(f'      Theta (from inputs) = {results.theta}')
+        # print('\n      Full Clarke model result payload:')
+        # for k, v in results.items():
+        #     print(f'   {k}: {v}')
+        print('')
 
 
     ####################################################################
