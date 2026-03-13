@@ -21,7 +21,7 @@ CONDA_ENV_NAME: Optional[str] = os.getenv("POPS_R_CONDA_ENV", "rbb")
 REPO_NAME = "plant-inspection-station-simulation"
 R_SCRIPT_REL = Path("slippage_model_utils") / "clarke_bb_model.R"
 
-def _find_repo_root() -> Optional[Path]:
+def find_repo_root() -> Optional[Path]:
     """
     Find the repo root by looking for REPO_NAME or '.git'
     """
@@ -39,7 +39,7 @@ def get_r_script_path() -> Path:
     Raises FileNotFoundError if not found.
     """
     # Find repo root
-    repo_root = _find_repo_root()
+    repo_root = find_repo_root()
     # From repo root, return path to R script
     if repo_root:
         candidate = (repo_root / R_SCRIPT_REL).resolve()
@@ -477,7 +477,7 @@ class VariableCreator:
                 return candidate.resolve()
 
         # Try using the existing repo root finder
-        repo_root = _find_repo_root()
+        repo_root = find_repo_root()
         if repo_root:
             candidate = repo_root / self.R_SCRIPT_REL
             if candidate.exists():
