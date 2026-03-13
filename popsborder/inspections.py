@@ -134,6 +134,7 @@ import re
 from collections import defaultdict
 from difflib import get_close_matches
 from slippage_model_utils.references import find_column_name
+import warnings
 
 
 def relabel_risk_units(group, risk_unit_grouping_variables):
@@ -205,22 +206,41 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
             if ('default' in config["inspection"]["rbs_calculator_grouping_variables"].keys()
                     and len(config["inspection"]["rbs_calculator_grouping_variables"]['default'])>0):
                 default_list = config["inspection"]["rbs_calculator_grouping_variables"]['default']
-                print(f'\nWARNING\nPIS Station ---{port_name}--- for the consignment not found in config.\n'
-                      f'Using defaults found in config for risk unit grouping variables...'
-                      f'{default_list}')
+                # print(f'\nWARNING\nPIS Station ---{port_name}--- for the consignment not found in config.\n'
+                #       f'Using defaults found in config for risk unit grouping variables...'
+                #       f'{default_list}')
+                warnings.warn(
+                    f"PIS Station ---{port_name}--- for the consignment not found in config. "
+                    f"Using defaults found in config for risk unit grouping variables: {default_list}",
+                    UserWarning,
+                    stacklevel=2
+                )
                 risk_unit_grouping_variables = [
                     x.lower().replace(' ', '_').replace('-', '_').replace('.', '_')
                     for x in config["inspection"]["rbs_calculator_grouping_variables"]['default']
                 ]
             else:
                 default_list = ['origin','material_type']
-                print(f'\nWARNING\nPIS Station ---{port_name}--- for the consignment not found in config.\n'
-                      f'Also, no defaults found in config so risk unit group variables being defaulted to...{default_list}')
+                # print(f'\nWARNING\nPIS Station ---{port_name}--- for the consignment not found in config.\n'
+                #       f'Also, no defaults found in config so risk unit group variables being defaulted to...{default_list}')
+                warnings.warn(
+                    f"PIS Station ---{port_name}--- for the consignment not found in config."
+                    f"Also, no defaults found in config so risk unit group variables being defaulted to...{default_list}",
+                    UserWarning,
+                    stacklevel=2
+                )
                 risk_unit_grouping_variables = ['origin','material_type']
         else:
             if len(config["inspection"]["rbs_calculator_grouping_variables"][pis_station]) == 0:
-                print(f'\nWARNING\n  PIS Station ---{port_name}--- found in config. \n'
-                      f'However, no grouping variables found in the config, so default risk unit grouping variables being used (Origin and PM Type).')
+                default_list = ['origin', 'material_type']
+                # print(f'\nWARNING\n  PIS Station ---{port_name}--- found in config. \n'
+                #       f'However, no grouping variables found in the config, so default risk unit grouping variables being used (Origin and PM Type).')
+                warnings.warn(
+                    f"PIS Station ---{port_name}--- for the consignment not found in config."
+                    f"However, no grouping variables found in the config, so risk unit group variables being defaulted to...{default_list}",
+                    UserWarning,
+                    stacklevel=2
+                )
                 risk_unit_grouping_variables = ['origin','material_type']
             else:
                 risk_unit_grouping_variables = [
