@@ -230,7 +230,7 @@ class SyntheticConsignmentDataGenerator:
         self.input_data = apply_producer_grouping(
             self.input_data,
             producer_group_mapping,
-            use_shortest_name=True  # Set to False to use numeric grouping labels
+            use_shortest_name=True  # Set to False if wanting to use numeric grouping labels
         )
 
         self.input_data  = construct_risk_units(config=config, data=self.input_data)
@@ -239,7 +239,8 @@ class SyntheticConsignmentDataGenerator:
         random.seed(42)
         np.random.seed(42)
 
-    def _load_input_data(self, input_file):
+    @staticmethod
+    def _load_input_data(input_file):
         """Load input data file for training sampling models.
 
         :param input_file: Path to input data file (.csv, .xlsx, .xls)
@@ -308,7 +309,8 @@ class SyntheticConsignmentDataGenerator:
             print(f"Error loading input data file '{input_file}': {e}")
             return None
 
-    def fit_best_continuous_distribution(self, data, distributions=None, criterion="aic"):
+    @staticmethod
+    def fit_best_continuous_distribution(data, distributions=None, criterion="aic"):
         """
         Fit several continuous distributions to 1D numeric data and select the best.
         If no distribution can be selected, fall back to fitting a beta distribution.
@@ -457,8 +459,8 @@ class SyntheticConsignmentDataGenerator:
 
         return sampled_df
 
+    @staticmethod
     def resolve_producer_names(
-            self,
             df: pd.DataFrame,
             input_col: str = "PRODUCER_NAME",
             output_col: str = "PRODUCER_NAME_RESOLVED",
@@ -473,9 +475,6 @@ class SyntheticConsignmentDataGenerator:
 
         Returns a *copy* of df with a new column `output_col`.
         """
-
-        df = df.copy()
-
         def _normalize(name: Union[str, float]):
             if pd.isna(name):
                 return name
@@ -511,7 +510,8 @@ class SyntheticConsignmentDataGenerator:
         df[output_col] = resolved
         return df
 
-    def identify_num_inspection_units(self, df, n_consignments=1):
+    @staticmethod
+    def identify_num_inspection_units(df, n_consignments=1):
         # First sample the number of inspection units per consignment uniformly based on data
         counts = df["INSPECTION_NUMBER"].value_counts()
         min_count = counts.min()
@@ -625,8 +625,8 @@ class SyntheticConsignmentDataGenerator:
         idx = np.random.choice(len(keys), p=probs)
         return keys[idx]
 
+    @staticmethod
     def compute_rowcount_pmf_for_location(
-            self,
             df: pd.DataFrame,
             location_name: str,
             total_units_col: str = 'SAMPLING_UNITS_FOR_INSPECTION_UNIT',
