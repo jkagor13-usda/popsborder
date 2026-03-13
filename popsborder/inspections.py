@@ -128,13 +128,17 @@ from .inputs import get_validated_effectiveness, load_compliance_lookup_csv
 from slippage_model_utils.references import (
     country_of_origin_names,
     pm_type_names,
-    possible_pis_stations
+    possible_pis_stations,
+    get_domain_specific_aliases
 )
 import re
 from collections import defaultdict
 from difflib import get_close_matches
 from slippage_model_utils.references import find_column_name
 import warnings
+
+from typing import List, Dict, Tuple, Set
+from slippage_model_utils.UnitAttributes import RiskUnitConfig
 
 
 def relabel_risk_units(group, risk_unit_grouping_variables):
@@ -1301,3 +1305,147 @@ def normalize_rbs_variables_against_consignment(
     return updated_vars, mapping, unmapped
 
 
+def _fuzzy_match_attribute(original: str, canonical_attrs: Set[str]) -> str | None:
+    """
+    Attempt fuzzy matching using substring/word matching.
+
+    Args:
+        original: Original variable name to match
+        canonical_attrs: Set of canonical attribute names
+
+    Returns:
+        Matched canonical attribute or None
+    """
+    # Sort by length (longest first) to prefer more specific matches
+    sorted_attrs = sorted(canonical_attrs, key=len, reverse=True)
+
+    for attr in sorted_attrs:
+        # Try exact word boundary match
+        pattern = rf'\b{re.escape(attr.replace("_", " "))}\b'
+        if re.search(pattern, original, flags=re.I):
+            return attr
+
+        # Try matching with underscores
+        pattern = rf'\b{re.escape(attr)}\b'
+        if re.search(pattern, original, flags=re.I):
+            return attr
+
+    return None
+
+# Convenience function that creates a RiskUnitConfig from defaults
+def normalize_rbs_variables_using_risk_unit_config(
+        rbs_variables: List[str]
+) -> Tuple[List[str], Dict[str, str], List[str]]:
+    """
+    Map free-form field names in rbs_variables to actual RiskUnit attributes
+    defined in RiskUnitConfig, using case-insensitive aliasing.
+
+    Args:
+        rbs_variables: List of variable names to normalize
+
+    Returns:
+        Tuple of:
+        - updated_vars: list[str]  # rbs_variables with matched items replaced by canonical attrs
+        - mapping: dict[str, str]  # original string -> canonical attribute
+        - unmapped: list[str]      # originals that didn't match anything
+    """
+    risk_unit_config = RiskUnitConfig()
+    if not rbs_variables:
+        return [], {}, []
+
+    # Get canonical attribute names from the config
+    canonical_attrs = set(risk_unit_config.enabled_attributes)
+
+    # Auto-generate basic aliases from the canonical names
+    auto_aliases = defaultdict(set)
+    for attr in canonical_attrs:
+        spaced = attr.replace('_', ' ')
+        auto_aliases[attr].update({
+            attr,
+            spaced,
+            spaced.title(),  # "Material Type"
+            spaced.upper(),  # "MATERIAL TYPE"
+            spaced.lower(),  # "material type"
+            attr.title(),  # "Material_Type"
+            attr.upper(),  # "MATERIAL_TYPE"
+        })
+
+    # Add aliases from the attribute_mapping (CSV column names)
+    for attr, csv_column in risk_unit_config.attribute_mapping.items():
+        if attr in canonical_attrs:
+            auto_aliases[attr].add(csv_column)
+            # Also add normalized versions of CSV column name
+            csv_spaced = csv_column.replace('_', ' ')
+            auto_aliases[attr].update({
+                csv_column,
+                csv_spaced,
+                csv_spaced.title(),
+                csv_spaced.lower(),
+                csv_spaced.upper(),
+            })
+
+    # Add domain-specific aliases (hardcoded knowledge)
+    domain_aliases = get_domain_specific_aliases()
+    for attr, aliases in domain_aliases.items():
+        if attr in canonical_attrs:
+            auto_aliases[attr].update(aliases)
+
+    # Build a lookup: normalized alias -> canonical attribute
+    alias_index = {}
+    for attr, names in auto_aliases.items():
+        for name in names:
+            normalized = _norm(name)
+            if normalized in alias_index and alias_index[normalized] != attr:
+                # Collision detected - log it
+                warnings.warn(
+                    f"Alias collision detected: '{name}' (normalized: '{normalized}') "
+                    f"maps to both '{alias_index[normalized]}' and '{attr}'. "
+                    f"Using '{alias_index[normalized]}'."
+                )
+            else:
+                alias_index[normalized] = attr
+
+    # Walk the input list, map to canonical attributes when possible
+    updated_vars = []
+    mapping = {}
+    unmapped = []
+
+    for original in rbs_variables:
+        if not original or not original.strip():
+            warnings.warn(f"Empty or whitespace-only variable name found, skipping.")
+            continue
+
+        key = _norm(original)
+
+        if key in alias_index:
+            # Direct match found
+            canonical = alias_index[key]
+            mapping[original] = canonical
+            updated_vars.append(canonical)
+        else:
+            # Heuristic fallback: try to match substrings
+            matched = _fuzzy_match_attribute(original, canonical_attrs)
+
+            if matched:
+                mapping[original] = matched
+                updated_vars.append(matched)
+            else:
+                unmapped.append(original)
+                updated_vars.append(original)
+
+    # Provide informative feedback
+    if mapping:
+        print(f"Mapped {len(mapping)} compliance table variable(s) to RiskUnit attributes:")
+        for orig, canonical in list(mapping.items())[:5]:
+            print(f"  '{orig}' -> '{canonical}'")
+        if len(mapping) > 5:
+            print(f"  ... and {len(mapping) - 5} more")
+
+    if unmapped:
+        warnings.warn(
+            f"\nCould not map {len(unmapped)} compliance table variable(s) to RiskUnit attributes.\n"
+            f"Unmapped variables: {unmapped[:5]}{'...' if len(unmapped) > 5 else ''}\n"
+            f"Available RiskUnit attributes: {sorted(canonical_attrs)}"
+        )
+
+    return updated_vars, mapping, unmapped

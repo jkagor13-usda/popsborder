@@ -17,7 +17,7 @@ from popsborder.outputs import save_inspection_unit_detection_records_to_csv
 from popsborder.generator import SyntheticConsignmentDataGenerator, save_to_csv
 from popsborder.consignments import get_consignment_generator
 
-from popsborder.inspections import normalize_rbs_variables_against_consignment, construct_risk_units
+from popsborder.inspections import normalize_rbs_variables_against_consignment, construct_risk_units, normalize_rbs_variables_using_risk_unit_config
 
 # Import utility functions for contamination module
 from slippage_model_utils.r_script_wrapper import *
@@ -196,27 +196,34 @@ def main():
     consignment_generator = get_consignment_generator(config)
     temp_consignment = consignment_generator.generate_consignment()
 
-    # Use temporarily generated consignment to find mappings of compliance table variables to attributes
-    updated, mapping, unmapped= normalize_rbs_variables_against_consignment(
-        compliance_table['rbs_variables'],
-        temp_consignment
+
+
+    # Normalize RBS variables against RiskUnit attributes
+    updated, mapping2, unmapped2 = normalize_rbs_variables_using_risk_unit_config(
+        compliance_table['rbs_variables']
     )
 
-    print(f'\n\nPre-Processed Submitted Compliance Table')
-    print(f'   You have submitted the following variables in your compliance table and '
-          f'they will be mapped to attributes that '
-          f'the slippage model is generating for each consignment.')
-    print("   === Original/Submitted Compliance Table Variables ===", compliance_table['rbs_variables'])
-
-    print("\n   === Mappings Executed ===")
-    for k, v in mapping.items():
-        print(f"   {k!r} -> {v!r}")
-
-    print("\n   === Unmapped Variables ===")
-    for var in unmapped:
-        print(f'      {var}')
-
-    print("\n   === Updated Compliance Table Variables ===", updated)
+    # # Use temporarily generated consignment to find mappings of compliance table variables to attributes
+    # updated, mapping, unmapped = normalize_rbs_variables_against_consignment(
+    #     compliance_table['rbs_variables'],
+    #     temp_consignment
+    # )
+    #
+    # print(f'\n\nPre-Processed Submitted Compliance Table')
+    # print(f'   You have submitted the following variables in your compliance table and '
+    #       f'they will be mapped to attributes that '
+    #       f'the slippage model is generating for each consignment.')
+    # print("   === Original/Submitted Compliance Table Variables ===", compliance_table['rbs_variables'])
+    #
+    # print("\n   === Mappings Executed ===")
+    # for k, v in mapping.items():
+    #     print(f"   {k!r} -> {v!r}")
+    #
+    # print("\n   === Unmapped Variables ===")
+    # for var in unmapped:
+    #     print(f'      {var}')
+    #
+    # print("\n   === Updated Compliance Table Variables ===", updated)
 
     # Update the compliance table variable names to be used later in sim to match attributes of consignment object
     compliance_table['rbs_variables'] = updated

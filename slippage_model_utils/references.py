@@ -59,7 +59,7 @@ Backward Compatibility:
 """
 
 from difflib import get_close_matches
-from typing import List
+from typing import List, Dict, Set
 
 country_of_origin_names = {
     'Origin', 'origin', 'Origin Location Country Name', 'Origin Location Name',
@@ -95,19 +95,75 @@ possible_pis_stations = {
     'Seattle PIS'
 }
 
-# risk_unit_attributes = {
-# sample_units,
-#                  risk_unit_id=None,
-#                  sample_unit_ids=None,
-#                  inspection_unit_ids=None,
-#                  plant_ids=None,
-#                  material_type=None,
-#                  producer=None,
-#                  origin=None,
-#                  port=None,
-#                  pathway=None,
-# "Binary1"
-# }
+def get_domain_specific_aliases() -> Dict[str, Set[str]]:
+    """
+    Return hardcoded domain-specific aliases for RiskUnit attributes.
+
+    These are common alternative names that users might use in their
+    compliance tables that should map to canonical attributes.
+    """
+    return {
+        'origin': {
+            'country of origin',
+            'country_of_origin',
+            'origin country',
+            'source country',
+            'country',
+            'COUNTRY_OF_ORIGIN_NAME',
+            'coo',
+        },
+        'material_type': {
+            'propagative material type',
+            'PROPAGATIVE_MATERIAL_TYPE',
+            'pm type',
+            'material',
+            'type',
+            'commodity',
+            'commodity type',
+        },
+        'port': {
+            'inspection location',
+            'INSPECTION_LOCATION_NAME',
+            'pis station',
+            'station',
+            'location',
+            'inspection station',
+            'entry port',
+        },
+        'pathway': {
+            'PATHWAY',
+            'entry pathway',
+            'import pathway',
+        },
+        'producer_group': {
+            'producer',
+            'grower',
+            'producer group',
+        },
+        'median_qty_lt200': {
+            'median qty lt200',
+            'MEDIAN_QTY_LT200',
+            'small quantity',
+            'qty lt 200',
+        },
+        'frac_small': {
+            'fraction small',
+            'FRAC_SMALL',
+            'small fraction',
+        },
+        'frac_small_gt07': {
+            'fraction small gt 07',
+            'FRAC_SMALL_GT07',
+            'frac small gt 0.7',
+        },
+        'any_small': {
+            'ANY_SMALL',
+            'has small',
+            'contains small',
+        },
+    }
+
+
 
 COLUMN_NAME_ALIASES = {
     'comm_ID': [
