@@ -81,7 +81,3 @@ class RiskUnitConfig:
             return bool(value)
         else:
             return self.defaults.get(attr_name, False)
-
-
-# Create default configuration instance
-DEFAULT_RISK_UNIT_CONFIG = RiskUnitConfig()
