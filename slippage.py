@@ -205,28 +205,6 @@ def main():
         compliance_table['rbs_variables']
     )
 
-    # # Use temporarily generated consignment to find mappings of compliance table variables to attributes
-    # updated, mapping, unmapped = normalize_rbs_variables_against_consignment(
-    #     compliance_table['rbs_variables'],
-    #     temp_consignment
-    # )
-    #
-    # print(f'\n\nPre-Processed Submitted Compliance Table')
-    # print(f'   You have submitted the following variables in your compliance table and '
-    #       f'they will be mapped to attributes that '
-    #       f'the slippage model is generating for each consignment.')
-    # print("   === Original/Submitted Compliance Table Variables ===", compliance_table['rbs_variables'])
-    #
-    # print("\n   === Mappings Executed ===")
-    # for k, v in mapping.items():
-    #     print(f"   {k!r} -> {v!r}")
-    #
-    # print("\n   === Unmapped Variables ===")
-    # for var in unmapped:
-    #     print(f'      {var}')
-    #
-    # print("\n   === Updated Compliance Table Variables ===", updated)
-
     # Update the compliance table variable names to be used later in sim to match attributes of consignment object
     compliance_table['rbs_variables'] = updated
 
@@ -238,48 +216,6 @@ def main():
         pickle.dump(compliance_table, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     config["inspection"]["compliance_table"]['file_name'] = 'compliance_lookup_final.pkl'
-
-
-
-    ################## Testing for R helper functions to create new variables ############################
-    # # Create and run the variable creator
-    # creator = VariableCreator(repo_root=default_paths.root)
-    #
-    # # Run all functions
-    # summary = creator.run_all()
-    #
-    # # Or call individual functions
-    # creator.function1(param1=42, param2=25)
-    # # creator.function2(data=[1.0, 2.0, 3.0, 4.0, 5.0])
-    #
-    # # Create sample dataframe
-    # df = pd.DataFrame({
-    #     'col1': [1, 2, 3, 4, 5],
-    #     'col2': [10, 20, 30, 40, 50],
-    #     'name': ['A', 'B', 'C', 'D', 'E']
-    # })
-    #
-    # print("Original DataFrame:")
-    # print(df)
-    #
-    # # Call function3 with the dataframe
-    # # result_df = creator.function3(df)
-    # result_df = creator.function4(df, operation="product", multiplier=2.5)
-    #
-    # print("\nResult DataFrame:")
-    # print(result_df)
-
-    ########################################################################################################
-
-
-
-
-
-
-
-
-
-
 
 
     ##################################################################
