@@ -18,6 +18,17 @@ class DefaultPaths:
     def impact_data_dir(self) -> Path:
         return self.root / "impact_data"
 
+    def tmp_dir(self) -> Path:
+        """Root temporary data directory"""
+        return self.root / "tmp"
+
+    def compliance_dir(self) -> Path:
+        """Directory for compliance lookup files"""
+        compliance_path = self.tmp_dir() / "compliance"
+        # Ensure directory exists
+        compliance_path.mkdir(parents=True, exist_ok=True)
+        return compliance_path
+
 
 class BoxPaths:
 
