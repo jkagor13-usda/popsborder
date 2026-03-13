@@ -135,10 +135,54 @@ import re
 from collections import defaultdict
 from difflib import get_close_matches
 from slippage_model_utils.references import find_column_name
+from slippage_model_utils.r_script_wrapper import find_repo_root
 import warnings
 
 from typing import List, Dict, Tuple, Set, Any
 from slippage_model_utils.UnitAttributes import RiskUnitConfig
+import pickle
+
+import pickle
+import time
+from pathlib import Path
+from typing import Dict, Optional
+from slippage_model_utils.paths import DefaultPaths
+
+
+def load_compliance_lookup(
+        filename: str
+) -> Dict:
+    """
+    Load compliance lookup dictionary from pickle file.
+
+    Args:
+        filename: Name of pickle file (e.g., 'compliance_lookup_final.pkl')
+
+    Returns:
+        Compliance lookup dictionary
+
+    Raises:
+        FileNotFoundError: If pickle file doesn't exist
+    """
+    # Initialize paths if not provided
+    default_paths = DefaultPaths()
+
+    # Get full path using DefaultPaths
+    full_path = default_paths.compliance_dir() / filename
+
+    # Check if file exists
+    if not full_path.exists():
+        raise FileNotFoundError(
+            f"Compliance lookup file not found: {full_path}\n"
+            f"Expected location: {default_paths.compliance_dir()}\n"
+            f"Please ensure the pickle file is in the correct directory."
+        )
+
+    # Load pickle
+    with open(full_path, 'rb') as f:
+        compliance_table_dict = pickle.load(f)
+
+    return compliance_table_dict
 
 
 def relabel_risk_units(group, risk_unit_grouping_variables):
@@ -440,7 +484,7 @@ def sample_n(config, consignment):
     return n_units_to_inspect
 
 
-def sample_rbs(config, consignment, compliance_table_dict):
+def sample_rbs(config, consignment):
     """Set sample size to sample units from consignment using hypergeometric/detection 
     level strategy based on compliance levels. Return number of units to inspect.
 
@@ -450,6 +494,12 @@ def sample_rbs(config, consignment, compliance_table_dict):
 
     unit = config["inspection"]["unit"]
     debug_print = config.get("debug", {}).get("print_compliance_levels", False)
+
+    # Get filename from config
+    compliance_table_lookup_filename = config["inspection"]["compliance_table"]['file_name']
+
+    # Load compliance lookup
+    compliance_table_dict = load_compliance_lookup(filename=compliance_table_lookup_filename)
 
 
     detection_confidence_levels = get_detection_and_confidence(
@@ -1087,7 +1137,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     return ret
 
 
-def get_sample_function(config, compliance_table=None):
+def get_sample_function(config):
     """Based on config, return function to sample a consignment."""
     sample_strategy = config["inspection"]["sample_strategy"]
     if sample_strategy == "proportion":
@@ -1113,8 +1163,7 @@ def get_sample_function(config, compliance_table=None):
     elif sample_strategy == "rbs":
 
         def sample(consignment):
-            return sample_rbs(config=config, consignment=consignment, 
-                              compliance_table_dict=compliance_table)
+            return sample_rbs(config=config, consignment=consignment)
 
     else:
         raise RuntimeError(f"Unknown sample strategy: {sample_strategy}")
