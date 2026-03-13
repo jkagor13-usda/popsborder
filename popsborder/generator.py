@@ -81,10 +81,6 @@ from slippage_model_utils.r_script_wrapper import VariableCreator
 
 ### Support functions:
 
-
-import pandas as pd
-import re
-
 def preprocess_producer_name(name, suffix_string=None, prefix_string=None):
     """
     Preprocess a single producer name according to specified rules.
