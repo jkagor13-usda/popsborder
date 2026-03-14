@@ -225,7 +225,7 @@ def pretty_consignment_inspection_units(consignment, config=None):
         separator = line
     header = pretty_header(consignment, config=config)
     body = separator.join(
-        [pretty_content(inspection_unit.sample_units, config=config) for inspection_unit in consignment["inspection_units"]]
+        [pretty_content(inspection_unit.included_units, config=config) for inspection_unit in consignment["inspection_units"]]
     )
     return f"{header}\n{body}"
 
@@ -723,7 +723,7 @@ def inspection_unit_detection_records_to_pandas(records):
 
 def save_inspection_unit_detection_records_to_csv(records, filename):
     """Save per-inspection-unit detection records to CSV and return DataFrame."""
-    df = inspection_unit_detection_records_to_pandas(records)
+    df = pd.DataFrame.from_records(records)
     df.to_csv(filename, index=False)
     return df
 
@@ -1072,7 +1072,7 @@ class PISSimData:
                     - num_plants: Total number of plants in consignment
                     - plants: List/array of contamination counts
                     - inspection_units: List of InspectionUnit objects, each containing
-                      sample_unit_objects with plants attributes
+                      included_unit_objects with plants attributes
 
             Notes:
                 - Contamination is determined by checking if sum(consignment.plants) > 0
@@ -1164,7 +1164,7 @@ class PISSimData:
                     unit_has_contamination = False
 
                     # Check each sample unit within the inspection unit
-                    for sample_unit in inspection_unit.sample_unit_objects:
+                    for sample_unit in inspection_unit.included_unit_objects:
                         contamination_count = sum(sample_unit.plants) if sample_unit.plants is not None else 0
                         contaminants_per_sample_unit.append(contamination_count)
 
@@ -1264,10 +1264,10 @@ class PISSimData:
             inspected_counts_by_inspection_unit[inspection_unit_index] += 1
 
         for inspection_unit_index, inspection_unit in enumerate(consignment.inspection_units):
-            sample_unit_objects = getattr(inspection_unit, "sample_unit_objects", [])
-            num_plants_in_inspection_unit = sum(len(su.plants) for su in sample_unit_objects)
+            included_unit_objects = getattr(inspection_unit, "included_unit_objects", [])
+            num_plants_in_inspection_unit = sum(len(su.plants) for su in included_unit_objects)
             infected_plants_in_inspection_unit = sum(
-                int(np.count_nonzero(su.plants)) for su in sample_unit_objects
+                int(np.count_nonzero(su.plants)) for su in included_unit_objects
             )
             risk_unit_id = None
             risk_unit_ids = getattr(inspection_unit, "risk_unit_ids", None)
@@ -1284,7 +1284,7 @@ class PISSimData:
                     "inspection_unit_index": inspection_unit_index,
                     "inspection_unit_id": getattr(inspection_unit, "id", inspection_unit_index),
                     "risk_unit_id": risk_unit_id,
-                    "num_sample_units": getattr(inspection_unit, "num_sample_units", len(sample_unit_objects)),
+                    "num_sample_units": getattr(inspection_unit, "num_sample_units", len(included_unit_objects)),
                     "num_plants": num_plants_in_inspection_unit,
                     "infected_plants": infected_plants_in_inspection_unit,
                     "is_infected": is_infected,
@@ -1341,4 +1341,6 @@ class PISSimData:
 
             # Add to collections (efficient batch approach)
             self.rbs_records.append(rbs_record)
+
+
 

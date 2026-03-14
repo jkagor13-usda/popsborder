@@ -178,7 +178,7 @@ def simulation(
                 indicator = 0
                 sample_unit_counter = 0
                 sample_units_contaminated = {}
-                for samp_unit in inspect_unit.sample_unit_objects:
+                for samp_unit in inspect_unit.included_unit_objects:
                     if sum(samp_unit.plants)> 0:
                         plants_contaminated = []
                         for plant_unit in range(len(samp_unit.plants)):
@@ -202,20 +202,11 @@ def simulation(
             print(f'\n   Number of Contaminated Inspection Units: {total_contaminated_inspection_units}')
             print(f'   Proportion of Contaminated Inspection Units (total # inspection units = {len(consignment.inspection_units)}): {total_contaminated_inspection_units/len(consignment.inspection_units)}')
 
-            if os.environ.get("SLIPPAGE_DEBUG_CONTAM_SUMMARY"):
-                print(
-                    f"[contam summary] consignment {i+1}: "
-                    f"plants={total_contaminated_units}, "
-                    f"sample_units={total_contaminated_sample_units}, "
-                    f"inspection_units={total_contaminated_inspection_units}"
-                )
-                sys.stdout.flush()
-
 
             pis_sim_data.add_consignment(consignment)
             if detailed:
                 for inspection_unit in consignment.inspection_units:
-                    sample_unit_details.append(inspection_unit.sample_units)
+                    sample_unit_details.append(inspection_unit.included_units)
             if pretty:
                 pretty_config = config.get("pretty", {})
                 print(pretty_consignment(consignment, style=pretty, config=pretty_config))
@@ -270,7 +261,7 @@ def simulation(
                     inspected_counts_by_inspection_unit[inspection_unit_index] += 1
 
                 for inspection_unit_index, inspection_unit in enumerate(consignment.inspection_units):
-                    sample_unit_objects = getattr(inspection_unit, "sample_unit_objects", [])
+                    sample_unit_objects = getattr(inspection_unit, "included_unit_objects", [])
                     num_plants_in_inspection_unit = sum(len(su.plants) for su in sample_unit_objects)
                     infected_plants_in_inspection_unit = sum(
                         int(np.count_nonzero(su.plants)) for su in sample_unit_objects
@@ -279,8 +270,6 @@ def simulation(
                     risk_unit_ids = getattr(inspection_unit, "risk_unit_ids", None)
                     if risk_unit_ids:
                         risk_unit_id = risk_unit_ids[0]
-                    elif getattr(inspection_unit, "risk_unit", None) is not None:
-                        risk_unit_id = inspection_unit.risk_unit.id
 
                     is_infected = bool(getattr(inspection_unit, "is_infected", bool(inspection_unit)))
                     is_detected = bool(getattr(inspection_unit, "is_detected", False))
@@ -288,8 +277,7 @@ def simulation(
                         {
                             "consignment_index": i + 1,
                             "inspection_number": getattr(consignment, "inspection_number", None),
-                            "inspection_unit_index": inspection_unit_index,
-                            "inspection_unit_id": getattr(inspection_unit, "id", inspection_unit_index),
+                            "inspection_unit_id": getattr(inspection_unit, "inspection_print_id", None),
                             "risk_unit_id": risk_unit_id,
                             "num_sample_units": getattr(inspection_unit, "num_sample_units", len(sample_unit_objects)),
                             "num_plants": num_plants_in_inspection_unit,
@@ -695,3 +683,5 @@ def run_simulation(
         return details, totals
     else:
         return totals
+
+
