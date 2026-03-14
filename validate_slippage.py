@@ -18,7 +18,7 @@ from popsborder.consignments import get_consignment_generator
 from popsborder.inspections import normalize_rbs_variables_against_consignment
 
 # Import utility functions for contamination module
-from slippage_model_utils.clarke_r_script_wrapper import *
+from slippage_model_utils.r_script_wrapper import *
 from slippage_model_utils.clarke_model_support_functions import *
 from slippage_model_utils.paths import BoxPaths, DefaultPaths
 from slippage_model_utils.validation_utils import *
