@@ -42,7 +42,7 @@ from .simulation import run_simulation
 from datetime import datetime
 from pathlib import Path
 
-from slippage_model_utils.clarke_r_script_wrapper import _find_repo_root
+from slippage_model_utils.r_script_wrapper import find_repo_root
 
 def run_scenarios(
     config, scenario_table, seed, num_simulations, num_consignments, compliance_table=None, 
@@ -74,7 +74,7 @@ def run_scenarios(
     results = []
     # Define output directory for the simulated data
     run_ts = datetime.now().strftime("%m_%d_%Y_%H_%M_%S")
-    run_dir = _find_repo_root() / "output" / f"pops_border_scenario_data_{run_ts}"
+    run_dir = find_repo_root() / "output" / f"pops_border_scenario_data_{run_ts}"
     run_dir = Path(run_dir)
     for record in scenario_table:
         scenario_name = record["name"]
@@ -89,7 +89,6 @@ def run_scenarios(
             config=scenario_config,
             num_simulations=num_simulations,
             num_consignments=num_consignments,
-            compliance_table = compliance_table,
             seed=seed,
             detailed=detailed,
             output_dir=output_dir,

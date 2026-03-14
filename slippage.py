@@ -11,55 +11,92 @@ import random
 
 # Import functions from popsborder
 from popsborder.scenarios import run_scenarios
-from popsborder.inputs import load_configuration, load_scenario_table, load_compliance_lookup_csv
+from popsborder.inputs import load_configuration, load_scenario_table, load_compliance_lookup_csv, build_compliance_lookup_table
 from popsborder.outputs import save_scenario_result_to_pandas
 from popsborder.outputs import save_inspection_unit_detection_records_to_csv
 from popsborder.generator import SyntheticConsignmentDataGenerator, save_to_csv
 from popsborder.consignments import get_consignment_generator
 
-from popsborder.inspections import normalize_rbs_variables_against_consignment
+from popsborder.inspections import normalize_rbs_variables_against_consignment, construct_risk_units, normalize_rbs_variables_using_risk_unit_config
 
 # Import utility functions for contamination module
-from slippage_model_utils.clarke_r_script_wrapper import *
+from slippage_model_utils.r_script_wrapper import *
 from slippage_model_utils.clarke_model_support_functions import *
 from slippage_model_utils.paths import BoxPaths, DefaultPaths
+from pathlib import Path
+import pickle
+import time
 
 
 def main():
-    # Set up data folder and file names
-    box_paths = BoxPaths()
-    shared_ppq_data_path = box_paths.shared_ppq_data()
+
+    ### Initialize default paths
     default_paths = DefaultPaths()
+    box_paths = BoxPaths()
+
+    ### Set up data folder and file names
+    shared_ppq_data_path = box_paths.shared_ppq_data()
+    model_testing_data_path = box_paths.model_testing_data_folder()
     data_dir = default_paths.slippage_data_dir()
-    config_file = data_dir / "config.yml"
+
+    ### Configuration file  specification
+    config_file = "config_test.yml"
+
+    ### Compliance table
     compliance_file = data_dir / "compliance_table.csv"
     scenario_file = data_dir / "test_scenario.csv"
+    base_compliance_table = data_dir / "base_compliance_table.csv"
+    base_compliance_table_with_producer = data_dir / "base_compliance_table_with_producer.csv"
+    compliance_mapping_to_detection_confidence = data_dir / "compliance_mapping_detection_confidence_levels.csv"
 
-    pis_data_updated = shared_ppq_data_path / 'updated_pis_data.csv'  # PIS data
+    ### PIS Inspection/RBS Calculator Data
+    #pis_data_updated = shared_ppq_data_path / 'updated_pis_data.csv'  # PIS data
     #pis_data_updated = data_dir / "TEST_PIS_SampleQuantity.csv"       # Test data
+    pis_data_updated = data_dir / "Synthetic_PIS_SampleQuantity_test.csv"       # Test data
+
+    ### Other data loading
+    producer_group_mapping_path = box_paths.disambiguated_producer_table_mapping()
 
     # Load configuration and compliance table
     config = load_configuration(config_file)
 
-    # Synthetic data generation
+    # Load producer group mapping
+    producer_group_mapping = pd.read_csv(producer_group_mapping_path)
+
+    ### Synthetic data generation
     historical = False
     num_consignments_to_simulate = 5 # Added input parameter to be the number of consignments you want simulated
-    synthetic_data_generator = SyntheticConsignmentDataGenerator(input_data_file=pis_data_updated)
+    synthetic_data_generator = SyntheticConsignmentDataGenerator(config=config,
+                                                                 producer_group_mapping=producer_group_mapping,
+                                                                 input_data_file=pis_data_updated)
 
     if historical:
         included_inspection_nums = synthetic_data_generator.input_data["INSPECTION_NUMBER"].sample(n=num_consignments_to_simulate)
-        hist_data = synthetic_data_generator.input_data[synthetic_data_generator.input_data["INSPECTION_NUMBER"].isin(included_inspection_nums)]
-        hist_data['Row_ID'] = 'CR-' + (hist_data.index + 1).astype(str)
-        hist_out_path = data_dir / "Historical_PIS_SampleQuantity.csv"
-        hist_data.to_csv(hist_out_path)
+        synth_data = synthetic_data_generator.input_data[synthetic_data_generator.input_data["INSPECTION_NUMBER"].isin(included_inspection_nums)]
+        synth_data.loc[:, 'Row_ID'] = 'CR-' + (synth_data.index + 1).astype(str)
+        synth_out_path = data_dir / "Historical_PIS_SampleQuantity.csv"
         config["consignment"]["input_file"]["file_name"] = "slippage_data/Historical_PIS_SampleQuantity.csv"
     else:
         synth_data = synthetic_data_generator.generate_from_input_data(
             n_consignments=num_consignments_to_simulate,
             sampling_method="sequential"
         )
-        synth_out_path = data_dir / "Syntehtic_PIS_SampleQuantity.csv"
-        synth_data.to_csv(synth_out_path)
+        synth_out_path = data_dir / "Synthetic_PIS_SampleQuantity.csv"
+        config["consignment"]["input_file"]["file_name"] = "slippage_data/Synthetic_PIS_SampleQuantity.csv"
+
+    # Pull in the VariableCreator object to use R code to create engineered columns
+    creator = VariableCreator()
+
+    quantity_binary_variables = creator.generate_quantity_binaries(synth_data, quantity_threshold=500,
+                                                                   group_cols=['RISK_UNIT'])
+
+    synth_data = synth_data.merge(
+        quantity_binary_variables,
+        on='RISK_UNIT',
+        how='left'
+    )
+
+    synth_data.to_csv(synth_out_path)
 
 
 
@@ -98,17 +135,6 @@ def main():
     #                                     inputs.R,
     #                                     inputs.start_val,
     #                                     inputs.se)
-    #
-    # print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
-    # for (lower, upper), results in res.items():
-    #     print(f'   For quantities ranging in {(lower, upper)}:')
-    #     print(f'      Alpha = {results["alpha"]}')
-    #     print(f'      Beta = {results["beta"]}')
-    #     #print(f'      Theta (from inputs) = {results.theta}')
-    #     #print('\n      Full Clarke model result payload:')
-    #     # for k, v in results.items():
-    #     #     print(f'   {k}: {v}')
-    #     print('')
 
     # Setting values for testing
     res = {}
@@ -128,6 +154,27 @@ def main():
             'D': 0.0
         }
 
+    print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
+
+    n = 1000
+    for (lower, upper), results in res.items():
+        alpha = results["alpha"]
+        beta = results["beta"]
+
+
+        mean = n * alpha / (alpha + beta)
+        variance = (n * alpha * beta * (alpha + beta + n)) / ((alpha + beta) ** 2 * (alpha + beta + 1))
+        std_dev = variance ** 0.5
+
+        print(f'   For quantities ranging in {(lower, upper)}:')
+        print(f'      α={alpha:.4f}, β={beta:.4f} | '
+              f'Mean={mean:.2f}, SD={std_dev:.2f} (N={n})')
+        # print(f'      Theta (from inputs) = {results.theta}')
+        # print('\n      Full Clarke model result payload:')
+        # for k, v in results.items():
+        #     print(f'   {k}: {v}')
+        print('')
+
 
     ####################################################################
     ####################################################################
@@ -142,36 +189,34 @@ def main():
     #################################################################
 
     # Load compliance table
-    compliance_table = load_compliance_lookup_csv(compliance_file)
+    compliance_table = build_compliance_lookup_table(
+        compliance_table_filepath=base_compliance_table_with_producer,
+        mapping_filepath=compliance_mapping_to_detection_confidence
+    )
 
     # Generate a temporary consignment that will be generated during simulation
     consignment_generator = get_consignment_generator(config)
     temp_consignment = consignment_generator.generate_consignment()
 
-    # Use temporarily generated consignment to find mappings of compliance table variables to attributes
-    updated, mapping, unmapped= normalize_rbs_variables_against_consignment(
-        compliance_table['rbs_variables'],
-        temp_consignment
+
+
+    # Normalize RBS variables against RiskUnit attributes
+    updated, mapping2, unmapped2 = normalize_rbs_variables_using_risk_unit_config(
+        compliance_table['rbs_variables']
     )
-
-    print(f'\n\nPre-Processed Submitted Compliance Table')
-    print(f'   You have submitted the following variables in your compliance table and '
-          f'they will be mapped to attributes that '
-          f'the slippage model is generating for each consignment.')
-    print("   === Original/Submitted Compliance Table Variables ===", compliance_table['rbs_variables'])
-
-    print("\n   === Mappings Executed ===")
-    for k, v in mapping.items():
-        print(f"   {k!r} -> {v!r}")
-
-    print("\n   === Unmapped Variables ===")
-    for var in unmapped:
-        print(f'      {var}')
-
-    print("\n   === Updated Compliance Table Variables ===", updated)
 
     # Update the compliance table variable names to be used later in sim to match attributes of consignment object
     compliance_table['rbs_variables'] = updated
+
+    # Output files
+    compliance_lookup_pkl = default_paths.compliance_dir() / 'compliance_lookup_final.pkl'
+
+    # Now use these throughout your code
+    with open(compliance_lookup_pkl, 'wb') as f:
+        pickle.dump(compliance_table, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    config["inspection"]["compliance_table"]['file_name'] = 'compliance_lookup_final.pkl'
+
 
     ##################################################################
     ##################################################################

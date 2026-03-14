@@ -22,7 +22,7 @@ from popsborder.inputs import (
 from popsborder.outputs import save_scenario_result_to_pandas
 from popsborder.scenarios import run_scenarios
 from slippage_model_utils.clarke_model_support_functions import gen_clarke_model_inputs
-from slippage_model_utils.clarke_r_script_wrapper import run_clarke_bb_group_model
+from slippage_model_utils.r_script_wrapper import run_clarke_bb_group_model
 
 
 # Default config columns to persist into results

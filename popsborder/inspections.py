@@ -7,6 +7,12 @@ Modifications:
 - 10/3/2025: Modifications described below (Gary Lin and Joseph Agor)
     New Functions Added
     ----------------
+    - construct_risk_units():
+        * Takes in data and a config file to reassign inspection units to risk units
+    - relabel_risk_units():
+        * Relabel RISK_UNIT IDs based on unique combinations of grouping variables.
+    - load_compliance_lookup():
+        * Loads compliance lookup dictionary from pickle file.
     - sample_rbs():
         * Implements risk-based sampling methodology using compliance-based detection levels
         * Retrieves country/propagative material specific compliance parameters from lookup table
@@ -29,6 +35,13 @@ Modifications:
     - normalize_rbs_variables_against_consignment():
         * Maps free-form field names in rbs_variables to actual attributes on a Consignment
           instance, using case-insensitive aliasing
+
+    - fuzzy_match_attribute():
+        * Attempts fuzzy matching using substring/word matching.
+
+    - normalize_rbs_variables_using_risk_unit_config():
+        * Map free-form field names in rbs_variables to actual RiskUnit attributes defined
+          in RiskUnitConfig, using case-insensitive aliasing.
     ----------------
 
     Following Functions Modified
@@ -117,12 +130,212 @@ import random
 import types
 
 import numpy as np
+import pandas as pd
 
-from .inputs import get_validated_effectiveness, load_compliance_lookup_csv
+from .inputs import get_validated_effectiveness
 
-from slippage_model_utils.references import country_of_origin_names, pm_type_names
+from slippage_model_utils.references import (
+    country_of_origin_names,
+    pm_type_names,
+    possible_pis_stations,
+    get_domain_specific_aliases
+)
 import re
 from collections import defaultdict
+from difflib import get_close_matches
+from slippage_model_utils.references import find_column_name
+from slippage_model_utils.r_script_wrapper import find_repo_root
+import warnings
+
+from typing import List, Dict, Tuple, Set, Any
+from slippage_model_utils.UnitAttributes import RiskUnitConfig
+import pickle
+
+import pickle
+import time
+from pathlib import Path
+from typing import Dict, Optional
+from slippage_model_utils.paths import DefaultPaths
+
+
+def load_compliance_lookup(
+        filename: str
+) -> Dict:
+    """
+    Load compliance lookup dictionary from pickle file.
+
+    Args:
+        filename: Name of pickle file (e.g., 'compliance_lookup_final.pkl')
+
+    Returns:
+        Compliance lookup dictionary
+
+    Raises:
+        FileNotFoundError: If pickle file doesn't exist
+    """
+    # Initialize paths if not provided
+    default_paths = DefaultPaths()
+
+    # Get full path using DefaultPaths
+    full_path = default_paths.compliance_dir() / filename
+
+    # Check if file exists
+    if not full_path.exists():
+        raise FileNotFoundError(
+            f"Compliance lookup file not found: {full_path}\n"
+            f"Expected location: {default_paths.compliance_dir()}\n"
+            f"Please ensure the pickle file is in the correct directory."
+        )
+
+    # Load pickle
+    with open(full_path, 'rb') as f:
+        compliance_table_dict = pickle.load(f)
+
+    return compliance_table_dict
+
+
+def relabel_risk_units(group, risk_unit_grouping_variables):
+    """
+    Relabel RISK_UNIT IDs based on unique combinations of grouping variables.
+
+    Parameters:
+    -----------
+    group : pd.DataFrame
+        DataFrame with RISK_UNIT column
+    risk_unit_grouping_variables : list
+        List of column names to group by for creating unique IDs
+
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame with relabeled RISK_UNIT column
+    """
+    # Extract the base number (before underscore)
+    first_risk_unit = group['RISK_UNIT'].iloc[0]
+    base_number = first_risk_unit.split('_')[0]
+    inspection_num = str(group['INSPECTION_NUMBER'].iloc[0])
+
+    # Create unique combinations of grouping variables
+    # Use factorize to assign sequential IDs to unique combinations
+    group_combinations = group[risk_unit_grouping_variables].apply(
+        lambda row: '_'.join(row.astype(str)), axis=1
+    )
+
+    # Get unique IDs for each combination (1-indexed)
+    _, unique_ids = pd.factorize(group_combinations)
+    unique_id_map = {combo: idx + 1 for idx, combo in enumerate(unique_ids)}
+
+    # Map each row to its new ID
+    new_ids = group_combinations.map(unique_id_map)
+
+    # Create new RISK_UNIT values
+    group['RISK_UNIT'] = inspection_num + '_' + 'risk_unit' + '_' + new_ids.astype(str)
+
+    return group
+
+
+def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
+    """Takes in data and a config file to reassign inspection units to risk units
+
+    :param config: Configuration to be used
+    :param data: Dataframe that has as rows inspection units/commodity lines
+    """
+
+    unit = config["inspection"]["unit"]
+
+    # Get the PIS Station for the consignment and the corresponding Risk Unit Group variables
+    rbs_calculator_grouping_variables_stations = list(config["inspection"]["rbs_calculator_grouping_variables"].keys())
+
+    def process_inspection_group(group):
+        """Process each unique inspection number"""
+        # Get the inspection number from the group name
+        inspection_number = group.name
+        # Add the INSPECTION_NUMBER column back to the result
+        group = group.copy()  # Make a copy to avoid SettingWithCopyWarning
+        group['INSPECTION_NUMBER'] = inspection_number
+
+        port_name = list(group['INSPECTION_LOCATION_NAME'])[0]
+
+        match = get_close_matches(port_name, rbs_calculator_grouping_variables_stations, n=1, cutoff=0.6)
+        pis_station = match[0] if match else None
+
+        if pis_station is None:
+            if ('default' in config["inspection"]["rbs_calculator_grouping_variables"].keys()
+                    and len(config["inspection"]["rbs_calculator_grouping_variables"]['default'])>0):
+                default_list = config["inspection"]["rbs_calculator_grouping_variables"]['default']
+                # print(f'\nWARNING\nPIS Station ---{port_name}--- for the consignment not found in config.\n'
+                #       f'Using defaults found in config for risk unit grouping variables...'
+                #       f'{default_list}')
+                warnings.warn(
+                    f"PIS Station ---{port_name}--- for the consignment not found in config. "
+                    f"Using defaults found in config for risk unit grouping variables: {default_list}",
+                    UserWarning,
+                    stacklevel=2
+                )
+                risk_unit_grouping_variables = [
+                    x.lower().replace(' ', '_').replace('-', '_').replace('.', '_')
+                    for x in config["inspection"]["rbs_calculator_grouping_variables"]['default']
+                ]
+            else:
+                default_list = ['origin','material_type']
+                # print(f'\nWARNING\nPIS Station ---{port_name}--- for the consignment not found in config.\n'
+                #       f'Also, no defaults found in config so risk unit group variables being defaulted to...{default_list}')
+                warnings.warn(
+                    f"PIS Station ---{port_name}--- for the consignment not found in config."
+                    f"Also, no defaults found in config so risk unit group variables being defaulted to...{default_list}",
+                    UserWarning,
+                    stacklevel=2
+                )
+                risk_unit_grouping_variables = ['origin','material_type']
+        else:
+            if len(config["inspection"]["rbs_calculator_grouping_variables"][pis_station]) == 0:
+                default_list = ['origin', 'material_type']
+                # print(f'\nWARNING\n  PIS Station ---{port_name}--- found in config. \n'
+                #       f'However, no grouping variables found in the config, so default risk unit grouping variables being used (Origin and PM Type).')
+                warnings.warn(
+                    f"PIS Station ---{port_name}--- for the consignment not found in config."
+                    f"However, no grouping variables found in the config, so risk unit group variables being defaulted to...{default_list}",
+                    UserWarning,
+                    stacklevel=2
+                )
+                risk_unit_grouping_variables = ['origin','material_type']
+            else:
+                risk_unit_grouping_variables = [
+                    x.lower().replace(' ', '_').replace('-', '_').replace('.', '_')
+                    for x in config["inspection"]["rbs_calculator_grouping_variables"][pis_station]
+                ]
+
+        # Print out risk unit variables being used
+        count = 0
+        for var in risk_unit_grouping_variables:
+            matching_column_name = find_column_name(var,list(group.columns))
+            if matching_column_name is not None:
+                risk_unit_grouping_variables[count] = matching_column_name
+            else:
+                raise ValueError(f'Variable {var} not a valid column for risk unit construction. ')
+            #print(f'  Variable {count + 1}: {var}')
+            count += 1
+
+        # Relabel risk units based on grouping variables
+        group = relabel_risk_units(group, risk_unit_grouping_variables)
+
+
+
+
+        return group
+
+    # Apply processing
+    data_updated = data.groupby('INSPECTION_NUMBER', group_keys=False).apply(
+        process_inspection_group,
+        include_groups=False
+    )
+    return data_updated
+
+
+
+
+
+
 
 
 def inspect_first(consignment):
@@ -280,7 +493,7 @@ def sample_n(config, consignment):
     return n_units_to_inspect
 
 
-def sample_rbs(config, consignment, compliance_table_dict):
+def sample_rbs(config, consignment):
     """Set sample size to sample units from consignment using hypergeometric/detection 
     level strategy based on compliance levels. Return number of units to inspect.
 
@@ -290,6 +503,14 @@ def sample_rbs(config, consignment, compliance_table_dict):
 
     unit = config["inspection"]["unit"]
     debug_print = config.get("debug", {}).get("print_compliance_levels", False)
+
+    # Get filename from config
+    compliance_table_lookup_filename = config["inspection"]["compliance_table"]['file_name']
+
+    # Load compliance lookup
+    compliance_table_dict = load_compliance_lookup(filename=compliance_table_lookup_filename)
+
+
     detection_confidence_levels = get_detection_and_confidence(
         consignment, compliance_table_dict, print_compliance_levels=debug_print
     )
@@ -303,7 +524,7 @@ def sample_rbs(config, consignment, compliance_table_dict):
                 risk_unit = risk_unit_by_id.get(risk_unit_id)
                 if risk_unit is None:
                     continue
-                population_n = risk_unit.N_for_hypergeom
+                population_n = risk_unit.n_for_hypergeom
                 if population_n <= 0:
                     continue
 
@@ -925,7 +1146,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     return ret
 
 
-def get_sample_function(config, compliance_table=None):
+def get_sample_function(config):
     """Based on config, return function to sample a consignment."""
     sample_strategy = config["inspection"]["sample_strategy"]
     if sample_strategy == "proportion":
@@ -951,8 +1172,7 @@ def get_sample_function(config, compliance_table=None):
     elif sample_strategy == "rbs":
 
         def sample(consignment):
-            return sample_rbs(config=config, consignment=consignment, 
-                              compliance_table_dict=compliance_table)
+            return sample_rbs(config=config, consignment=consignment)
 
     else:
         raise RuntimeError(f"Unknown sample strategy: {sample_strategy}")
@@ -976,21 +1196,19 @@ def consignment_contamination_rate(consignment):
     count = np.count_nonzero(consignment.sample_units)
     return count / consignment.num_sample_units
 
-
 def get_detection_and_confidence(
-    consignment,
-    compliance_table_dict,
-    default_detection=0.01,
-    default_confidence=0.8,
-    print_compliance_levels: bool = False,
+        consignment,
+        compliance_table_dict,
+        default_detection=0.01,
+        default_confidence=0.95,
+        print_compliance_levels: bool = False,
 ):
     """
-    Fetch detection and confidence levels for specified RBS variables at risk-unit level.
-    If not found, defaults to low compliance values.
-    Returns dict keyed by risk_unit.id (or risk-unit index fallback).
+    Fetch detection and confidence levels using RiskUnitConfig for attribute extraction.
     """
+    risk_unit_config = RiskUnitConfig()
     rbs_variables = compliance_table_dict['rbs_variables']
-    n_units_to_inspect = {}
+    detect_confidence_levels = {}
     risk_units = consignment.risk_units if consignment.risk_units else []
     if not risk_units:
         risk_units = consignment.inspection_units
@@ -998,48 +1216,97 @@ def get_detection_and_confidence(
     if len(rbs_variables) == 0:
         for risk_unit_idx, risk_unit in enumerate(risk_units):
             risk_unit_id = getattr(risk_unit, "id", risk_unit_idx)
-            n_units_to_inspect[risk_unit_id] = (default_detection, default_confidence)
-        return n_units_to_inspect
-
-    attr_map = {
-        "PATHWAY": "pathway",
-        "COUNTRY_OF_ORIGIN_NAME": "origin",
-        "PROPAGATIVE_MATERIAL_TYPE": "material_type",
-        "INSPECTION_LOCATION_NAME": "port",
-        "PRODUCER_NAME": "producer",
-    }
+            detect_confidence_levels[risk_unit_id] = (default_detection, default_confidence)
+        return detect_confidence_levels
 
     for risk_unit_idx, risk_unit in enumerate(risk_units):
         risk_unit_id = getattr(risk_unit, "id", risk_unit_idx)
-        values = {}
-        for attr in rbs_variables:
-            attr_key = str(attr)
-            mapped = attr_map.get(attr_key.upper())
-            if mapped and hasattr(risk_unit, mapped):
-                values[attr_key] = getattr(risk_unit, mapped, None)
-            elif hasattr(risk_unit, attr_key):
-                values[attr_key] = getattr(risk_unit, attr_key, None)
-            else:
-                values[attr_key] = getattr(risk_unit, attr_key.lower(), None)
 
-        if any(v is None for v in values.values()):
+        # Use RiskUnitConfig to extract all enabled attributes
+        # Assuming risk_unit has a method or dict-like interface
+        if hasattr(risk_unit, '__dict__'):
+            risk_unit_dict = risk_unit.__dict__
+        else:
+            risk_unit_dict = dict(risk_unit)
+
+        # Extract only the RBS variables we need
+        values = {}
+        for var in rbs_variables:
+            # Get value using flexible lookup
+            value = _get_risk_unit_attribute(risk_unit, var, risk_unit_config)
+            values[var] = value
+
+        # Check for missing values
+        missing = [var for var, val in values.items() if val is None]
+        if missing:
             key = None
             result = (default_detection, default_confidence)
+            if print_compliance_levels:
+                print(
+                    f"Warning: Risk unit {risk_unit_id} missing values for: {missing}. "
+                    f"Using defaults: detection={default_detection}, confidence={default_confidence}"
+                )
         else:
             key = tuple(values[attr] for attr in rbs_variables)
             result = compliance_table_dict.get(key, (default_detection, default_confidence))
-        
-        print(f"Finding RBS compliance level for {key}") 
-        print(f"Use compliance level: {result}") 
 
-        n_units_to_inspect[risk_unit_id] = result
         if print_compliance_levels:
             key_str = key if key is not None else "<missing>"
             print(
-                f"Compliance level for risk unit {risk_unit_id}: "
-                f"key={key_str} detection={result[0]} confidence={result[1]}"
+                f"Risk unit {risk_unit_id}: key={key_str} -> "
+                f"detection={result[0]}, confidence={result[1]}"
             )
-    return n_units_to_inspect
+
+        detect_confidence_levels[risk_unit_id] = result
+
+    return detect_confidence_levels
+
+
+def _get_risk_unit_attribute(
+        risk_unit,
+        attribute_name: str,
+        risk_unit_config: RiskUnitConfig
+) -> Any:
+    """
+    Get an attribute value from a risk unit, trying multiple name variations.
+
+    Args:
+        risk_unit: Risk unit object
+        attribute_name: Canonical attribute name to retrieve
+        risk_unit_config: RiskUnitConfig for mapping hints
+
+    Returns:
+        Attribute value or None if not found
+    """
+    # List of possible attribute names to try, in order of preference
+    names_to_try = [
+        attribute_name,  # Exact match (e.g., "material_type")
+    ]
+
+    # Add CSV column name if mapped
+    if attribute_name in risk_unit_config.attribute_mapping:
+        csv_name = risk_unit_config.attribute_mapping[attribute_name]
+        names_to_try.extend([
+            csv_name,
+            csv_name.lower(),
+        ])
+
+    # Add common variations
+    names_to_try.extend([
+        attribute_name.lower(),
+        attribute_name.upper(),
+        attribute_name.replace('_', ' '),
+        attribute_name.replace(' ', '_'),
+    ])
+
+    # Try each possible name
+    for name in names_to_try:
+        if hasattr(risk_unit, name):
+            value = getattr(risk_unit, name, None)
+            if value is not None:
+                return value
+
+    return None
 
 
 def count_contaminated_inspection_units(consignment):
@@ -1105,6 +1372,8 @@ def normalize_rbs_variables_against_consignment(
         auto_aliases['origin'].update(country_of_origin_names)
     if 'material_type' in canonical_attrs:
         auto_aliases['material_type'].update(pm_type_names)
+    if 'port' in canonical_attrs:
+        auto_aliases['port'].update(possible_pis_stations)
 
     # Build a lookup: normalized alias -> canonical attribute
     alias_index = {}
@@ -1141,3 +1410,147 @@ def normalize_rbs_variables_against_consignment(
     return updated_vars, mapping, unmapped
 
 
+def fuzzy_match_attribute(original: str, canonical_attrs: Set[str]) -> str | None:
+    """
+    Attempt fuzzy matching using substring/word matching.
+
+    Args:
+        original: Original variable name to match
+        canonical_attrs: Set of canonical attribute names
+
+    Returns:
+        Matched canonical attribute or None
+    """
+    # Sort by length (longest first) to prefer more specific matches
+    sorted_attrs = sorted(canonical_attrs, key=len, reverse=True)
+
+    for attr in sorted_attrs:
+        # Try exact word boundary match
+        pattern = rf'\b{re.escape(attr.replace("_", " "))}\b'
+        if re.search(pattern, original, flags=re.I):
+            return attr
+
+        # Try matching with underscores
+        pattern = rf'\b{re.escape(attr)}\b'
+        if re.search(pattern, original, flags=re.I):
+            return attr
+
+    return None
+
+# Convenience function that creates a RiskUnitConfig from defaults
+def normalize_rbs_variables_using_risk_unit_config(
+        rbs_variables: List[str]
+) -> Tuple[List[str], Dict[str, str], List[str]]:
+    """
+    Map free-form field names in rbs_variables to actual RiskUnit attributes
+    defined in RiskUnitConfig, using case-insensitive aliasing.
+
+    Args:
+        rbs_variables: List of variable names to normalize
+
+    Returns:
+        Tuple of:
+        - updated_vars: list[str]  # rbs_variables with matched items replaced by canonical attrs
+        - mapping: dict[str, str]  # original string -> canonical attribute
+        - unmapped: list[str]      # originals that didn't match anything
+    """
+    risk_unit_config = RiskUnitConfig()
+    if not rbs_variables:
+        return [], {}, []
+
+    # Get canonical attribute names from the config
+    canonical_attrs = set(risk_unit_config.enabled_attributes)
+
+    # Auto-generate basic aliases from the canonical names
+    auto_aliases = defaultdict(set)
+    for attr in canonical_attrs:
+        spaced = attr.replace('_', ' ')
+        auto_aliases[attr].update({
+            attr,
+            spaced,
+            spaced.title(),  # "Material Type"
+            spaced.upper(),  # "MATERIAL TYPE"
+            spaced.lower(),  # "material type"
+            attr.title(),  # "Material_Type"
+            attr.upper(),  # "MATERIAL_TYPE"
+        })
+
+    # Add aliases from the attribute_mapping (CSV column names)
+    for attr, csv_column in risk_unit_config.attribute_mapping.items():
+        if attr in canonical_attrs:
+            auto_aliases[attr].add(csv_column)
+            # Also add normalized versions of CSV column name
+            csv_spaced = csv_column.replace('_', ' ')
+            auto_aliases[attr].update({
+                csv_column,
+                csv_spaced,
+                csv_spaced.title(),
+                csv_spaced.lower(),
+                csv_spaced.upper(),
+            })
+
+    # Add domain-specific aliases (hardcoded knowledge)
+    domain_aliases = get_domain_specific_aliases()
+    for attr, aliases in domain_aliases.items():
+        if attr in canonical_attrs:
+            auto_aliases[attr].update(aliases)
+
+    # Build a lookup: normalized alias -> canonical attribute
+    alias_index = {}
+    for attr, names in auto_aliases.items():
+        for name in names:
+            normalized = _norm(name)
+            if normalized in alias_index and alias_index[normalized] != attr:
+                # Collision detected - log it
+                warnings.warn(
+                    f"Alias collision detected: '{name}' (normalized: '{normalized}') "
+                    f"maps to both '{alias_index[normalized]}' and '{attr}'. "
+                    f"Using '{alias_index[normalized]}'."
+                )
+            else:
+                alias_index[normalized] = attr
+
+    # Walk the input list, map to canonical attributes when possible
+    updated_vars = []
+    mapping = {}
+    unmapped = []
+
+    for original in rbs_variables:
+        if not original or not original.strip():
+            warnings.warn(f"Empty or whitespace-only variable name found, skipping.")
+            continue
+
+        key = _norm(original)
+
+        if key in alias_index:
+            # Direct match found
+            canonical = alias_index[key]
+            mapping[original] = canonical
+            updated_vars.append(canonical)
+        else:
+            # Heuristic fallback: try to match substrings
+            matched = fuzzy_match_attribute(original, canonical_attrs)
+
+            if matched:
+                mapping[original] = matched
+                updated_vars.append(matched)
+            else:
+                unmapped.append(original)
+                updated_vars.append(original)
+
+    # Provide informative feedback
+    if mapping:
+        print(f"Mapped {len(mapping)} compliance table variable(s) to RiskUnit attributes:")
+        for orig, canonical in list(mapping.items())[:5]:
+            print(f"  '{orig}' -> '{canonical}'")
+        if len(mapping) > 5:
+            print(f"  ... and {len(mapping) - 5} more")
+
+    if unmapped:
+        warnings.warn(
+            f"\nCould not map {len(unmapped)} compliance table variable(s) to RiskUnit attributes.\n"
+            f"Unmapped variables: {unmapped[:5]}{'...' if len(unmapped) > 5 else ''}\n"
+            f"Available RiskUnit attributes: {sorted(canonical_attrs)}"
+        )
+
+    return updated_vars, mapping, unmapped
