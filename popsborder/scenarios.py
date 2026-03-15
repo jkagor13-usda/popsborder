@@ -41,6 +41,7 @@ from .inputs import update_config
 from .simulation import run_simulation
 from datetime import datetime
 from pathlib import Path
+import numpy as np
 
 from slippage_model_utils.r_script_wrapper import find_repo_root
 
@@ -72,6 +73,10 @@ def run_scenarios(
         result and configuration for that scenario.
     """
     results = []
+
+    # Create master RNG once at the top level
+    master_rng = np.random.default_rng(seed)
+
     # Define output directory for the simulated data
     run_ts = datetime.now().strftime("%m_%d_%Y_%H_%M_%S")
     run_dir = find_repo_root() / "output" / f"pops_border_scenario_data_{run_ts}"
@@ -85,11 +90,14 @@ def run_scenarios(
         output_dir = run_dir / str(scenario_name)
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Spawn independent RNG for this scenario
+        scenario_rng = master_rng.spawn(1)[0]
+
         result = run_simulation(
             config=scenario_config,
             num_simulations=num_simulations,
             num_consignments=num_consignments,
-            seed=seed,
+            rng=scenario_rng,
             detailed=detailed,
             output_dir=output_dir,
         )

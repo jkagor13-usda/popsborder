@@ -105,7 +105,7 @@ def get_range_key(d, num_plants):
 
 
 
-def _set_beta_binomial_params(contamination_config, consignment):
+def _set_beta_binomial_params(contamination_config, consignment,rng=None):
     """
     Function to set all appropriate beta-binomial parameters based on plant quantity on the consignment.
 
@@ -116,6 +116,8 @@ def _set_beta_binomial_params(contamination_config, consignment):
     OUTPUTS
     config_beta_binomial:  dictionary with beta-binomial parameters
     """
+    if rng is None:
+        rng = np.random.default_rng()
     beta_binomial_params = {}
     # Get the number of plants on the consignment
     if consignment.get('num_plants') is None:
@@ -191,8 +193,7 @@ def add_contaminant_beta_binomial_for_groups(config, group_sizes, rng=None):
     theta = beta_binomial_config["theta"]
 
     # Seed RNG
-    seed = beta_binomial_config.get("seed", None)
-    rng = np.random.default_rng(seed)
+    rng = np.random.default_rng()
 
     # 1) p_i ~ Beta(alpha, beta), shape (I,)
     p_i = rng.beta(alpha, beta, size=I)  # shape (1,)
@@ -229,7 +230,7 @@ def add_contaminant_beta_binomial_for_groups(config, group_sizes, rng=None):
 
     return contaminated_plants
 
-def add_contaminant_beta_binomial(beta_binomial_config):
+def add_contaminant_beta_binomial(beta_binomial_config, rng=None):
     """
     Args:
         beta_binomial_config:  Dictionary with the following beta-binomial parameters as keys:
@@ -243,6 +244,8 @@ def add_contaminant_beta_binomial(beta_binomial_config):
                                J : int
                                p: clustering parameter (0 implying not clustered at all and 1 meaning "fully clustered")
 
+        rng: numpy.random.Generator or None
+             If None, creates a new unseeded generator.
     Returns:
         X: Vector with number of infected units (plants) per group (sample unit)
 
@@ -262,7 +265,6 @@ def add_contaminant_beta_binomial(beta_binomial_config):
     J = beta_binomial_config['J']
 
     # Seed random number generator
-    rng = 1
     rng = np.random.default_rng() if rng is None else np.random.default_rng(rng)
 
 
@@ -372,7 +374,7 @@ def contaminate_units_by_group(contaminated_plants, plant_indices):
         by_inspection_unit[a].append(idx)
 
     sampled_indices_global = []
-    rng = np.random.default_rng(123)
+    rng = np.random.default_rng()
 
     for inspect_unit, count in enumerate(contaminated_plants):
         count = int(count)
@@ -543,11 +545,13 @@ def synchronize_contamination_arrays_from_plants(consignment):
                 global_plant_idx += n_plants
 
 
-def add_contaminant_uniform_random(config, consignment):
+def add_contaminant_uniform_random(config, consignment,rng=None):
     """Add contaminants to consignment using uniform random distribution
 
     Contamination rate is determined using the ``contamination_rate`` config key.
     """
+    if rng is None:
+        rng = np.random.default_rng()
     contamination_unit = config["contamination_unit"]
 
     if contamination_unit in ["box", "boxes"]:
@@ -595,9 +599,9 @@ def add_contaminant_uniform_random(config, consignment):
     elif contamination_unit in ["plant", "plants"]:
         # Contaminate plants directly per inspection unit
         if config["contamination_rate"]['distribution'] == 'beta-binomial':
-            beta_binomial_params = _set_beta_binomial_params(config, consignment)
-            contaminated_plants = np.asarray(add_contaminant_beta_binomial(beta_binomial_params), dtype=int).ravel()
-            print(f"      contam: random | plants beta-binomial -> total contaminated plants {int(np.sum(contaminated_plants))} of {consignment.num_plants}")
+            beta_binomial_params = _set_beta_binomial_params(config, consignment,rng)
+            contaminated_plants = np.asarray(add_contaminant_beta_binomial(beta_binomial_params, rng), dtype=int).ravel()
+            #print(f"      contam: random | plants beta-binomial -> total contaminated plants {int(np.sum(contaminated_plants))} of {consignment.num_plants}")
             if np.all(contaminated_plants == 0):
                 return
         else:
@@ -1156,10 +1160,12 @@ def get_contamination_config_for_consignment(config, consignment):
     return contamination_config
 
 
-def get_contaminant_function(config):
+def get_contaminant_function(config,rng=None):
     """Based on config, return function to contaminate a consignment."""
     contamination_config = get_contamination_config_for_consignment(config, consignment=None)
     arrangement = contamination_config["arrangement"]
+    if rng is None:
+        rng = np.random.default_rng()
     if arrangement == "random_inspection_unit":
 
         def add_contaminant(consignment):
@@ -1176,11 +1182,11 @@ def get_contaminant_function(config):
     elif arrangement == "random":
 
         def add_contaminant(consignment):
-            print("      contam: arrangement=random")
+            #print("      contam: arrangement=random")
             specific_contamination_config = get_contamination_config_for_consignment(
                 config, consignment
             )
-            return add_contaminant_uniform_random(specific_contamination_config, consignment)
+            return add_contaminant_uniform_random(specific_contamination_config, consignment,rng)
 
     elif arrangement == "clustered":
 
