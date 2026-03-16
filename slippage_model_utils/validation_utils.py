@@ -100,7 +100,7 @@ def calculate_action_rates_by_scenario(
         simulation_output_path: str | Path,
         scenarios: List[str],
         num_replications: int,
-        filter_fields: List[str],
+        filter_fields: List[str] = None,
         simulation_base_path: str = "latest",
         output_file: str = "synthetic_commodity_line_results_data.csv",
         practical_equivalence_threshold: float = 0.005
@@ -132,6 +132,7 @@ def calculate_action_rates_by_scenario(
         Dictionary with scenario names as keys and DataFrames containing analysis results
     """
 
+
     # Get the actual simulation base path
     base_path = get_simulation_base_path(simulation_output_path, simulation_base_path)
     print(f"\nUsing simulation base path: {base_path}")
@@ -143,77 +144,31 @@ def calculate_action_rates_by_scenario(
     # Convert all column names to lowercase
     ground_truth.columns = ground_truth.columns.str.lower()
 
-    # Convert filter_fields to lowercase for consistency
-    filter_fields_lower = [field.lower() for field in filter_fields]
-
-    # Validate required columns
-    required_cols = ['inspection_number', 'action'] + filter_fields_lower
-    missing_cols = [col for col in required_cols if col not in ground_truth.columns]
-    if missing_cols:
-        raise ValueError(f"Missing columns in ground truth: {missing_cols}")
-
-    # Get unique combinations of filter fields and their inspection numbers
-    print(f"Creating filter combinations based on: {filter_fields_lower}")
-    filter_combinations = ground_truth[filter_fields_lower + ['inspection_number', 'action']].copy()
-
-    # Group by filter fields to get unique combinations
-    grouped = filter_combinations.groupby(filter_fields_lower)
-
     results = {}
 
-    for scenario in scenarios:
-        print(f"\nProcessing {scenario}...")
-        scenario_results = []
+    if len(filter_fields) == 0 or filter_fields is None:
+        print(f'Generating summary of action rates of overall data')
+        for scenario in scenarios:
+            scenario_results = []
 
-        for combination_values, group_data in grouped:
-            # Create a dictionary for the current combination
-            combination_dict = dict(
-                zip(filter_fields_lower, combination_values if len(filter_fields_lower) > 1 else [combination_values]))
+            gt_action_rate = ground_truth['action'].mean()
 
-            # Get unique inspection numbers for this combination
-            unique_inspections = group_data['inspection_number'].unique()
+            unique_inspections = ground_truth['inspection_number'].unique()
 
-            # Calculate ground truth action rate for this combination
-            ground_truth_subset = ground_truth[
-                ground_truth['inspection_number'].isin(unique_inspections)
-            ]
-            gt_action_rate = ground_truth_subset['action'].mean()
-
-            # Initialize list to store action rates from each replication
             replication_action_rates = []
 
-            # Process each replication (starting from rep_0)
+            prop = 0
+            increment = 0.25
+            # Process each replication
             for rep in range(num_replications):
-                # Construct path to simulation output file
+                if rep == int(prop * num_replications):
+                    print(
+                        f'      Analyzing simulation replications {prop * 100}% complete ({rep} out of {num_replications})')
+                    prop += increment
+
                 sim_file_path = base_path / scenario / f"rep_{rep}" / output_file
-
-                try:
-                    # Load simulation data
-                    sim_data = pd.read_csv(sim_file_path)
-
-                    # Validate required columns
-                    if 'inspection_number' not in sim_data.columns or 'action' not in sim_data.columns:
-                        warnings.warn(f"Missing columns in {sim_file_path}")
-                        replication_action_rates.append(np.nan)
-                        continue
-
-                    # Filter simulation data to matching inspection numbers
-                    sim_subset = sim_data[sim_data['inspection_number'].isin(unique_inspections)]
-
-                    if len(sim_subset) > 0:
-                        rep_action_rate = sim_subset['action'].mean()
-                        replication_action_rates.append(rep_action_rate)
-                    else:
-                        warnings.warn(
-                            f"No matching inspection numbers in {sim_file_path} for combination {combination_dict}")
-                        replication_action_rates.append(np.nan)
-
-                except FileNotFoundError:
-                    warnings.warn(f"File not found: {sim_file_path}")
-                    replication_action_rates.append(np.nan)
-                except Exception as e:
-                    warnings.warn(f"Error processing {sim_file_path}: {str(e)}")
-                    replication_action_rates.append(np.nan)
+                sim_data = pd.read_csv(sim_file_path)
+                replication_action_rates.append(sim_data['action'].mean())
 
             # Calculate statistics across replications
             valid_rates = [r for r in replication_action_rates if not np.isnan(r)]
@@ -269,10 +224,7 @@ def calculate_action_rates_by_scenario(
                 practically_equivalent = np.nan
                 absolute_diff = np.nan
 
-
-
             result_row = {
-                **combination_dict,
                 'ground_truth_action_rate': gt_action_rate,
                 'mean_simulation_action_rate': np.mean(valid_rates) if valid_rates else np.nan,
                 'std_simulation_action_rate': np.std(valid_rates) if valid_rates else np.nan,
@@ -291,9 +243,346 @@ def calculate_action_rates_by_scenario(
 
             scenario_results.append(result_row)
 
-        # Convert to DataFrame
-        results[scenario] = pd.DataFrame(scenario_results)
-        print(f"Completed {scenario}: {len(scenario_results)} filter combinations processed")
+            # Convert to DataFrame
+            results[scenario] = pd.DataFrame(scenario_results)
+            print(f"Completed {scenario}: {len(scenario_results)} filter combinations processed")
+    else:
+        # Convert filter_fields to lowercase for consistency
+        filter_fields_lower = [field.lower() for field in filter_fields]
+
+        # Validate required columns
+        required_cols = ['inspection_number', 'action'] + filter_fields_lower
+        missing_cols = [col for col in required_cols if col not in ground_truth.columns]
+        if missing_cols:
+            raise ValueError(f"Missing columns in ground truth: {missing_cols}")
+
+        # Get unique combinations of filter fields and their inspection numbers
+        print(f"Creating filter combinations based on: {filter_fields_lower}")
+        filter_combinations = ground_truth[filter_fields_lower + ['inspection_number', 'action']].copy()
+
+        # Group by filter fields to get unique combinations
+        grouped = filter_combinations.groupby(filter_fields_lower)
+
+        for scenario in scenarios:
+            scenario_results = []
+
+            combo_count = 1
+            for combination_values, group_data in grouped:
+                print(f'   \nCombination {combination_values} being analyzed ({combo_count} of {len(grouped)})...')
+                combo_count+=1
+
+                # # Create a dictionary for the current combination
+                # combination_dict = dict(
+                #     zip(filter_fields_lower, combination_values if len(filter_fields_lower) > 1 else [combination_values]))
+
+                if len(filter_fields_lower) == 1:
+                    # Single field: combination_values might be tuple or scalar
+                    value = combination_values[0] if isinstance(combination_values,
+                                                                (tuple, list)) else combination_values
+                    combination_dict = {filter_fields_lower[0]: value}
+                else:
+                    # Multiple fields: zip normally
+                    combination_dict = dict(zip(filter_fields_lower, combination_values))
+
+                combination_items = list(combination_dict.items())
+
+                # Get unique inspection numbers for this combination
+                unique_inspections = group_data['inspection_number'].unique()
+
+                # For each inspection_number, calculate its action rate
+                inspection_action_rates = group_data.groupby('inspection_number')['action'].mean()
+
+                # Average across all calculated rates
+                gt_action_rate = inspection_action_rates.mean()
+
+
+                # Initialize list to store action rates from each replication
+                replication_action_rates = []
+
+                ###################################################################################
+                ###################################################################################
+                ###################################################################################
+                # Pre-compute outside the loop (do once)
+                unique_inspections_set = set(unique_inspections)
+                combination_items = list(combination_dict.items())  # Avoid dict iteration overhead
+
+                prop = 0
+                increment = 0.25
+                # Process each replication
+                for rep in range(num_replications):
+                    if rep == int(prop * num_replications):
+                        print(
+                            f'      Analyzing simulation replications {prop * 100}% complete ({rep} out of {num_replications})')
+                        prop += increment
+                    sim_file_path = base_path / scenario / f"rep_{rep}" / output_file
+                    pis_file_path = base_path / scenario / f"rep_{rep}" / 'synthetic_pis_data.csv'
+
+                    try:
+                        # Load simulation data (consider specifying dtypes if known)
+                        sim_data = pd.read_csv(sim_file_path)
+                        sim_pis_data = pd.read_csv(pis_file_path)
+                        sim_pis_data.columns = sim_pis_data.columns.str.lower()
+
+                        # Filter before merging
+                        sim_subset = sim_data[sim_data['inspection_number'].isin(unique_inspections_set)]
+                        sim_pis_subset = sim_pis_data[sim_pis_data['inspection_number'].isin(unique_inspections_set)]
+
+                        # Early exit if no matching data
+                        if len(sim_subset) == 0 or len(sim_pis_subset) == 0:
+                            warnings.warn(f"No matching inspections in rep {rep}")
+                            replication_action_rates.append(np.nan)
+                            continue
+
+                        # Merge filtered data (much smaller!)
+                        merged = sim_subset.merge(
+                            sim_pis_subset,
+                            left_on='risk_unit_id',
+                            right_on='risk_unit',
+                            how='inner',
+                            suffixes=('', '_drop')  # Simpler suffix handling
+                        )
+
+                        # Drop columns with _drop suffix (if any)
+                        drop_cols = [col for col in merged.columns if col.endswith('_drop')]
+                        if drop_cols:
+                            merged.drop(columns=drop_cols, inplace=True)
+
+                        # Rename _x columns if they exist
+                        x_cols = [col for col in merged.columns if col.endswith('_x')]
+                        if x_cols:
+                            merged.rename(columns={col: col[:-2] for col in x_cols}, inplace=True)
+
+                        # Deduplicate
+                        merged_unique = merged.drop_duplicates(subset=['risk_unit_id', 'comm_id'])
+
+                        # Validate
+                        if 'action' not in merged_unique.columns:
+                            warnings.warn(f"Missing 'action' column in rep {rep}")
+                            replication_action_rates.append(np.nan)
+                            continue
+
+                        # Check counts
+                        if len(merged_unique) != len(sim_subset):
+                            warnings.warn(f"Row mismatch in rep {rep}: {len(merged_unique)} vs {len(sim_subset)}")
+
+                        # Filter to the combination desired across the inspection number
+                        filtered_data = merged_unique
+                        for col, val in combination_items:
+                            if col in filtered_data.columns:
+                                filtered_data = filtered_data[filtered_data[col] == val]
+                                if len(filtered_data) == 0:  # Early exit
+                                    break
+
+                        # Calculate action data
+                        if len(filtered_data) > 0:
+                            rep_action_rate = filtered_data['action'].mean()
+                            replication_action_rates.append(rep_action_rate)
+                        else:
+                            warnings.warn(f"No data matching combination in rep {rep}")
+                            replication_action_rates.append(np.nan)
+
+                    except FileNotFoundError:
+                        warnings.warn(f"File not found: {sim_file_path}")
+                        replication_action_rates.append(np.nan)
+                    except Exception as e:
+                        warnings.warn(f"Error in rep {rep}: {str(e)}")
+                        replication_action_rates.append(np.nan)
+
+                ###################################################################################
+                ###################################################################################
+                ###################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+                ###################################################################################
+                # # Pre-compute outside the loop
+                # unique_inspections_set = set(unique_inspections)  # O(1) lookup instead of O(n)
+                #
+                # # Process each replication
+                # prop = 0
+                # increment = 0.25
+                # for rep in range(num_replications):
+                #     if rep == int(prop*num_replications):
+                #         print(f'      Analyzing simulation replications {prop*100}% complete ({rep} out of {num_replications})')
+                #         prop+=increment
+                #     sim_file_path = base_path / scenario / f"rep_{rep}" / output_file
+                #
+                #     try:
+                #         # Load simulation data
+                #         sim_data = pd.read_csv(sim_file_path)
+                #         sim_pis_data = pd.read_csv(base_path / scenario / f"rep_{rep}" / 'synthetic_pis_data.csv')
+                #         sim_pis_data.columns = sim_pis_data.columns.str.lower()
+                #
+                #         # OPTIMIZATION 1: Filter BEFORE merging (reduces merge size dramatically)
+                #         sim_subset = sim_data[sim_data['inspection_number'].isin(unique_inspections)]
+                #         sim_pis_subset = sim_pis_data[sim_pis_data['inspection_number'].isin(unique_inspections)]
+                #
+                #         if len(sim_subset) == 0 or len(sim_pis_subset) == 0:
+                #             warnings.warn(f"No matching inspections in {sim_file_path}")
+                #             replication_action_rates.append(np.nan)
+                #             continue
+                #
+                #         # OPTIMIZATION 2: Merge only filtered data
+                #         merged = sim_subset.merge(
+                #             sim_pis_subset,
+                #             left_on='risk_unit_id',
+                #             right_on='risk_unit',
+                #             how='inner',
+                #             suffixes=('', '_pis')  # Use empty suffix for left, avoid _x
+                #         )
+                #
+                #         # OPTIMIZATION 3: Single rename operation
+                #         if any(col.endswith('_x') for col in merged.columns):
+                #             rename_dict = {col: col.replace('_x', '') for col in merged.columns if col.endswith('_x')}
+                #             merged.rename(columns=rename_dict, inplace=True)
+                #
+                #         # OPTIMIZATION 4: Deduplicate
+                #         merged_unique = merged.drop_duplicates(subset=['risk_unit_id', 'comm_id'])
+                #
+                #         # Validate columns
+                #         if 'action' not in merged_unique.columns:
+                #             warnings.warn(f"Missing 'action' column in {sim_file_path}")
+                #             replication_action_rates.append(np.nan)
+                #             continue
+                #
+                #         # Validate counts
+                #         if len(merged_unique) != len(sim_subset):
+                #             warnings.warn(
+                #                 f"Row count mismatch: expected {len(sim_subset)}, got {len(merged_unique)}",
+                #                 UserWarning
+                #             )
+                #
+                #         # OPTIMIZATION 5: More efficient filtering
+                #         mask = pd.Series(True, index=merged_unique.index)
+                #         for col, val in combination_dict.items():
+                #             if col in merged_unique.columns:
+                #                 mask &= (merged_unique[col] == val)
+                #
+                #         filtered_data = merged_unique[mask]
+                #
+                #         if len(filtered_data) > 0:
+                #             rep_action_rate = filtered_data['action'].mean()
+                #             replication_action_rates.append(rep_action_rate)
+                #         else:
+                #             warnings.warn(f"No data matching combination in {sim_file_path}")
+                #             replication_action_rates.append(np.nan)
+                #
+                #     except FileNotFoundError:
+                #         warnings.warn(f"File not found: {sim_file_path}")
+                #         replication_action_rates.append(np.nan)
+                #     except Exception as e:
+                #         warnings.warn(f"Error processing {sim_file_path}: {str(e)}")
+                #         replication_action_rates.append(np.nan)
+
+
+
+
+
+
+                ###################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                # Calculate statistics across replications
+                valid_rates = [r for r in replication_action_rates if not np.isnan(r)]
+
+                # Perform two-sided t-test if we have valid rates
+                if len(valid_rates) > 1:
+                    # Calculate mean and std
+                    mean_rate = np.mean(valid_rates)
+                    std_rate = np.std(valid_rates, ddof=1)  # Use sample std deviation
+
+                    # Check if rates are essentially identical (no variance)
+                    if std_rate < 1e-10:  # Very small threshold for numerical stability
+                        # If all replications are the same, check if they match ground truth
+                        if abs(mean_rate - gt_action_rate) < 1e-10:
+                            statistically_same = 1
+                            p_value = 1.0  # Perfect match, maximum p-value
+                        else:
+                            statistically_same = 0
+                            p_value = 0.0  # Clear difference, minimum p-value
+                    else:
+                        # Normal t-test when there is variance
+                        t_statistic, p_value = stats.ttest_1samp(valid_rates, gt_action_rate)
+                        # If p-value > 0.05, we fail to reject null (they are statistically the same)
+                        statistically_same = 1 if p_value > 0.05 else 0
+
+                    # Also check practical equivalence (e.g., within 5% or 0.01 absolute difference)
+                    absolute_diff = abs(mean_rate - gt_action_rate)
+
+                    # Consider practically equivalent if within threshold
+                    practically_equivalent = 1 if (absolute_diff < practical_equivalence_threshold) else 0
+
+                elif len(valid_rates) == 1:
+                    # Can't perform t-test with only one observation
+                    # Check if the single value matches ground truth
+                    if abs(valid_rates[0] - gt_action_rate) < 1e-10:
+                        statistically_same = 1
+                        p_value = 1.0
+
+                        # Consider practically equivalent if within threshold
+                        absolute_diff = abs(valid_rates[0] - gt_action_rate)
+                        # Consider practically equivalent if within threshold
+                        practically_equivalent = 1 if (absolute_diff < 0.01) else 0
+
+                    else:
+                        statistically_same = np.nan  # Insufficient data for reliable test
+                        p_value = np.nan
+                        practically_equivalent = np.nan
+                        absolute_diff = np.nan
+                else:
+                    # No valid rates
+                    statistically_same = np.nan
+                    p_value = np.nan
+                    practically_equivalent = np.nan
+                    absolute_diff = np.nan
+
+
+
+                result_row = {
+                    **combination_dict,
+                    'ground_truth_action_rate': gt_action_rate,
+                    'mean_simulation_action_rate': np.mean(valid_rates) if valid_rates else np.nan,
+                    'std_simulation_action_rate': np.std(valid_rates) if valid_rates else np.nan,
+                    'num_inspection_numbers': len(unique_inspections),
+                    'num_valid_replications': len(valid_rates),
+                    'simulation_action_rate_statistically_same_as_ground_truth': statistically_same,
+                    'p_value': p_value,
+                    'practically_equivalent': practically_equivalent,
+                    'practical_threshold': practical_equivalence_threshold,
+                    'action_rate_abs_diff': absolute_diff
+                }
+
+                # Add individual replication rates (starting from rep_0)
+                for rep_idx, rate in enumerate(replication_action_rates):
+                    result_row[f'rep_{rep_idx}_action_rate'] = rate
+
+                scenario_results.append(result_row)
+
+            # Convert to DataFrame
+            results[scenario] = pd.DataFrame(scenario_results)
+            print(f"Completed {scenario}: {len(scenario_results)} filter combinations processed")
 
     return results
 
@@ -346,7 +635,7 @@ def list_available_simulation_runs(
     return runs
 
 
-def save_results(results: Dict[str, pd.DataFrame], output_dir: Path = DefaultPaths().validation_output_dir()) -> None:
+def save_results(results: Dict[str, pd.DataFrame], output_dir: Path = None) -> None:
     """
     Save analysis results to CSV files.
 
@@ -357,6 +646,9 @@ def save_results(results: Dict[str, pd.DataFrame], output_dir: Path = DefaultPat
     output_dir : str
         Directory to save output files
     """
+    if output_dir is None:
+        raise ValueError("Output needs to be specified for validation process directory cannot be None")
+
     output_dir.mkdir(exist_ok=True)
 
     for scenario, df in results.items():
@@ -371,7 +663,7 @@ def summarize_statistical_comparison(
         results: Dict[str, pd.DataFrame],
         filter_fields: List[str],
         ground_truth_path: str | Path,
-        output_dir: Path = DefaultPaths().validation_output_dir()
+        output_dir: Path = None
 ) -> Dict[str, Dict[str, pd.DataFrame]]:
     """
     Create summary statistics for statistical and practical comparison between simulation and ground truth.
@@ -395,6 +687,9 @@ def summarize_statistical_comparison(
         - 'statistically_different_combinations': DataFrame with combinations where rates differ statistically
         - 'practically_different_combinations': DataFrame with combinations where rates differ practically
     """
+    if output_dir is None:
+        raise ValueError("Output needs to be specified for validation process directory cannot be None")
+
     output_path = Path(output_dir)
     output_path.mkdir(exist_ok=True)
 

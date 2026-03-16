@@ -119,8 +119,6 @@ def main():
     #############################################################
     # Load in PIS Data
     df_pis_train_data = pd.read_csv(pis_data_train)
-    df_pis_train_data.rename(columns={'REQUIRED_NUMBER_OF_BOXES_x': 'REQUIRED_NUMBER_OF_BOXES'}, inplace=True)
-    df_pis_train_data.rename(columns={'risk_unit': 'RISK_UNIT'}, inplace=True)
 
     #############################################################
     ##### TODO: Replace this block with the appropriate data ####
@@ -281,7 +279,7 @@ def main():
 
     # Run one scenario analysis simulation
     detailed_bool = True
-    num_replications = 50
+    num_replications = 2
     scenario_results_raw = run_scenarios(
         config=config,
         scenario_table=scenarios,
@@ -292,61 +290,91 @@ def main():
         detailed=detailed_bool
     )
 
-
+    start = time.time()
     # Post process outputs across replications/num_simulations to validate against previously seen action rates
     # Configuration
     scenarios = ["Validation"]
-    val_group_fields = ["COUNTRY_OF_ORIGIN_NAME", "PROPAGATIVE_MATERIAL_TYPE"]
+    # Specify fields you want to produce action rate validation on
+    sets_of_val_fields = [
+        #["COUNTRY_OF_ORIGIN_NAME", "PROPAGATIVE_MATERIAL_TYPE"],
+        #["COUNTRY_OF_ORIGIN_NAME"],
+        #["PROPAGATIVE_MATERIAL_TYPE"],
+        [],
+    ]
+    run_ts = datetime.now().strftime("%m_%d_%Y_%H_%M_%S")
+    for val_group_fields in sets_of_val_fields:
+        temp_start = time.time()
+        if len(val_group_fields) == 0:
+            output_dir = DefaultPaths().validation_output_dir() / f"no_clustering_overall_{run_ts}"
+            output_dir.mkdir(exist_ok=True)
+        else:
+            folder_name = '_'.join(val_group_fields)
+            output_dir = DefaultPaths().validation_output_dir() / f"no_clustering_{folder_name}_{run_ts}"
+            output_dir.mkdir(exist_ok=True)
 
-    # List available simulation runs
-    print("Available simulation runs:")
-    available_runs = list_available_simulation_runs(default_paths.output_dir())
-    for i, run in enumerate(available_runs, 1):
-        print(f"{i}. {run['name']} (Timestamp: {run['timestamp']})")
+        # List available simulation runs
+        print("Available simulation runs:")
+        available_runs = list_available_simulation_runs(default_paths.output_dir())
+        for i, run in enumerate(available_runs, 1):
+            print(f"{i}. {run['name']} (Timestamp: {run['timestamp']})")
 
-    # Option 1: Use latest simulation run
-    results = calculate_action_rates_by_scenario(
-        ground_truth_path=pis_data_test_path,
-        simulation_output_path=default_paths.output_dir(),
-        scenarios=scenarios,
-        num_replications=num_replications,
-        filter_fields=val_group_fields,
-        simulation_base_path="latest"  # Auto-select most recent
-    )
 
-    # Option 2: Use specific simulation run
-    # results = calculate_action_rates_by_scenario(
-    #     ground_truth_path=ground_truth_path,
-    #     simulation_output_path=simulation_output_path,
-    #     scenarios=scenarios,
-    #     num_replications=num_replications,
-    #     filter_fields=filter_fields,
-    #     simulation_base_path="pops_border_scenario_data_03_02_2026_17_21_12"
-    # )
 
-    # Save results
-    save_results(results=results)
 
-    # Create and save statistical comparison summaries (now includes ground_truth_path)
-    summaries = summarize_statistical_comparison(
-        results=results,
-        filter_fields=val_group_fields,
-        ground_truth_path=pis_data_test_path
-    )
+        # Option 1: Use latest simulation run
+        results = calculate_action_rates_by_scenario(
+            ground_truth_path=pis_data_test_path,
+            simulation_output_path=default_paths.output_dir(),
+            scenarios=scenarios,
+            num_replications=num_replications,
+            filter_fields=val_group_fields,
+            simulation_base_path="latest"  # Auto-select most recent
+        )
 
-    # Display summary
-    if results:
-        first_scenario = scenarios[0]
-        print(f"\n{first_scenario} Overall Statistical Summary:")
-        print(summaries[first_scenario]['overall_summary'])
+        # Option 2: Use specific simulation run
+        # results = calculate_action_rates_by_scenario(
+        #     ground_truth_path=ground_truth_path,
+        #     simulation_output_path=simulation_output_path,
+        #     scenarios=scenarios,
+        #     num_replications=num_replications,
+        #     filter_fields=filter_fields,
+        #     simulation_base_path="pops_border_scenario_data_03_02_2026_17_21_12"
+        # )
 
-    end = time.time()
-    total_time = end - start
+        # Save results
+        save_results(results=results, output_dir=output_dir)
+
+        # Create and save statistical comparison summaries (now includes ground_truth_path)
+        summaries = summarize_statistical_comparison(
+            results=results,
+            filter_fields=val_group_fields,
+            ground_truth_path=pis_data_test_path,
+            output_dir=output_dir
+        )
+
+        # Display summary
+        if results:
+            first_scenario = scenarios[0]
+            print(f"\n{first_scenario} Overall Statistical Summary:")
+            print(summaries[first_scenario]['overall_summary'])
+
+        total_time = time.time() - temp_start
+        total_time_mins = total_time / 60
+        total_time_hours = total_time_mins / 60
+        total_time_days = total_time_hours / 24
+        print(f'\nTIMING SUMMARY\n')
+        print(f'   Total Time to Execute Validation with {num_replications} Replications Over Fields {val_group_fields}')
+        print(f'      Minutes:  {total_time_mins}')
+        print(f'      Hours:  {total_time_hours}')
+        print(f'      Days:  {total_time_days}')
+        print('')
+
+    total_time = time.time() - start
     total_time_mins = total_time / 60
     total_time_hours = total_time_mins / 60
     total_time_days = total_time_hours / 24
     print(f'\nTIMING SUMMARY\n')
-    print(f'   Total Time to Execute Validation with {num_replications} Replications')
+    print(f'   Total Time to Execute Validation with {num_replications} Replications Overall Fields')
     print(f'      Minutes:  {total_time_mins}')
     print(f'      Hours:  {total_time_hours}')
     print(f'      Days:  {total_time_days}')
