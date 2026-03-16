@@ -50,9 +50,9 @@ def main():
     compliance_mapping_to_detection_confidence = data_dir / "compliance_mapping_detection_confidence_levels.csv"
 
     ### PIS Inspection/RBS Calculator Data
-    #pis_data_updated = shared_ppq_data_path / 'updated_pis_data.csv'  # PIS data
-    #pis_data_updated = data_dir / "TEST_PIS_SampleQuantity.csv"       # Test data
-    pis_data_updated = data_dir / "Synthetic_PIS_SampleQuantity_test.csv"       # Test data
+    pis_data_updated = shared_ppq_data_path / 'updated_pis_data.csv'  # PIS data
+    # pis_data_updated = data_dir / "TEST_PIS_SampleQuantity.csv"       # Test data
+    # pis_data_updated = data_dir / "Synthetic_PIS_SampleQuantity_test.csv"       # Test data
 
     ### Other data loading
     producer_group_mapping_path = box_paths.disambiguated_producer_table_mapping()
@@ -112,47 +112,47 @@ def main():
     ####################
 
     # # Load in PIS Data
-    # df_pis_data = pd.read_csv(pis_data_updated)
+    df_pis_data = pd.read_csv(pis_data_updated)
     #
     # #############################################################
     # ##### TODO: Replace this block with the appropriate data ####
     # #############################################################
     #
     # ### Generate clarke inputs via input data
-    # inputs_by_quantity = gen_clarke_model_inputs(df_pis_data)
+    inputs_by_quantity = gen_clarke_model_inputs(df_pis_data)
     #
     # # Run clarke model
-    # res = {}
-    # print(f'\nNow Executing Clarke Model Based on Quantities')
-    # for (lower, upper), inputs in inputs_by_quantity.items():
-    #     print(f'   Calculating for Quantity Range:  {(lower, upper)}')
-    #     res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
-    #                                     inputs.b,
-    #                                     inputs.B,
-    #                                     inputs.Nbar,
-    #                                     inputs.freq,
-    #                                     inputs.theta,
-    #                                     inputs.R,
-    #                                     inputs.start_val,
-    #                                     inputs.se)
+    res = {}
+    print(f'\nNow Executing Clarke Model Based on Quantities')
+    for (lower, upper), inputs in inputs_by_quantity.items():
+        print(f'   Calculating for Quantity Range:  {(lower, upper)}')
+        res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
+                                        inputs.b,
+                                        inputs.B,
+                                        inputs.Nbar,
+                                        inputs.freq,
+                                        inputs.theta,
+                                        inputs.R,
+                                        inputs.start_val,
+                                        inputs.se)
 
     # Setting values for testing
-    res = {}
-    inputs_by_quantity = {}
-    for key in [(-0.001, 10.0),
-                (10.0, 50.0),
-                (50.0, 150.0),
-                (150.0, 300.0),
-                (300.0, 579.0),
-                (579.0, 1000.0)]:
-        inputs_by_quantity[key] = {'theta': np.inf, 'B': 200}
-        res[key] = {
-            'alpha': random.uniform(0.01, 0.25),
-            "beta": random.uniform(2, 8),
-            'mu': 0.0,
-            'rho': 0.0,
-            'D': 0.0
-        }
+    # res = {}
+    # inputs_by_quantity = {}
+    # for key in [(-0.001, 10.0),
+    #             (10.0, 50.0),
+    #             (50.0, 150.0),
+    #             (150.0, 300.0),
+    #             (300.0, 579.0),
+    #             (579.0, 1000.0)]:
+    #     inputs_by_quantity[key] = {'theta': np.inf, 'B': 200}
+        # res[key] = {
+        #     'alpha': random.uniform(0.01, 0.25),
+        #     "beta": random.uniform(2, 8),
+        #     'mu': 0.0,
+        #     'rho': 0.0,
+        #     'D': 0.0
+        # }
 
     print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
 
@@ -190,7 +190,8 @@ def main():
 
     # Load compliance table
     compliance_table = build_compliance_lookup_table(
-        compliance_table_filepath=base_compliance_table_with_producer,
+        # compliance_table_filepath=base_compliance_table_with_producer,
+        compliance_table_filepath=base_compliance_table,
         mapping_filepath=compliance_mapping_to_detection_confidence
     )
 
@@ -254,13 +255,13 @@ def main():
             scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/mu"] = res[key]['mu']
             scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/rho"] = res[key]['rho']
             scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/D"] = res[key]['D']
-            # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[key].theta
-            # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = inputs_by_quantity[
-            #     key].B
-            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[
-                key]['theta']
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[key].theta
             scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = inputs_by_quantity[
-                key]['B']
+                key].B
+            # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[
+                # key]['theta']
+            # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = inputs_by_quantity[
+                # key]['B']
 
     ####################################################################
     ####################################################################
