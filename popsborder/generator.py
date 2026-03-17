@@ -2,44 +2,55 @@
 # Copyright (C) 2018-2022 Vaclav Petras and others (see below)
 # © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
-# Modifications:
-# 
-# - 2/17/2026 – 
-# New Classes Added:
-# SyntheticConsignmentDataGenerator:
-#     * Generates synthetic consignment data for testing and simulation purposes
-#     * Creates realistic consignment records with randomized attributes
-#     * Uses advanced sampling techniques including Gaussian copulas
-#     * Supports multiple sampling methods: naive, sequential, GMM, gaussian_copula
-#     * Integrates with real PIS data for training synthetic data generation
+"""
+Modifications:
 
-# Sampling Methods Implemented:
-# ----------------------------
-# - multinomial_sample(): Naive approach sampling each column independently
-# - sequential_multinomial_sample(): Sequential sampling preserving conditional dependencies
-# - gmm_sample(): Gaussian Mixture Model sampling for numeric columns
-# - gaussian_copula_sample(): Category-conditional Gaussian copula preserving correlations
+- 2/17/2026 –
+New Classes Added:
+SyntheticConsignmentDataGenerator:
+    * Generates synthetic consignment data for testing and simulation purposes
+    * Creates realistic consignment records with randomized attributes
+    * Uses advanced sampling techniques including Gaussian copulas
+    * Supports multiple sampling methods: naive, sequential, GMM, gaussian_copula
+    * Integrates with real PIS data for training synthetic data generation
 
-# Data Generation Features:
-# ------------------------
-# - Configurable consignment attributes (origins, ports, pathways, commodities)
-# - Propagative material and flower commodity support
-# - Contamination modeling with configurable probability and quantities
-# - Quality metrics calculation comparing original and synthetic data
-# - Multiple output formats (CSV, JSON) with comprehensive statistics
+Sampling Methods Implemented:
+----------------------------
+- multinomial_sample(): Naive approach sampling each column independently
+- sequential_multinomial_sample(): Sequential sampling preserving conditional dependencies
+- gmm_sample(): Gaussian Mixture Model sampling for numeric columns
+- gaussian_copula_sample(): Category-conditional Gaussian copula preserving correlations
 
-# This program is free software; you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software
-# Foundation; either version 2 of the License, or (at your option) any later
-# version.
+Data Generation Features:
+------------------------
+- Configurable consignment attributes (origins, ports, pathways, commodities)
+- Propagative material and flower commodity support
+- Contamination modeling with configurable probability and quantities
+- Quality metrics calculation comparing original and synthetic data
+- Multiple output formats (CSV, JSON) with comprehensive statistics
 
-# This program is distributed in the hope that it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
-# details.
+New Functions Created:
+------------------------
+- preprocess_producer_name()
+    * Preprocess a single producer name according to specified rules.
+- create_producer_mapping()
+    * Create a mapping dictionary from producer names to groups.
+- apply_producer_grouping()
+    * Apply producer name preprocessing and grouping to input data.
 
-# You should have received a copy of the GNU General Public License along with
-# this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
+"""
 
 """
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
@@ -64,6 +75,135 @@ import warnings
 import re
 from typing import Optional, Union
 from scipy import stats
+from popsborder.inspections import construct_risk_units
+from slippage_model_utils.r_script_wrapper import VariableCreator
+
+
+### Support functions:
+
+def preprocess_producer_name(name, suffix_string=None, prefix_string=None):
+    """
+    Preprocess a single producer name according to specified rules.
+    Mimics the R function basic_text_preproc.
+
+    Args:
+        name: Raw producer name string
+        suffix_string: Custom regex pattern for suffixes to remove
+        prefix_string: Custom regex pattern for prefixes to remove
+
+    Returns:
+        Preprocessed and truncated name (max 15 chars)
+    """
+    # Convert to string and lowercase FIRST
+    text = str(name).lower() if pd.notna(name) else name
+
+    # Handle NA/Not Selected - convert to "missing"
+    if pd.isna(text) or text.strip() == "not selected":
+        return "missing"  # Changed from 'NA/NOT SELECTED' to match R
+
+    # Remove punctuation (this happens BEFORE box removal in R)
+    text = re.sub(r'[^\w\s]', '', text)
+
+    # Remove end of string starting with "box"
+    # R code finds position of "box" and truncates there
+    box_match = re.search(r'box', text)
+    if box_match:
+        box_position = box_match.start()
+        if box_position > 0:
+            text = text[:box_position]
+        # If box_position == 0, keep the whole string (mimics R's if_else logic)
+
+    # Remove stand-alone numeric sequences
+    text = re.sub(r'\b\d+\b', '', text)
+
+    # Replace multiple blanks with single blank AND strip leading/trailing
+    # (str_squish in R does both)
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    # Define default suffix pattern if not provided
+    if suffix_string is None:
+        # Note: R uses " sa| s a|sociedad" (space before "sa", no space before "|sociedad")
+        suffix_string = r'( sa| s a|sociedad anonima| inc| llc| ltd| ltda| cv| rl| co| co ltd| corp| bv| b v| corporation| company| limited)$'
+
+    # Define default prefix pattern if not provided
+    if prefix_string is None:
+        prefix_string = r'^(mr |m r )'
+
+    # Remove suffixes and prefixes
+    text = re.sub(suffix_string, '', text)
+    text = re.sub(prefix_string, '', text)
+
+    # Final cleanup after suffix/prefix removal
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    # Truncate to first 15 characters
+    text = text[:15]
+
+    return text
+
+
+def create_producer_mapping(producer_group_mapping_df, use_shortest_name=True):
+    """
+    Create a mapping dictionary from producer names to groups.
+
+    Args:
+        producer_group_mapping_df: DataFrame with 'PRODUCER_NAME' and 'grouping' columns
+        use_shortest_name: If True, use shortest raw name as group label instead of numeric grouping
+
+    Returns:
+        Dictionary mapping preprocessed producer names to group labels
+    """
+    # Create a copy to avoid modifying original
+    mapping_df = producer_group_mapping_df.copy()
+
+    # Preprocess all producer names in the mapping file
+    mapping_df['producer_name_preprocessed'] = mapping_df['PRODUCER_NAME'].apply(preprocess_producer_name)
+
+    # If using shortest name as group label
+    if use_shortest_name:
+        # For each group, find the shortest original name
+        group_labels = (
+            mapping_df.groupby('grouping')['PRODUCER_NAME']
+            .apply(lambda x: min(x, key=len))
+            .to_dict()
+        )
+        # Map each preprocessed name to its group's shortest name
+        mapping_df['group_label'] = mapping_df['grouping'].map(group_labels)
+    else:
+        # Use the numeric grouping as-is
+        mapping_df['group_label'] = mapping_df['grouping']
+
+    # Create the mapping dictionary
+    producer_to_group = mapping_df.set_index('producer_name_preprocessed')['group_label'].to_dict()
+
+    return producer_to_group
+
+
+def apply_producer_grouping(input_data, producer_group_mapping_df, use_shortest_name=True):
+    """
+    Apply producer name preprocessing and grouping to input data.
+
+    Args:
+        input_data: DataFrame with 'PRODUCER_NAME' column
+        producer_group_mapping_df: DataFrame with 'PRODUCER_NAME' and 'grouping' columns
+        use_shortest_name: If True, use shortest raw name as group label.  If False, use the numeric grouping number
+
+    Returns:
+        DataFrame with added 'producer_name_preprocessed' and 'producer_group' columns
+    """
+    # Create a copy to avoid modifying original
+    data = input_data.copy()
+
+    # Preprocess producer names in input data
+    data['producer_name_preprocessed'] = data['PRODUCER_NAME'].apply(preprocess_producer_name)
+
+    # Create the mapping dictionary
+    producer_to_group = create_producer_mapping(producer_group_mapping_df, use_shortest_name)
+
+    # Apply the mapping, using 'NO_GROUP_MATCH' for unknown names
+    data['producer_group'] = data['producer_name_preprocessed'].map(producer_to_group).fillna('NO_GROUP_MATCH')
+
+    return data
 
 
 class SyntheticConsignmentDataGenerator:
@@ -74,19 +214,33 @@ class SyntheticConsignmentDataGenerator:
     sampling methods for preserving statistical relationships in the data.
     """
     
-    def __init__(self, input_data_file):
+    def __init__(self,
+                 config: dict = None,
+                 producer_group_mapping: pd.DataFrame=None,
+                 input_data_file: Path = None) -> None:
         """Initialize the synthetic data generator
-        
+
+        :param config: Optional path to input data file for training
+        :param producer_group_mapping: Optional path to input data file for training
         :param input_data_file: Optional path to input data file for training
         """
 
         self.input_data = self._load_input_data(input_data_file)
+
+        self.input_data = apply_producer_grouping(
+            self.input_data,
+            producer_group_mapping,
+            use_shortest_name=True  # Set to False if wanting to use numeric grouping labels
+        )
+
+        self.input_data  = construct_risk_units(config=config, data=self.input_data)
         
         # Initialize random seed for reproducible results
         random.seed(42)
         np.random.seed(42)
 
-    def _load_input_data(self, input_file):
+    @staticmethod
+    def _load_input_data(input_file):
         """Load input data file for training sampling models.
 
         :param input_file: Path to input data file (.csv, .xlsx, .xls)
@@ -155,7 +309,8 @@ class SyntheticConsignmentDataGenerator:
             print(f"Error loading input data file '{input_file}': {e}")
             return None
 
-    def fit_best_continuous_distribution(self, data, distributions=None, criterion="aic"):
+    @staticmethod
+    def fit_best_continuous_distribution(data, distributions=None, criterion="aic"):
         """
         Fit several continuous distributions to 1D numeric data and select the best.
         If no distribution can be selected, fall back to fitting a beta distribution.
@@ -304,8 +459,8 @@ class SyntheticConsignmentDataGenerator:
 
         return sampled_df
 
+    @staticmethod
     def resolve_producer_names(
-            self,
             df: pd.DataFrame,
             input_col: str = "PRODUCER_NAME",
             output_col: str = "PRODUCER_NAME_RESOLVED",
@@ -320,9 +475,6 @@ class SyntheticConsignmentDataGenerator:
 
         Returns a *copy* of df with a new column `output_col`.
         """
-
-        df = df.copy()
-
         def _normalize(name: Union[str, float]):
             if pd.isna(name):
                 return name
@@ -358,7 +510,8 @@ class SyntheticConsignmentDataGenerator:
         df[output_col] = resolved
         return df
 
-    def identify_num_inspection_units(self, df, n_consignments=1):
+    @staticmethod
+    def identify_num_inspection_units(df, n_consignments=1):
         # First sample the number of inspection units per consignment uniformly based on data
         counts = df["INSPECTION_NUMBER"].value_counts()
         min_count = counts.min()
@@ -472,8 +625,8 @@ class SyntheticConsignmentDataGenerator:
         idx = np.random.choice(len(keys), p=probs)
         return keys[idx]
 
+    @staticmethod
     def compute_rowcount_pmf_for_location(
-            self,
             df: pd.DataFrame,
             location_name: str,
             total_units_col: str = 'SAMPLING_UNITS_FOR_INSPECTION_UNIT',
@@ -591,7 +744,8 @@ class SyntheticConsignmentDataGenerator:
         sampled_count = int(np.random.choice(counts, p=probs))
         return sampled_count
 
-    def best_fit_discrete_distribution(self, data, candidate_dists=None):
+    @staticmethod
+    def best_fit_discrete_distribution(data, candidate_dists=None):
         """
         Fit multiple SciPy *discrete* distributions and return:
             (best_dist_name, best_dist_obj, best_params, best_aic)
@@ -1042,14 +1196,16 @@ class SyntheticConsignmentDataGenerator:
         sampled = sampled[[c for c in columns if c in sampled.columns]]
 
         return sampled
-    
-    def _make_psd(self, S):
+
+    @staticmethod
+    def _make_psd(s):
         """Clip tiny negative eigenvalues to ensure PSD."""
-        w, V = np.linalg.eigh(S)
+        w, V = np.linalg.eigh(s)
         w = np.maximum(w, 1e-8)
         return (V * w) @ V.T
-    
-    def _rank_to_z(self, mat):
+
+    @staticmethod
+    def _rank_to_z(mat):
         """Empirical CDF per column -> latent normal; expects a 2D numpy array."""
         eps = 1e-6
         n, m = mat.shape
@@ -1290,8 +1446,8 @@ class SyntheticConsignmentDataGenerator:
         
         return synthetic_data
     
-   
-    def calculate_quality_metrics(self, original_df, synthetic_df):
+    @staticmethod
+    def calculate_quality_metrics(original_df, synthetic_df):
         """Calculate quality metrics comparing original and synthetic data
         
         :param original_df: Original DataFrame for comparison
@@ -1343,8 +1499,9 @@ class SyntheticConsignmentDataGenerator:
                     metrics[f"wasserstein_{col}"] = distance
         
         return metrics
-    
-    def generate_statistics(self, dataset):
+
+    @staticmethod
+    def generate_statistics(dataset):
         """Generate statistics about the synthetic dataset
         
         :param dataset: DataFrame to analyze

@@ -82,7 +82,6 @@ from .outputs import (
     PISSimData,
 )
 from .skipping import get_inspection_needed_function
-from .inputs import load_input_consignment_data
 
 def random_seed(seed):
     """Set seed for all generators used"""
@@ -94,7 +93,6 @@ def simulation(
     config,
     num_consignments,
     seed,
-    compliance_table=None,
     output_f280_file=None,
     verbose=False,
     pretty=None,
@@ -152,7 +150,7 @@ def simulation(
     consignment_generator = get_consignment_generator(config)
     add_contaminant = get_contaminant_function(config)
     is_inspection_needed = get_inspection_needed_function(config)
-    sample = get_sample_function(config, compliance_table)
+    sample = get_sample_function(config)
     tolerance_level = config["inspection"]["tolerance_level"]
 
 
@@ -456,7 +454,6 @@ def run_simulation(
     config,
     num_simulations,
     num_consignments,
-    compliance_table=None,
     seed=None,
     output_f280_file=None,
     verbose=False,
@@ -539,7 +536,6 @@ def run_simulation(
             config=config,
             num_consignments=num_consignments,
             seed=seed + i if seed is not None else None,
-            compliance_table=compliance_table,
             output_f280_file=output_f280_file,
             verbose=verbose,
             pretty=pretty,
