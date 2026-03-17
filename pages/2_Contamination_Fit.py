@@ -12,6 +12,7 @@ import altair as alt
 import numpy as np
 import pandas as pd
 import streamlit as st
+from scipy.stats import betabinom
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
@@ -45,7 +46,7 @@ def _beta_pdf(alpha: float, beta: float, num_points: int = 200) -> pd.DataFrame:
     xs = np.linspace(eps, 1 - eps, num_points)
     log_norm = math.lgamma(alpha + beta) - math.lgamma(alpha) - math.lgamma(beta)
     ys = np.exp(log_norm + (alpha - 1) * np.log(xs) + (beta - 1) * np.log(1 - xs))
-    area = np.trapz(ys, xs)
+    area = np.trapezoid(ys, xs)
     if area > 0:
         ys = ys / area
     return pd.DataFrame({"prevalence": xs, "density": ys})
@@ -97,25 +98,579 @@ def _save_param_set(name: str, alpha: float, beta: float, theta: float, sample_u
     return name
 
 
+def calculate_beta_binomial_params_old(
+        sample_unit_rate: float,
+        concentration_input: float,
+        n_trials: int = 100
+) -> dict:
+    # Transform input to concentration
+    concentration = transform_input_to_concentration(concentration_input)
+
+    # Clamp mean to avoid exact 0 or 1
+    mean_clamped = np.clip(sample_unit_rate, 0.001, 0.999)
+
+    # Calculate alpha and beta
+    alpha = mean_clamped * concentration
+    beta = (1 - mean_clamped) * concentration
+
+    # Calculate rho and variance
+    rho = 1.0 / (concentration + 1.0)
+    variance = n_trials * mean_clamped * (1 - mean_clamped) * (1 + (n_trials - 1) * rho)
+
+    return {
+        'alpha': alpha,
+        'beta': beta,
+        'concentration': concentration,      # Already included
+        'variance': variance,
+        'rho': rho,
+        'mean_clamped': mean_clamped        # Add this for convenience
+    }
+
+
+def calculate_beta_binomial_params(
+        sample_unit_rate: float,
+        concentration_input: float,
+        n_trials: int = 100,
+        confidence_level: float = 0.95
+) -> dict:
+    """
+    Calculate beta-binomial parameters and summary statistics.
+    """
+    # Transform input to concentration
+    concentration = transform_input_to_concentration(concentration_input)
+
+    # Clamp mean to avoid exact 0 or 1
+    mean_clamped = np.clip(sample_unit_rate, 0.001, 0.999)
+
+    # Calculate alpha and beta
+    alpha = mean_clamped * concentration
+    beta = (1 - mean_clamped) * concentration
+
+    # Calculate rho and variance
+    rho = 1.0 / (concentration + 1.0)
+    variance = n_trials * mean_clamped * (1 - mean_clamped) * (1 + (n_trials - 1) * rho)
+
+    # Create Beta-Binomial distribution for CI calculation
+    bb_dist = betabinom(n=n_trials, a=alpha, b=beta)
+
+    # Calculate mean and confidence interval
+    mean_value = n_trials * mean_clamped
+    alpha_level = (1 - confidence_level) / 2
+    lower_bound = bb_dist.ppf(alpha_level)
+    upper_bound = bb_dist.ppf(1 - alpha_level)
+
+    return {
+        'alpha': alpha,
+        'beta': beta,
+        'concentration': concentration,
+        'variance': variance,
+        'rho': rho,
+        'mean_clamped': mean_clamped,
+        'mean': mean_value,
+        'lower_bound': lower_bound,
+        'upper_bound': upper_bound,
+        'confidence_level': confidence_level
+    }
+
+
+def transform_input_to_concentration(
+        concentration_input: float,
+        conc_min: float = 0.5,
+        conc_max: float = 100.0
+) -> float:
+    """
+    Transform user input (0-100%) to concentration parameter using log scale.
+
+    Args:
+        concentration_input: User input in range [0, 100]
+        conc_min: Minimum concentration (default: 0.5)
+        conc_max: Maximum concentration (default: 100.0)
+
+    Returns:
+        Concentration parameter in range [conc_min, conc_max]
+
+    Mathematical justification:
+        - Log scaling provides proportional changes: equal input intervals
+          produce equal multiplicative changes in concentration
+        - This aligns with how concentration affects variance (1/κ² relationship)
+        - Provides better control in low-concentration regime where
+          overdispersion effects are strongest
+    """
+    # Clamp input to valid range
+    concentration_input = np.clip(concentration_input, 0.0, 100.0)
+
+    # Logarithmic interpolation
+    log_min = np.log(conc_min)
+    log_max = np.log(conc_max)
+    log_concentration = log_min + (concentration_input / 100.0) * (log_max - log_min)
+
+    concentration = np.exp(log_concentration)
+
+    return concentration
+
+
 # ---- Page setup ----
 init_state()
 slippage_state = get_slippage_state()
 paths = slippage_state["paths"]
 render_sidebar_navigation()
 
-st.title("Page 2 - Contamination Fit")
+
 st.warning(
     "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
     "Features may be incomplete and subject to change. Results have not been validated.**"
 )
-st.caption(
-    "Fit, assign, and manage contamination parameters. PIS upload and RBS selection live in the Fit tab. "
-    "All outputs are written to tmp/contamination."
-)
 
-# ---- Tabs ----
+st.title("Page 2 - Contamination Fit")
+
+
+# Description via markdown
+st.markdown("""
+    <div style='font-size: 18px; color: #2c3e50; line-height: 1;'>
+        <p style='margin-bottom: 12px;'>
+            Fit, assign, and manage contamination parameters. 
+            PIS upload and RBS selection live in the <i>Fit Contamination</i> tab.
+            All outputs are written to <i>tmp/contamination</i>.
+        </p>
+    </div>
+""", unsafe_allow_html=True)
+
+
+########### Notes on using Markdowns ############
+#################################################
+
+## Style tagging
+# Tag	            Effect	        Example
+# <em> or <i>	    Italic	        <em>text</em>
+# <strong> or <b>	Bold	        <strong>text</strong>
+# <u>	            Underline	    <u>text</u>
+# <s> or <del>	    Strikethrough	<s>text</s>
+# <mark>	        Highlight	    <mark>text</mark>
+# <small>	        Smaller	        <small>text</small>
+# <sup>	            Superscript	    x<sup>2</sup>
+# <sub>	            Subscript	    H<sub>2</sub>O
+
+#### CSS Properties Reference
+# Property	        Effect	                Example Values
+# font-size	        Tab text size	        14px, 20px, 28px
+# font-weight	    Boldness	            400 (normal), 600 (semi-bold), 700 (bold)
+# color	            Text color	            #000000, #1f77b4
+# padding	        Space inside tab	    10px 20px (top/bottom left/right)
+# letter-spacing	Space between letters	0.5px, 1px
+# text-transform	Case	                uppercase, lowercase
+
+
+# Multiple Lines via mark down
+# st.markdown("""
+#     <div style='font-size: 20px; color: #2c3e50; line-height: 0.5;'>
+#         <p style='margin-bottom: 12px;'>
+#             Fit, assign, and manage contamination parameters.
+#             PIS upload and RBS selection live in the Fit tab.
+#             All outputs are written to tmp/contamination.
+#         </p>
+#         <p style='margin-bottom: 0;'>
+#             All outputs are written to tmp/contamination.
+#         </p>
+#     </div>
+# """, unsafe_allow_html=True)
+
+# st.caption(
+#     "Fit, assign, and manage contamination parameters. PIS upload and RBS selection live in the Fit tab. "
+#     "All outputs are written to tmp/contamination."
+# )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+####################################################################
+####################################################################
+## Mark down and CSS customizable options
+
+# st.markdown("""
+#     <style>
+#     /* ========== LABEL TEXT STYLING ========== */
+#     .selectbox-label-text {
+#         font-size: 28px;                    /* Text size */
+#         font-weight: 700;                   /* Bold text */
+#         color: #0d47a1;                     /* Dark blue color */
+#         text-transform: capitalize;         /* Capitalize first letter */
+#         letter-spacing: 0.5px;              /* Space between letters */
+#         line-height: 1.4;                   /* Line height */
+#         font-family: 'Arial', sans-serif;   /* Font family */
+#         text-shadow: 1px 1px 2px rgba(0,0,0,0.1); /* Subtle shadow */
+#     }
+#
+#     /* ========== INFO ICON STYLING ========== */
+#     .info-icon {
+#         display: inline-block;
+#         width: 24px;                        /* Icon width */
+#         height: 24px;                       /* Icon height */
+#         border-radius: 50%;                 /* Circular shape */
+#         background-color: #1976d2;          /* Blue background */
+#         color: white;                       /* White text */
+#         text-align: center;
+#         line-height: 24px;                  /* Vertical centering */
+#         font-size: 15px;                    /* Icon character size */
+#         margin-left: 10px;                  /* Space from label */
+#         cursor: help;                       /* Help cursor on hover */
+#         vertical-align: middle;             /* Align with text */
+#         border: 2px solid #0d47a1;          /* Border around icon */
+#         box-shadow: 0 2px 4px rgba(0,0,0,0.15); /* Subtle shadow */
+#         opacity: 0.9;                       /* Slight transparency */
+#         position: relative;
+#     }
+#
+#     /* Icon hover effect */
+#     .info-icon:hover {
+#         background-color: #0d47a1;          /* Darker on hover */
+#         transform: scale(1.1);              /* Slightly larger */
+#         opacity: 1;                         /* Full opacity */
+#     }
+#
+#     /* ========== TOOLTIP BOX STYLING ========== */
+#     .info-icon .tooltip {
+#         visibility: hidden;
+#         width: 350px;                       /* Tooltip width */
+#         max-width: 90vw;                    /* Max width for mobile */
+#         background-color: #263238;          /* Dark gray background */
+#         color: #ffffff;                     /* White text */
+#         text-align: left;                   /* Left-aligned text */
+#         border-radius: 10px;                /* Rounded corners */
+#         padding: 18px;                      /* Internal spacing */
+#         position: absolute;
+#         z-index: 999;                       /* Layer on top */
+#         bottom: 140%;                       /* Position above icon */
+#         left: 50%;
+#         margin-left: -175px;                /* Center horizontally */
+#         opacity: 0;                         /* Initially invisible */
+#         transition: opacity 0.4s ease-in-out; /* Smooth fade */
+#         font-size: 15px;                    /* Text size */
+#         font-weight: 400;                   /* Normal weight */
+#         line-height: 1.7;                   /* Comfortable line spacing */
+#         box-shadow: 0 6px 12px rgba(0,0,0,0.4); /* Drop shadow */
+#         border: 1px solid rgba(255,255,255,0.1); /* Subtle border */
+#         font-family: 'Segoe UI', sans-serif; /* Font family */
+#     }
+#
+#     /* ========== TOOLTIP ARROW ========== */
+#     .info-icon .tooltip::after {
+#         content: "";
+#         position: absolute;
+#         top: 100%;                          /* Position at bottom of tooltip */
+#         left: 50%;
+#         margin-left: -8px;                  /* Center the arrow */
+#         border-width: 8px;                  /* Arrow size */
+#         border-style: solid;
+#         border-color: #263238 transparent transparent transparent; /* Arrow color */
+#     }
+#
+#     /* Show tooltip on hover */
+#     .info-icon:hover .tooltip {
+#         visibility: visible;
+#         opacity: 1;                         /* Fully visible */
+#         transform: translateY(-5px);        /* Slide up slightly */
+#     }
+#
+#     /* ========== SELECTBOX DROPDOWN STYLING ========== */
+#     .stSelectbox div[data-baseweb="select"] > div {
+#         font-size: 20px !important;         /* Dropdown text size */
+#         font-weight: 500 !important;        /* Medium weight */
+#         color: #1a237e !important;          /* Indigo text */
+#         background-color: #f5f7fa !important; /* Light background */
+#         border: 2px solid #1976d2 !important; /* Blue border */
+#         border-radius: 8px !important;      /* Rounded corners */
+#         padding: 12px 16px !important;      /* Internal padding */
+#         box-shadow: 0 2px 4px rgba(0,0,0,0.08) !important; /* Subtle shadow */
+#     }
+#
+#     /* Dropdown hover effect */
+#     .stSelectbox div[data-baseweb="select"] > div:hover {
+#         border-color: #0d47a1 !important;   /* Darker border on hover */
+#         box-shadow: 0 4px 8px rgba(0,0,0,0.12) !important; /* Stronger shadow */
+#     }
+#
+#     /* ========== DROPDOWN OPTIONS STYLING ========== */
+#     .stSelectbox div[data-baseweb="select"] ul li {
+#         font-size: 18px !important;
+#         padding: 14px 18px !important;
+#         font-weight: 500 !important;
+#     }
+#
+#     /* Option hover effect */
+#     .stSelectbox div[data-baseweb="select"] ul li:hover {
+#         background-color: #e3f2fd !important; /* Light blue on hover */
+#     }
+#     </style>
+# """, unsafe_allow_html=True)
+
+####################################################################
+####################################################################
+
+
+
+
+
+### CSS markdown implementations###
+# Tabs
+st.markdown("""
+    <style>
+    /* Make tab labels larger and bolder */
+    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
+        font-size: 24px;
+        font-weight: 700;
+    }
+
+    /* Increase tab padding */
+    .stTabs [data-baseweb="tab-list"] button {
+        padding: 18px 24px;
+    }
+
+    /* Style the active tab */
+    .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] [data-testid="stMarkdownContainer"] p {
+        color: #1f77b4;
+    }
+
+    /* Remove gap between tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 2px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+
+
+
+
+# Select box and tool tip
+st.markdown("""
+    <style>
+    /* Selectbox label styling */
+    .stSelectbox label {
+        font-size: 20px !important;
+        font-weight: 600 !important;
+        color: #1f77b4 !important;
+    }
+
+    /* Selectbox dropdown styling */
+    .stSelectbox div[data-baseweb="select"] > div {
+        font-size: 18px !important;
+    }
+
+    /* Tooltip styling */
+    .selectbox-with-tooltip {
+        position: relative;
+        display: inline-block;
+    }
+
+    .info-icon {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background-color: #1f77b4;
+        color: white;
+        text-align: center;
+        line-height: 20px;
+        font-size: 14px;
+        margin-left: 8px;
+        cursor: help;
+        position: relative;
+        vertical-align: middle;
+        bottom: 125%;
+        left: -0.5%;
+    }
+
+    .info-icon .tooltip {
+        visibility: hidden;
+        line-height: 18px;
+        width: 300px;
+        background-color: #2c3e50;
+        color: #fff;
+        text-align: left;
+        border-radius: 8px;
+        padding: 15px;
+        position: absolute;
+        z-index: 999;
+        bottom: 125%;
+        left: 50%;
+        margin-left: -150px;
+        opacity: 0;
+        transition: opacity 0.3s;
+        font-size: 14px;
+        font-weight: 400;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+    }
+
+    .info-icon .tooltip::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        margin-left: -6px;
+        border-width: 6px;
+        border-style: solid;
+        border-color: #2c3e50 transparent transparent transparent;
+    }
+
+    .info-icon:hover .tooltip {
+        visibility: visible;
+        opacity: 1;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+
+
+
+# Custom labels to be used for number entry and slider
+st.markdown("""
+    <style>
+    .number_and_slider_label {
+        font-size: 20px;
+        font-weight: 600;
+        color: #1f77b4;
+        margin-bottom: 8px;
+    }
+
+    .help-icon {
+        display: inline-block;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        border: 2px solid #1f77b4;
+        color: #1f77b4;
+        text-align: center;
+        line-height: 18px;
+        font-size: 15px;
+        font-weight: bold;
+        margin-left: 8px;
+        cursor: help;
+        position: relative;
+        vertical-align: middle;
+    }
+
+    .help-icon .helptext {
+        visibility: hidden;
+        width: 340px;
+        background-color: #1f77b4;
+        color: white;
+        text-align: left;
+        border-radius: 8px;
+        padding: 15px;
+        position: absolute;
+        z-index: 999;
+        bottom: 140%;
+        left: 50%;
+        margin-left: -170px;
+        opacity: 0;
+        transition: opacity 0.3s;
+        font-size: 14px;
+        font-weight: normal;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        line-height: 1.6;
+    }
+
+    .help-icon .helptext::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        margin-left: -8px;
+        border-width: 8px;
+        border-style: solid;
+        border-color: #1f77b4 transparent transparent transparent;
+    }
+
+    .help-icon:hover .helptext {
+        visibility: visible;
+        opacity: 1;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+
+
+# Custom labels to be used for number entry and slider
+st.markdown("""
+    <style>
+    .custom_label2 {
+        font-size: 15px;
+        font-weight: 600;
+        color: #1f77b4;
+        margin-bottom: 8px;
+    }
+
+    .help-icon {
+        display: inline-block;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        border: 2px solid #1f77b4;
+        color: #1f77b4;
+        text-align: center;
+        line-height: 18px;
+        font-size: 15px;
+        font-weight: bold;
+        margin-left: 8px;
+        cursor: help;
+        position: relative;
+        vertical-align: middle;
+    }
+
+    .help-icon .helptext {
+        visibility: hidden;
+        width: 340px;
+        background-color: #1f77b4;
+        color: white;
+        text-align: left;
+        border-radius: 8px;
+        padding: 15px;
+        position: absolute;
+        z-index: 999;
+        bottom: 140%;
+        left: 50%;
+        margin-left: -170px;
+        opacity: 0;
+        transition: opacity 0.3s;
+        font-size: 14px;
+        font-weight: normal;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        line-height: 1.6;
+    }
+
+    .help-icon .helptext::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        margin-left: -8px;
+        border-width: 8px;
+        border-style: solid;
+        border-color: #1f77b4 transparent transparent transparent;
+    }
+
+    .help-icon:hover .helptext {
+        visibility: visible;
+        opacity: 1;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+
 fit_tab, assign_tab, saved_tab = st.tabs(
-    ["Fit contamination", "Assign contamination manually", "Saved parameter sets"]
+    ["Fit Contamination Using Data", "Assign Contamination Manually", "Saved Parameter Sets"]
 )
 
 # Fit contamination tab
@@ -142,7 +697,7 @@ with fit_tab:
     pis_df = None
     pis_preview = _load_preview(slippage_state["paths"].pis_data)
     if pis_preview is not None:
-        st.dataframe(pis_preview, use_container_width=True)
+        st.dataframe(pis_preview, width='stretch')
         try:
             pis_df = pd.read_csv(slippage_state["paths"].pis_data)
         except Exception:  # pylint: disable=broad-except
@@ -231,7 +786,7 @@ with fit_tab:
         metrics[2].metric("Theta", f"{fit_to_show.theta}")
         st.altair_chart(
             _beta_chart(fit_to_show.alpha, fit_to_show.beta, "Beta-Binomial Probability Density Function"),
-            use_container_width=True,
+            width='stretch',
         )
 
     st.markdown("**Save fitted parameters**")
@@ -257,55 +812,119 @@ with fit_tab:
 
 # Manual assignment tab
 with assign_tab:
-    st.subheader("Assign contamination parameters manually")
+
+    # Custom label with tooltip
+    st.markdown("""
+        <div style="margin-bottom: 0.5rem;">
+            <span style="font-size: 20px; font-weight: 600; color: #1f77b4;">
+                Choose How to Assign Contamination
+                <span class="info-icon">
+                    ?
+                    <span class="tooltip"; line-height: 1>
+                        <p style='margin-bottom: 12px;'>
+                             Options Include
+                         </p>
+                         <p style='margin-bottom: 0;'>
+                             <strong>Specify Beta-Binomial Parameters (alpha and beta):</strong> Specify alpha and beta parameters directly<br><br>
+                        <strong>Specify Contamination Rate (at lowest unit level):</strong> Specify contamination rate as a percentage
+                         </p>
+                    </span>
+                </span>
+            </span>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Selectbox without label (since we added custom one above)
     mode = st.selectbox(
-        "Choose assignment mode",
-        ["Beta-binomial (alpha/beta)", "Plant-unit contamination rate"],
+        "mode_select",  # Hidden label
+        ["Specify Beta-Binomial Parameters (alpha and beta)", "Specify Contamination Rate (at lowest unit level)"],
         index=1,
+        label_visibility="collapsed"  # Hide the default label
     )
+
     assigned_state = st.session_state.get(
         "page2_assigned_fit",
         {"alpha": FALLBACK_ALPHA, "beta": FALLBACK_BETA, "theta": FALLBACK_THETA, "sample_unit_rate": 0.01},
     )
 
-    if mode == "Plant-unit contamination rate":
-        st.caption("Set a target mean contamination rate at the plant/sample-unit level and tune width via concentration.")
+    if mode == "Specify Contamination Rate (at lowest unit level)":
+        #st.caption("Set a target mean contamination rate at the plant/sample-unit level and tune width via concentration.")
         default_conc = max(
             assigned_state.get("alpha", FALLBACK_ALPHA) + assigned_state.get("beta", FALLBACK_BETA),
             1e-6,
         )
         stored_mean = st.session_state.get("manual_mean_rate", float(assigned_state.get("sample_unit_rate", 0.01)))
         pct_default = float(stored_mean) * 100.0
+
+        st.write("")
+        # Numerical Input Specification for Contamination Rate
+        st.markdown("""
+            <div class="number_and_slider_label">
+                Average Contamination Rate (0%-100%)
+                <span class="help-icon">
+                    ?
+                    <span class="helptext">
+                        Enter the percentage of plants that are typically contaminated in your samples.
+                    </span>
+                </span>
+            </div>
+        """, unsafe_allow_html=True)
+
         pct_input = st.number_input(
-            "Average percentage of plants contaminated (mean) [%]",
+            "pct",
             min_value=0.1,
             max_value=99.9,
             value=pct_default,
             step=0.05,
-            format="%.2f",
+            format="%.1f",
             key="manual_mean_input",
+            label_visibility="collapsed"
         )
+
+
         sample_unit_rate = pct_input / 100.0
         stored_conc = st.session_state.get(
             "manual_concentration",
             float(max(2.0, assigned_state.get("alpha", FALLBACK_ALPHA) + assigned_state.get("beta", FALLBACK_BETA))),
         )
-        concentration = st.slider(
-            "Strength-of-belief/confidence in the average plant contamination rate (concentration)",
-            min_value=2.0,
-            max_value=500.0,
+
+        st.write("")
+        # Slider for Confidence
+        st.markdown("""
+                    <div class="number_and_slider_label">
+                        % Confidence in Specified Contamination Rate
+                        <span class="help-icon">
+                            ?
+                            <span class="helptext">
+                                (0% = No Confidence, 100% = Full Confidence)
+                            </span>
+                        </span>
+                    </div>
+                """, unsafe_allow_html=True)
+
+        concentration_input = st.slider(
+            "concentration",
+            min_value=0.0,
+            max_value=100.0,
             value=float(stored_conc),
-            step=1.0,
+            step=0.5,
             key="manual_concentration_slider",
+            label_visibility="collapsed"
         )
-        mean_clamped = min(max(sample_unit_rate, 0.001), 0.999)
-        adj_alpha = max(1.001, mean_clamped * concentration)
-        adj_beta = max(1.001, (1 - mean_clamped) * concentration)
+
+        n_trials = 100
+        params = calculate_beta_binomial_params(sample_unit_rate, concentration_input, n_trials=n_trials)
+
+        adj_alpha = params['alpha']
+        adj_beta = params['beta']
+        variance = params['variance']
+        mean_clamped = params['mean_clamped']
+        concentration = params['concentration']
+        lb = params['lower_bound']
+        ub = params['upper_bound']
+        mean = params['mean']
+
         theta_val = float("inf")
-        # Beta-Binomial variance = n * p * (1 - p) * (1 + (n - 1) * rho) where rho = 1/(alpha+beta+1)
-        rho = 1.0 / (concentration + 1.0)
-        n_trials = 100.0
-        variance = n_trials * mean_clamped * (1 - mean_clamped) * (1 + (n_trials - 1) * rho)
 
         st.session_state["page2_assigned_fit"] = {
             "alpha": adj_alpha,
@@ -316,18 +935,78 @@ with assign_tab:
         st.session_state["manual_concentration"] = concentration
         st.session_state["manual_mean_rate"] = sample_unit_rate
 
+
+        st.write("Contamination Summary")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.markdown(f"""
+                <div class="metric-container">
+                    <p style="font-size: 20px; font-weight: 500; color: #1f77b4; margin: 0; line-height: 0.5;">
+                        Sample Size
+                        <span class="info-icon">
+                            ?
+                            <span class="tooltip">Total number of plants sampled for contamination testing</span>
+                        </span>
+                    </p>
+                    <p style="font-size: 20px; font-weight: 500; color: #2c3e50; margin: 10px 0 0 0;">{n_trials} plants</p>
+                </div>
+            """, unsafe_allow_html=True)
+        with col2:
+            st.markdown(f"""
+                <div class="metric-container">
+                    <p style="font-size: 20px; font-weight: 500; color: #1f77b4; margin: 0; line-height: 0.5">
+                        Expected Average
+                        <span class="info-icon">
+                            ?
+                            <span class="tooltip">Average number of contaminated plants you can expect to find in the sample based on your contamination rate</span>
+                        </span>
+                    </p>
+                    <p style="font-size: 20px; font-weight: 500; color: #2c3e50; margin: 10px 0 0 0;">{mean:.1f}</p>
+                </div>
+            """, unsafe_allow_html=True)
+
+        with col3:
+            st.markdown(f"""
+                <div class="metric-container">
+                    <p style="font-size: 20px; font-weight: 500; color: #1f77b4; margin: 0; line-height: 0.5">
+                        95% Range
+                        <span class="info-icon">
+                            ?
+                            <span class="tooltip">The typical range where 95% of observed contaminated plant counts will fall. This accounts for natural variability in the sampling process.</span>
+                        </span>
+                    </p>
+                    <p style="font-size: 20px; font-weight: 500; color: #2c3e50; margin: 10px 0 0 0;">{lb:.1f} - {ub:.1f}</p>
+                </div>
+            """, unsafe_allow_html=True)
+
+        st.write("")
+        st.write("")
         st.altair_chart(
             _beta_chart(adj_alpha, adj_beta, "Beta-Binomial Probability Density Function"),
-            use_container_width=True,
+            width='stretch',
         )
-        st.metric("Implied beta-binomial variance (n=100)", f"{variance:.4f}")
-        st.caption(
-            "Adjusting the plant-unit rate shifts the mean; changing concentration adjusts the distribution width."
-        )
+
+        st.write("")
+        st.write("")
+        st.markdown("""
+                            <div class="number_and_slider_label">
+                                Parameter Set Name
+                                <span class="help-icon">
+                                    ?
+                                    <span class="helptext">
+                                        File name to appear in the "Save Parameter Sets" associated with these set parameters
+                                    </span>
+                                </span>
+                            </div>
+                        """, unsafe_allow_html=True)
+
         manual_name = st.text_input(
             "Parameter set name for manual values",
             value=st.session_state.get("last_saved_param_set", ""),
             key="manual_save_name_sample_rate",
+            label_visibility="collapsed"
         )
         if st.button("Save current parameters", key="save_manual_params_sample_rate"):
             saved_name = _save_param_set(
@@ -339,7 +1018,7 @@ with assign_tab:
             )
             st.success(
                 f"Saved '{saved_name}' with alpha={adj_alpha:.6f}, beta={adj_beta:.6f}, "
-                f"theta={theta_val}, sample unit rate={sample_unit_rate}"
+                f" and sample unit rate={sample_unit_rate}"
             )
     else:
         st.caption("Adjust alpha/beta directly. Theta is fixed to infinity by default.")
@@ -373,7 +1052,7 @@ with assign_tab:
 
         st.altair_chart(
             _beta_chart(alpha_val, beta_val, "Beta-Binomial Probability Density Function"),
-            use_container_width=True,
+            width='stretch',
         )
         manual_name = st.text_input(
             "Parameter set name for manual values",
@@ -419,7 +1098,7 @@ with saved_tab:
                 st.metric("Plant unit contamination rate", f"{sample_unit_rate}")
             st.altair_chart(
                 _beta_chart(alpha, beta, f"Beta-binomial PDF for {sel}"),
-                use_container_width=True,
+                width='stretch',
             )
             st.info("Sets are stored in tmp/contamination/contamination_parameter_sets.json.")
 
