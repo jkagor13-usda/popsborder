@@ -1410,7 +1410,7 @@ def normalize_rbs_variables_against_consignment(
     return updated_vars, mapping, unmapped
 
 
-def fuzzy_match_attribute(original: str, canonical_attrs: Set[str]) -> str | None:
+def fuzzy_match_attribute(original: str, canonical_attrs: Set[str]) -> Optional[str]:
     """
     Attempt fuzzy matching using substring/word matching.
 
