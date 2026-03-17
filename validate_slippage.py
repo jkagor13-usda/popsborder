@@ -125,7 +125,9 @@ def main():
     #############################################################
 
     ## Generate clarke inputs via input data
-    inputs_by_quantity = gen_clarke_model_inputs(df_pis_train_data)
+    #inputs_by_quantity = gen_clarke_model_inputs(df_pis_train_data)
+
+    inputs_by_quantity = gen_clarke_model_inputs(df_pis_test_data)
 
     # Run clarke model
     res = {}
@@ -279,7 +281,7 @@ def main():
 
     # Run one scenario analysis simulation
     detailed_bool = True
-    num_replications = 2
+    num_replications = 50
     scenario_results_raw = run_scenarios(
         config=config,
         scenario_table=scenarios,
@@ -296,20 +298,20 @@ def main():
     scenarios = ["Validation"]
     # Specify fields you want to produce action rate validation on
     sets_of_val_fields = [
-        #["COUNTRY_OF_ORIGIN_NAME", "PROPAGATIVE_MATERIAL_TYPE"],
-        #["COUNTRY_OF_ORIGIN_NAME"],
-        #["PROPAGATIVE_MATERIAL_TYPE"],
+        ["COUNTRY_OF_ORIGIN_NAME", "PROPAGATIVE_MATERIAL_TYPE"],
+        ["COUNTRY_OF_ORIGIN_NAME"],
+        ["PROPAGATIVE_MATERIAL_TYPE"],
         [],
     ]
     run_ts = datetime.now().strftime("%m_%d_%Y_%H_%M_%S")
     for val_group_fields in sets_of_val_fields:
         temp_start = time.time()
         if len(val_group_fields) == 0:
-            output_dir = DefaultPaths().validation_output_dir() / f"no_clustering_overall_{run_ts}"
+            output_dir = DefaultPaths().validation_output_dir() / f"test_for_Clark_no_clustering_overall_{run_ts}"
             output_dir.mkdir(exist_ok=True)
         else:
             folder_name = '_'.join(val_group_fields)
-            output_dir = DefaultPaths().validation_output_dir() / f"no_clustering_{folder_name}_{run_ts}"
+            output_dir = DefaultPaths().validation_output_dir() / f"test_for_Clark_no_clustering_{folder_name}_{run_ts}"
             output_dir.mkdir(exist_ok=True)
 
         # List available simulation runs

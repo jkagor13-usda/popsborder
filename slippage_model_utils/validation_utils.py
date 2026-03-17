@@ -156,6 +156,7 @@ def calculate_action_rates_by_scenario(
             unique_inspections = ground_truth['inspection_number'].unique()
 
             replication_action_rates = []
+            trials_per_replication = []
 
             prop = 0
             increment = 0.25
@@ -169,6 +170,7 @@ def calculate_action_rates_by_scenario(
                 sim_file_path = base_path / scenario / f"rep_{rep}" / output_file
                 sim_data = pd.read_csv(sim_file_path)
                 replication_action_rates.append(sim_data['action'].mean())
+                trials_per_replication.append(sim_data.shape[0])
 
             # Calculate statistics across replications
             valid_rates = [r for r in replication_action_rates if not np.isnan(r)]
@@ -178,6 +180,13 @@ def calculate_action_rates_by_scenario(
                 # Calculate mean and std
                 mean_rate = np.mean(valid_rates)
                 std_rate = np.std(valid_rates, ddof=1)  # Use sample std deviation
+
+                # Initialize all proportion/binomial test results to nan
+                # (will be populated if data is suitable for these tests)
+                prop_z_statistically_same = np.nan
+                prop_z_p_value = np.nan
+                binomial_statistically_same = np.nan
+                binomial_p_value = np.nan
 
                 # Check if rates are essentially identical (no variance)
                 if std_rate < 1e-10:  # Very small threshold for numerical stability
@@ -200,29 +209,90 @@ def calculate_action_rates_by_scenario(
                 # Consider practically equivalent if within threshold
                 practically_equivalent = 1 if (absolute_diff < practical_equivalence_threshold) else 0
 
+                # ============================================
+                # APPROACH 2: BINOMIAL/PROPORTION TEST (for rate/proportion data)
+                # ============================================
+
+                # This approach is more appropriate if:
+                # - valid_rates are proportions (values between 0 and 1)
+                # - They represent success rates from binary outcomes
+
+                # Determine if we should use binomial approach based on data
+                is_proportion_data = all(0 <= rate <= 1 for rate in valid_rates)
+
+                if is_proportion_data:
+                    # METHOD 2A: One-sample proportion test (z-test for proportions)
+                    # This tests if the mean proportion differs from the expected proportion
+
+                    # Calculate pooled proportion and standard error
+                    pooled_prop = mean_rate
+                    expected_prop = gt_action_rate
+
+                    # Standard error for proportion
+                    se_prop = np.sqrt(expected_prop * (1 - expected_prop) / ground_truth.shape[0])
+
+                    if se_prop < 1e-10:  # Handle edge cases (0 or 1)
+                        if abs(pooled_prop - expected_prop) < 1e-10:
+                            prop_z_statistically_same = 1
+                            prop_z_p_value = 1.0
+                        else:
+                            prop_z_statistically_same = 0
+                            prop_z_p_value = 0.0
+                    else:
+                        # Z-statistic for proportion test
+                        z_statistic = (pooled_prop - expected_prop) / se_prop
+                        # Two-sided p-value
+                        prop_z_p_value = 2 * (1 - stats.norm.cdf(abs(z_statistic)))
+                        prop_z_statistically_same = 1 if prop_z_p_value > 0.05 else 0
+
+                    # METHOD 2B: Exact binomial test (if you have count data)
+                    # This is useful if each rate comes from a fixed number of trials
+                    # Example: if each valid_rate = successes/n_trials
+
+                    total_successes = sum(rate * n_trials for rate, n_trials
+                                         in zip(valid_rates, trials_per_replication))
+                    total_trials = sum(trials_per_replication)
+
+                    # Perform exact binomial test
+                    binomial_result = stats.binomtest(
+                        k=int(round(total_successes)),  # Total number of 1's across all replications
+                        n=total_trials,  # Total number of trials (rows) across all replications
+                        p=gt_action_rate,  # Expected proportion
+                        alternative='two-sided'
+                    )
+
+                    binomial_p_value = binomial_result.pvalue
+                    binomial_statistically_same = 1 if binomial_p_value > 0.05 else 0
+
             elif len(valid_rates) == 1:
-                # Can't perform t-test with only one observation
-                # Check if the single value matches ground truth
-                if abs(valid_rates[0] - gt_action_rate) < 1e-10:
-                    statistically_same = 1
-                    p_value = 1.0
+                # Can't perform statistical tests with only one observation
+                single_rate = valid_rates[0]
 
-                    # Consider practically equivalent if within threshold
-                    absolute_diff = abs(valid_rates[0] - gt_action_rate)
-                    # Consider practically equivalent if within threshold
-                    practically_equivalent = 1 if (absolute_diff < 0.01) else 0
+                # Check absolute difference
+                absolute_diff = abs(single_rate - gt_action_rate)
 
-                else:
-                    statistically_same = np.nan  # Insufficient data for reliable test
-                    p_value = np.nan
-                    practically_equivalent = np.nan
-                    absolute_diff = np.nan
+                # For single observation, we can only assess practical equivalence
+                practically_equivalent = 1 if (absolute_diff < practical_equivalence_threshold) else 0
+
+                # No statistical tests possible with n=1
+                statistically_same = np.nan  # Insufficient data for reliable test
+                p_value = np.nan
+
+                # Proportion tests also not possible with n=1
+                prop_z_statistically_same = np.nan
+                prop_z_p_value = np.nan
+                binomial_statistically_same = np.nan
+                binomial_p_value = np.nan
             else:
                 # No valid rates
                 statistically_same = np.nan
                 p_value = np.nan
                 practically_equivalent = np.nan
                 absolute_diff = np.nan
+                prop_z_statistically_same = np.nan
+                prop_z_p_value = np.nan
+                binomial_statistically_same = np.nan
+                binomial_p_value = np.nan
 
             result_row = {
                 'ground_truth_action_rate': gt_action_rate,
@@ -234,8 +304,13 @@ def calculate_action_rates_by_scenario(
                 'p_value': p_value,
                 'practically_equivalent': practically_equivalent,
                 'practical_threshold': practical_equivalence_threshold,
-                'action_rate_abs_diff': absolute_diff
+                'action_rate_abs_diff': absolute_diff,
+                'prop_z_statistically_same': prop_z_statistically_same,
+                'prop_z_p_value': prop_z_p_value,
+                'binomial_statistically_same': binomial_statistically_same,
+                'binomial_p_value': binomial_p_value
             }
+
 
             # Add individual replication rates (starting from rep_0)
             for rep_idx, rate in enumerate(replication_action_rates):
@@ -298,6 +373,7 @@ def calculate_action_rates_by_scenario(
 
                 # Initialize list to store action rates from each replication
                 replication_action_rates = []
+                trials_per_replication = []
 
                 ###################################################################################
                 ###################################################################################
@@ -317,6 +393,8 @@ def calculate_action_rates_by_scenario(
                     sim_file_path = base_path / scenario / f"rep_{rep}" / output_file
                     pis_file_path = base_path / scenario / f"rep_{rep}" / 'synthetic_pis_data.csv'
 
+
+
                     try:
                         # Load simulation data (consider specifying dtypes if known)
                         sim_data = pd.read_csv(sim_file_path)
@@ -331,6 +409,7 @@ def calculate_action_rates_by_scenario(
                         if len(sim_subset) == 0 or len(sim_pis_subset) == 0:
                             warnings.warn(f"No matching inspections in rep {rep}")
                             replication_action_rates.append(np.nan)
+                            trials_per_replication.append(np.nan)
                             continue
 
                         # Merge filtered data (much smaller!)
@@ -359,6 +438,7 @@ def calculate_action_rates_by_scenario(
                         if 'action' not in merged_unique.columns:
                             warnings.warn(f"Missing 'action' column in rep {rep}")
                             replication_action_rates.append(np.nan)
+                            trials_per_replication.append(np.nan)
                             continue
 
                         # Check counts
@@ -377,9 +457,11 @@ def calculate_action_rates_by_scenario(
                         if len(filtered_data) > 0:
                             rep_action_rate = filtered_data['action'].mean()
                             replication_action_rates.append(rep_action_rate)
+                            trials_per_replication.append(filtered_data.shape[0])
                         else:
                             warnings.warn(f"No data matching combination in rep {rep}")
                             replication_action_rates.append(np.nan)
+                            trials_per_replication.append(np.nan)
 
                     except FileNotFoundError:
                         warnings.warn(f"File not found: {sim_file_path}")
@@ -394,116 +476,6 @@ def calculate_action_rates_by_scenario(
 
 
 
-
-
-
-
-
-
-
-
-
-
-                ###################################################################################
-                # # Pre-compute outside the loop
-                # unique_inspections_set = set(unique_inspections)  # O(1) lookup instead of O(n)
-                #
-                # # Process each replication
-                # prop = 0
-                # increment = 0.25
-                # for rep in range(num_replications):
-                #     if rep == int(prop*num_replications):
-                #         print(f'      Analyzing simulation replications {prop*100}% complete ({rep} out of {num_replications})')
-                #         prop+=increment
-                #     sim_file_path = base_path / scenario / f"rep_{rep}" / output_file
-                #
-                #     try:
-                #         # Load simulation data
-                #         sim_data = pd.read_csv(sim_file_path)
-                #         sim_pis_data = pd.read_csv(base_path / scenario / f"rep_{rep}" / 'synthetic_pis_data.csv')
-                #         sim_pis_data.columns = sim_pis_data.columns.str.lower()
-                #
-                #         # OPTIMIZATION 1: Filter BEFORE merging (reduces merge size dramatically)
-                #         sim_subset = sim_data[sim_data['inspection_number'].isin(unique_inspections)]
-                #         sim_pis_subset = sim_pis_data[sim_pis_data['inspection_number'].isin(unique_inspections)]
-                #
-                #         if len(sim_subset) == 0 or len(sim_pis_subset) == 0:
-                #             warnings.warn(f"No matching inspections in {sim_file_path}")
-                #             replication_action_rates.append(np.nan)
-                #             continue
-                #
-                #         # OPTIMIZATION 2: Merge only filtered data
-                #         merged = sim_subset.merge(
-                #             sim_pis_subset,
-                #             left_on='risk_unit_id',
-                #             right_on='risk_unit',
-                #             how='inner',
-                #             suffixes=('', '_pis')  # Use empty suffix for left, avoid _x
-                #         )
-                #
-                #         # OPTIMIZATION 3: Single rename operation
-                #         if any(col.endswith('_x') for col in merged.columns):
-                #             rename_dict = {col: col.replace('_x', '') for col in merged.columns if col.endswith('_x')}
-                #             merged.rename(columns=rename_dict, inplace=True)
-                #
-                #         # OPTIMIZATION 4: Deduplicate
-                #         merged_unique = merged.drop_duplicates(subset=['risk_unit_id', 'comm_id'])
-                #
-                #         # Validate columns
-                #         if 'action' not in merged_unique.columns:
-                #             warnings.warn(f"Missing 'action' column in {sim_file_path}")
-                #             replication_action_rates.append(np.nan)
-                #             continue
-                #
-                #         # Validate counts
-                #         if len(merged_unique) != len(sim_subset):
-                #             warnings.warn(
-                #                 f"Row count mismatch: expected {len(sim_subset)}, got {len(merged_unique)}",
-                #                 UserWarning
-                #             )
-                #
-                #         # OPTIMIZATION 5: More efficient filtering
-                #         mask = pd.Series(True, index=merged_unique.index)
-                #         for col, val in combination_dict.items():
-                #             if col in merged_unique.columns:
-                #                 mask &= (merged_unique[col] == val)
-                #
-                #         filtered_data = merged_unique[mask]
-                #
-                #         if len(filtered_data) > 0:
-                #             rep_action_rate = filtered_data['action'].mean()
-                #             replication_action_rates.append(rep_action_rate)
-                #         else:
-                #             warnings.warn(f"No data matching combination in {sim_file_path}")
-                #             replication_action_rates.append(np.nan)
-                #
-                #     except FileNotFoundError:
-                #         warnings.warn(f"File not found: {sim_file_path}")
-                #         replication_action_rates.append(np.nan)
-                #     except Exception as e:
-                #         warnings.warn(f"Error processing {sim_file_path}: {str(e)}")
-                #         replication_action_rates.append(np.nan)
-
-
-
-
-
-
-                ###################################################################################
-
-
-
-
-
-
-
-
-
-
-
-
-
-
                 # Calculate statistics across replications
                 valid_rates = [r for r in replication_action_rates if not np.isnan(r)]
 
@@ -512,6 +484,13 @@ def calculate_action_rates_by_scenario(
                     # Calculate mean and std
                     mean_rate = np.mean(valid_rates)
                     std_rate = np.std(valid_rates, ddof=1)  # Use sample std deviation
+
+                    # Initialize all proportion/binomial test results to nan
+                    # (will be populated if data is suitable for these tests)
+                    prop_z_statistically_same = np.nan
+                    prop_z_p_value = np.nan
+                    binomial_statistically_same = np.nan
+                    binomial_p_value = np.nan
 
                     # Check if rates are essentially identical (no variance)
                     if std_rate < 1e-10:  # Very small threshold for numerical stability
@@ -534,31 +513,90 @@ def calculate_action_rates_by_scenario(
                     # Consider practically equivalent if within threshold
                     practically_equivalent = 1 if (absolute_diff < practical_equivalence_threshold) else 0
 
+                    # ============================================
+                    # APPROACH 2: BINOMIAL/PROPORTION TEST (for rate/proportion data)
+                    # ============================================
+
+                    # This approach is more appropriate if:
+                    # - valid_rates are proportions (values between 0 and 1)
+                    # - They represent success rates from binary outcomes
+
+                    # Determine if we should use binomial approach based on data
+                    is_proportion_data = all(0 <= rate <= 1 for rate in valid_rates)
+
+                    if is_proportion_data:
+                        # METHOD 2A: One-sample proportion test (z-test for proportions)
+                        # This tests if the mean proportion differs from the expected proportion
+
+                        # Calculate pooled proportion and standard error
+                        pooled_prop = mean_rate
+                        expected_prop = gt_action_rate
+
+                        # Standard error for proportion
+                        se_prop = np.sqrt(expected_prop * (1 - expected_prop) / ground_truth.shape[0])
+
+                        if se_prop < 1e-10:  # Handle edge cases (0 or 1)
+                            if abs(pooled_prop - expected_prop) < 1e-10:
+                                prop_z_statistically_same = 1
+                                prop_z_p_value = 1.0
+                            else:
+                                prop_z_statistically_same = 0
+                                prop_z_p_value = 0.0
+                        else:
+                            # Z-statistic for proportion test
+                            z_statistic = (pooled_prop - expected_prop) / se_prop
+                            # Two-sided p-value
+                            prop_z_p_value = 2 * (1 - stats.norm.cdf(abs(z_statistic)))
+                            prop_z_statistically_same = 1 if prop_z_p_value > 0.05 else 0
+
+                        # METHOD 2B: Exact binomial test (if you have count data)
+                        # This is useful if each rate comes from a fixed number of trials
+                        # Example: if each valid_rate = successes/n_trials
+
+                        total_successes = sum(rate * n_trials for rate, n_trials
+                                              in zip(valid_rates, trials_per_replication))
+                        total_trials = sum(trials_per_replication)
+
+                        # Perform exact binomial test
+                        binomial_result = stats.binomtest(
+                            k=int(round(total_successes)),  # Total number of 1's across all replications
+                            n=total_trials,  # Total number of trials (rows) across all replications
+                            p=gt_action_rate,  # Expected proportion
+                            alternative='two-sided'
+                        )
+
+                        binomial_p_value = binomial_result.pvalue
+                        binomial_statistically_same = 1 if binomial_p_value > 0.05 else 0
+
                 elif len(valid_rates) == 1:
-                    # Can't perform t-test with only one observation
-                    # Check if the single value matches ground truth
-                    if abs(valid_rates[0] - gt_action_rate) < 1e-10:
-                        statistically_same = 1
-                        p_value = 1.0
+                    # Can't perform statistical tests with only one observation
+                    single_rate = valid_rates[0]
 
-                        # Consider practically equivalent if within threshold
-                        absolute_diff = abs(valid_rates[0] - gt_action_rate)
-                        # Consider practically equivalent if within threshold
-                        practically_equivalent = 1 if (absolute_diff < 0.01) else 0
+                    # Check absolute difference
+                    absolute_diff = abs(single_rate - gt_action_rate)
 
-                    else:
-                        statistically_same = np.nan  # Insufficient data for reliable test
-                        p_value = np.nan
-                        practically_equivalent = np.nan
-                        absolute_diff = np.nan
+                    # For single observation, we can only assess practical equivalence
+                    practically_equivalent = 1 if (absolute_diff < practical_equivalence_threshold) else 0
+
+                    # No statistical tests possible with n=1
+                    statistically_same = np.nan  # Insufficient data for reliable test
+                    p_value = np.nan
+
+                    # Proportion tests also not possible with n=1
+                    prop_z_statistically_same = np.nan
+                    prop_z_p_value = np.nan
+                    binomial_statistically_same = np.nan
+                    binomial_p_value = np.nan
                 else:
                     # No valid rates
                     statistically_same = np.nan
                     p_value = np.nan
                     practically_equivalent = np.nan
                     absolute_diff = np.nan
-
-
+                    prop_z_statistically_same = np.nan
+                    prop_z_p_value = np.nan
+                    binomial_statistically_same = np.nan
+                    binomial_p_value = np.nan
 
                 result_row = {
                     **combination_dict,
@@ -571,7 +609,11 @@ def calculate_action_rates_by_scenario(
                     'p_value': p_value,
                     'practically_equivalent': practically_equivalent,
                     'practical_threshold': practical_equivalence_threshold,
-                    'action_rate_abs_diff': absolute_diff
+                    'action_rate_abs_diff': absolute_diff,
+                    'prop_z_statistically_same': prop_z_statistically_same,
+                    'prop_z_p_value': prop_z_p_value,
+                    'binomial_statistically_same': binomial_statistically_same,
+                    'binomial_p_value': binomial_p_value
                 }
 
                 # Add individual replication rates (starting from rep_0)
@@ -683,8 +725,10 @@ def summarize_statistical_comparison(
     --------
     Dict[str, Dict[str, pd.DataFrame]]
         Nested dictionary with scenario names as keys, each containing:
-        - 'overall_summary': DataFrame with overall statistics (both statistical and practical)
-        - 'statistically_different_combinations': DataFrame with combinations where rates differ statistically
+        - 'overall_summary': DataFrame with overall statistics (t-test, proportion z-test, binomial test, and practical)
+        - 'ttest_different_combinations': DataFrame with combinations where rates differ by t-test
+        - 'prop_z_different_combinations': DataFrame with combinations where rates differ by proportion z-test
+        - 'binomial_different_combinations': DataFrame with combinations where rates differ by binomial test
         - 'practically_different_combinations': DataFrame with combinations where rates differ practically
     """
     if output_dir is None:
@@ -707,14 +751,27 @@ def summarize_statistical_comparison(
         print(f"\nProcessing summary for {scenario}...")
 
         # Filter out rows where tests couldn't be performed (NaN values)
-        df_valid_stat = df[df['simulation_action_rate_statistically_same_as_ground_truth'].notna()].copy()
+        df_valid_ttest = df[df['simulation_action_rate_statistically_same_as_ground_truth'].notna()].copy()
+        df_valid_prop_z = df[df['prop_z_statistically_same'].notna()].copy()
+        df_valid_binomial = df[df['binomial_statistically_same'].notna()].copy()
         df_valid_pract = df[df['practically_equivalent'].notna()].copy()
 
-        # --- Calculate statistics for both tests ---
-        # Statistical test counts
-        stat_same_count = (df_valid_stat['simulation_action_rate_statistically_same_as_ground_truth'] == 1).sum()
-        stat_different_count = (df_valid_stat['simulation_action_rate_statistically_same_as_ground_truth'] == 0).sum()
-        stat_total_valid = stat_same_count + stat_different_count
+        # --- Calculate statistics for all tests ---
+
+        # T-test counts
+        ttest_same_count = (df_valid_ttest['simulation_action_rate_statistically_same_as_ground_truth'] == 1).sum()
+        ttest_different_count = (df_valid_ttest['simulation_action_rate_statistically_same_as_ground_truth'] == 0).sum()
+        ttest_total_valid = ttest_same_count + ttest_different_count
+
+        # Proportion z-test counts
+        prop_z_same_count = (df_valid_prop_z['prop_z_statistically_same'] == 1).sum()
+        prop_z_different_count = (df_valid_prop_z['prop_z_statistically_same'] == 0).sum()
+        prop_z_total_valid = prop_z_same_count + prop_z_different_count
+
+        # Binomial test counts
+        binomial_same_count = (df_valid_binomial['binomial_statistically_same'] == 1).sum()
+        binomial_different_count = (df_valid_binomial['binomial_statistically_same'] == 0).sum()
+        binomial_total_valid = binomial_same_count + binomial_different_count
 
         # Practical test counts
         pract_same_count = (df_valid_pract['practically_equivalent'] == 1).sum()
@@ -736,14 +793,34 @@ def summarize_statistical_comparison(
 
             return inspection_nums, rows
 
-        # Calculate metrics for statistical test
-        stat_same_mask = df_valid_stat['simulation_action_rate_statistically_same_as_ground_truth'] == 1
-        stat_different_mask = df_valid_stat['simulation_action_rate_statistically_same_as_ground_truth'] == 0
+        # Calculate metrics for t-test
+        ttest_same_mask = df_valid_ttest['simulation_action_rate_statistically_same_as_ground_truth'] == 1
+        ttest_different_mask = df_valid_ttest['simulation_action_rate_statistically_same_as_ground_truth'] == 0
 
-        stat_same_inspection_nums, stat_same_rows = calculate_metrics(df_valid_stat, stat_same_mask)
-        stat_different_inspection_nums, stat_different_rows = calculate_metrics(df_valid_stat, stat_different_mask)
-        stat_total_inspection_nums = stat_same_inspection_nums + stat_different_inspection_nums
-        stat_total_rows = stat_same_rows + stat_different_rows
+        ttest_same_inspection_nums, ttest_same_rows = calculate_metrics(df_valid_ttest, ttest_same_mask)
+        ttest_different_inspection_nums, ttest_different_rows = calculate_metrics(df_valid_ttest, ttest_different_mask)
+        ttest_total_inspection_nums = ttest_same_inspection_nums + ttest_different_inspection_nums
+        ttest_total_rows = ttest_same_rows + ttest_different_rows
+
+        # Calculate metrics for proportion z-test
+        prop_z_same_mask = df_valid_prop_z['prop_z_statistically_same'] == 1
+        prop_z_different_mask = df_valid_prop_z['prop_z_statistically_same'] == 0
+
+        prop_z_same_inspection_nums, prop_z_same_rows = calculate_metrics(df_valid_prop_z, prop_z_same_mask)
+        prop_z_different_inspection_nums, prop_z_different_rows = calculate_metrics(df_valid_prop_z,
+                                                                                    prop_z_different_mask)
+        prop_z_total_inspection_nums = prop_z_same_inspection_nums + prop_z_different_inspection_nums
+        prop_z_total_rows = prop_z_same_rows + prop_z_different_rows
+
+        # Calculate metrics for binomial test
+        binomial_same_mask = df_valid_binomial['binomial_statistically_same'] == 1
+        binomial_different_mask = df_valid_binomial['binomial_statistically_same'] == 0
+
+        binomial_same_inspection_nums, binomial_same_rows = calculate_metrics(df_valid_binomial, binomial_same_mask)
+        binomial_different_inspection_nums, binomial_different_rows = calculate_metrics(df_valid_binomial,
+                                                                                        binomial_different_mask)
+        binomial_total_inspection_nums = binomial_same_inspection_nums + binomial_different_inspection_nums
+        binomial_total_rows = binomial_same_rows + binomial_different_rows
 
         # Calculate metrics for practical test
         pract_same_mask = df_valid_pract['practically_equivalent'] == 1
@@ -754,44 +831,79 @@ def summarize_statistical_comparison(
         pract_total_inspection_nums = pract_same_inspection_nums + pract_different_inspection_nums
         pract_total_rows = pract_same_rows + pract_different_rows
 
-        # Create overall summary with both tests
+        # Create overall summary with all tests
         overall_summary = pd.DataFrame({
             'comparison_result': [
-                'Statistically Same',
-                'Statistically Different',
-                'Total Valid (Statistical)',
+                'T-Test Same',
+                'T-Test Different',
+                'Total Valid (T-Test)',
+                'Prop Z-Test Same',
+                'Prop Z-Test Different',
+                'Total Valid (Prop Z-Test)',
+                'Binomial Test Same',
+                'Binomial Test Different',
+                'Total Valid (Binomial Test)',
                 'Practically Same',
                 'Practically Different',
                 'Total Valid (Practical)'
             ],
             'num_combinations': [
-                stat_same_count,
-                stat_different_count,
-                stat_total_valid,
+                ttest_same_count,
+                ttest_different_count,
+                ttest_total_valid,
+                prop_z_same_count,
+                prop_z_different_count,
+                prop_z_total_valid,
+                binomial_same_count,
+                binomial_different_count,
+                binomial_total_valid,
                 pract_same_count,
                 pract_different_count,
                 pract_total_valid
             ],
             'percentage_of_combinations': [
-                (stat_same_count / stat_total_valid * 100) if stat_total_valid > 0 else 0,
-                (stat_different_count / stat_total_valid * 100) if stat_total_valid > 0 else 0,
+                (ttest_same_count / ttest_total_valid * 100) if ttest_total_valid > 0 else 0,
+                (ttest_different_count / ttest_total_valid * 100) if ttest_total_valid > 0 else 0,
+                100.0,
+                (prop_z_same_count / prop_z_total_valid * 100) if prop_z_total_valid > 0 else 0,
+                (prop_z_different_count / prop_z_total_valid * 100) if prop_z_total_valid > 0 else 0,
+                100.0,
+                (binomial_same_count / binomial_total_valid * 100) if binomial_total_valid > 0 else 0,
+                (binomial_different_count / binomial_total_valid * 100) if binomial_total_valid > 0 else 0,
                 100.0,
                 (pract_same_count / pract_total_valid * 100) if pract_total_valid > 0 else 0,
                 (pract_different_count / pract_total_valid * 100) if pract_total_valid > 0 else 0,
                 100.0
             ],
             'num_inspection_numbers': [
-                stat_same_inspection_nums,
-                stat_different_inspection_nums,
-                stat_total_inspection_nums,
+                ttest_same_inspection_nums,
+                ttest_different_inspection_nums,
+                ttest_total_inspection_nums,
+                prop_z_same_inspection_nums,
+                prop_z_different_inspection_nums,
+                prop_z_total_inspection_nums,
+                binomial_same_inspection_nums,
+                binomial_different_inspection_nums,
+                binomial_total_inspection_nums,
                 pract_same_inspection_nums,
                 pract_different_inspection_nums,
                 pract_total_inspection_nums
             ],
             'percentage_of_inspection_numbers': [
-                (stat_same_inspection_nums / stat_total_inspection_nums * 100) if stat_total_inspection_nums > 0 else 0,
                 (
-                            stat_different_inspection_nums / stat_total_inspection_nums * 100) if stat_total_inspection_nums > 0 else 0,
+                            ttest_same_inspection_nums / ttest_total_inspection_nums * 100) if ttest_total_inspection_nums > 0 else 0,
+                (
+                            ttest_different_inspection_nums / ttest_total_inspection_nums * 100) if ttest_total_inspection_nums > 0 else 0,
+                100.0,
+                (
+                            prop_z_same_inspection_nums / prop_z_total_inspection_nums * 100) if prop_z_total_inspection_nums > 0 else 0,
+                (
+                            prop_z_different_inspection_nums / prop_z_total_inspection_nums * 100) if prop_z_total_inspection_nums > 0 else 0,
+                100.0,
+                (
+                            binomial_same_inspection_nums / binomial_total_inspection_nums * 100) if binomial_total_inspection_nums > 0 else 0,
+                (
+                            binomial_different_inspection_nums / binomial_total_inspection_nums * 100) if binomial_total_inspection_nums > 0 else 0,
                 100.0,
                 (
                             pract_same_inspection_nums / pract_total_inspection_nums * 100) if pract_total_inspection_nums > 0 else 0,
@@ -800,16 +912,28 @@ def summarize_statistical_comparison(
                 100.0
             ],
             'num_ground_truth_rows': [
-                stat_same_rows,
-                stat_different_rows,
-                stat_total_rows,
+                ttest_same_rows,
+                ttest_different_rows,
+                ttest_total_rows,
+                prop_z_same_rows,
+                prop_z_different_rows,
+                prop_z_total_rows,
+                binomial_same_rows,
+                binomial_different_rows,
+                binomial_total_rows,
                 pract_same_rows,
                 pract_different_rows,
                 pract_total_rows
             ],
             'percentage_of_ground_truth_rows': [
-                (stat_same_rows / stat_total_rows * 100) if stat_total_rows > 0 else 0,
-                (stat_different_rows / stat_total_rows * 100) if stat_total_rows > 0 else 0,
+                (ttest_same_rows / ttest_total_rows * 100) if ttest_total_rows > 0 else 0,
+                (ttest_different_rows / ttest_total_rows * 100) if ttest_total_rows > 0 else 0,
+                100.0,
+                (prop_z_same_rows / prop_z_total_rows * 100) if prop_z_total_rows > 0 else 0,
+                (prop_z_different_rows / prop_z_total_rows * 100) if prop_z_total_rows > 0 else 0,
+                100.0,
+                (binomial_same_rows / binomial_total_rows * 100) if binomial_total_rows > 0 else 0,
+                (binomial_different_rows / binomial_total_rows * 100) if binomial_total_rows > 0 else 0,
                 100.0,
                 (pract_same_rows / pract_total_rows * 100) if pract_total_rows > 0 else 0,
                 (pract_different_rows / pract_total_rows * 100) if pract_total_rows > 0 else 0,
@@ -820,124 +944,175 @@ def summarize_statistical_comparison(
         # Add scenario information
         overall_summary.insert(0, 'scenario', scenario)
 
-        # --- Statistically Different Combinations ---
-        stat_different_combinations = df_valid_stat[
-            df_valid_stat['simulation_action_rate_statistically_same_as_ground_truth'] == 0
-            ].copy()
+        # --- Helper function to create different combinations dataframe ---
+        def create_different_combinations_df(df_valid, test_column, test_name):
+            different_combinations = df_valid[df_valid[test_column] == 0].copy()
 
-        # Add row count for each statistically different combination
-        stat_row_counts = []
-        for _, row in stat_different_combinations.iterrows():
-            filter_condition = pd.Series([True] * len(ground_truth))
-            for field in filter_fields_lower:
-                if field in ground_truth.columns:
-                    filter_condition &= (ground_truth[field] == row[field])
-            stat_row_counts.append(filter_condition.sum())
+            # Add row count for each different combination
+            row_counts = []
+            for _, row in different_combinations.iterrows():
+                filter_condition = pd.Series([True] * len(ground_truth))
+                for field in filter_fields_lower:
+                    if field in ground_truth.columns:
+                        filter_condition &= (ground_truth[field] == row[field])
+                row_counts.append(filter_condition.sum())
 
-        # Select relevant columns for statistically different combinations
-        stat_columns_to_include = (
-                filter_fields_lower +
-                [
-                    'ground_truth_action_rate',
-                    'mean_simulation_action_rate',
-                    'std_simulation_action_rate',
-                    'num_inspection_numbers',
-                    'num_valid_replications',
-                    'p_value',
-                    'action_rate_abs_diff',
-                    'practically_equivalent',
-                    'practical_threshold'
-                ]
+            # Determine which columns to include based on test type
+            if test_name == 'ttest':
+                columns_to_include = (
+                        filter_fields_lower +
+                        [
+                            'ground_truth_action_rate',
+                            'mean_simulation_action_rate',
+                            'std_simulation_action_rate',
+                            'num_inspection_numbers',
+                            'num_valid_replications',
+                            'p_value',
+                            'action_rate_abs_diff',
+                            'practically_equivalent',
+                            'practical_threshold',
+                            'prop_z_statistically_same',
+                            'prop_z_p_value',
+                            'binomial_statistically_same',
+                            'binomial_p_value'
+                        ]
+                )
+            elif test_name == 'prop_z':
+                columns_to_include = (
+                        filter_fields_lower +
+                        [
+                            'ground_truth_action_rate',
+                            'mean_simulation_action_rate',
+                            'std_simulation_action_rate',
+                            'num_inspection_numbers',
+                            'num_valid_replications',
+                            'prop_z_p_value',
+                            'action_rate_abs_diff',
+                            'practically_equivalent',
+                            'practical_threshold',
+                            'simulation_action_rate_statistically_same_as_ground_truth',
+                            'p_value',
+                            'binomial_statistically_same',
+                            'binomial_p_value'
+                        ]
+                )
+            elif test_name == 'binomial':
+                columns_to_include = (
+                        filter_fields_lower +
+                        [
+                            'ground_truth_action_rate',
+                            'mean_simulation_action_rate',
+                            'std_simulation_action_rate',
+                            'num_inspection_numbers',
+                            'num_valid_replications',
+                            'binomial_p_value',
+                            'action_rate_abs_diff',
+                            'practically_equivalent',
+                            'practical_threshold',
+                            'simulation_action_rate_statistically_same_as_ground_truth',
+                            'p_value',
+                            'prop_z_statistically_same',
+                            'prop_z_p_value'
+                        ]
+                )
+            else:  # practical
+                columns_to_include = (
+                        filter_fields_lower +
+                        [
+                            'ground_truth_action_rate',
+                            'mean_simulation_action_rate',
+                            'std_simulation_action_rate',
+                            'num_inspection_numbers',
+                            'num_valid_replications',
+                            'action_rate_abs_diff',
+                            'practical_threshold',
+                            'simulation_action_rate_statistically_same_as_ground_truth',
+                            'p_value',
+                            'prop_z_statistically_same',
+                            'prop_z_p_value',
+                            'binomial_statistically_same',
+                            'binomial_p_value'
+                        ]
+                )
+
+            columns_to_include = [col for col in columns_to_include if col in different_combinations.columns]
+            different_combinations = different_combinations[columns_to_include].copy()
+            different_combinations['num_ground_truth_rows'] = row_counts
+
+            # Calculate relative difference
+            different_combinations['relative_difference_pct'] = (
+                    (different_combinations['action_rate_abs_diff'] /
+                     different_combinations['ground_truth_action_rate']) * 100
+            )
+
+            # Sort by absolute difference
+            different_combinations = different_combinations.sort_values(
+                'action_rate_abs_diff',
+                ascending=False
+            ).reset_index(drop=True)
+
+            different_combinations.insert(0, 'scenario', scenario)
+
+            return different_combinations
+
+        # --- Create different combinations dataframes for each test ---
+        ttest_different_combinations = create_different_combinations_df(
+            df_valid_ttest,
+            'simulation_action_rate_statistically_same_as_ground_truth',
+            'ttest'
         )
 
-        stat_columns_to_include = [col for col in stat_columns_to_include if col in stat_different_combinations.columns]
-        stat_different_combinations = stat_different_combinations[stat_columns_to_include].copy()
-        stat_different_combinations['num_ground_truth_rows'] = stat_row_counts
-
-        # Calculate relative difference
-        stat_different_combinations['relative_difference_pct'] = (
-                (stat_different_combinations['action_rate_abs_diff'] /
-                 stat_different_combinations['ground_truth_action_rate']) * 100
+        prop_z_different_combinations = create_different_combinations_df(
+            df_valid_prop_z,
+            'prop_z_statistically_same',
+            'prop_z'
         )
 
-        # Sort by absolute difference
-        stat_different_combinations = stat_different_combinations.sort_values(
-            'action_rate_abs_diff',
-            ascending=False
-        ).reset_index(drop=True)
-
-        stat_different_combinations.insert(0, 'scenario', scenario)
-
-        # --- Practically Different Combinations ---
-        pract_different_combinations = df_valid_pract[
-            df_valid_pract['practically_equivalent'] == 0
-            ].copy()
-
-        # Add row count for each practically different combination
-        pract_row_counts = []
-        for _, row in pract_different_combinations.iterrows():
-            filter_condition = pd.Series([True] * len(ground_truth))
-            for field in filter_fields_lower:
-                if field in ground_truth.columns:
-                    filter_condition &= (ground_truth[field] == row[field])
-            pract_row_counts.append(filter_condition.sum())
-
-        # Select relevant columns for practically different combinations
-        pract_columns_to_include = (
-                filter_fields_lower +
-                [
-                    'ground_truth_action_rate',
-                    'mean_simulation_action_rate',
-                    'std_simulation_action_rate',
-                    'num_inspection_numbers',
-                    'num_valid_replications',
-                    'action_rate_abs_diff',
-                    'practical_threshold',
-                    'p_value',
-                    'simulation_action_rate_statistically_same_as_ground_truth'
-                ]
+        binomial_different_combinations = create_different_combinations_df(
+            df_valid_binomial,
+            'binomial_statistically_same',
+            'binomial'
         )
 
-        pract_columns_to_include = [col for col in pract_columns_to_include if
-                                    col in pract_different_combinations.columns]
-        pract_different_combinations = pract_different_combinations[pract_columns_to_include].copy()
-        pract_different_combinations['num_ground_truth_rows'] = pract_row_counts
-
-        # Calculate relative difference
-        pract_different_combinations['relative_difference_pct'] = (
-                (pract_different_combinations['action_rate_abs_diff'] /
-                 pract_different_combinations['ground_truth_action_rate']) * 100
+        pract_different_combinations = create_different_combinations_df(
+            df_valid_pract,
+            'practically_equivalent',
+            'practical'
         )
-
-        # Sort by absolute difference
-        pract_different_combinations = pract_different_combinations.sort_values(
-            'action_rate_abs_diff',
-            ascending=False
-        ).reset_index(drop=True)
-
-        pract_different_combinations.insert(0, 'scenario', scenario)
 
         # Store results
         all_summaries[scenario] = {
             'overall_summary': overall_summary,
-            'statistically_different_combinations': stat_different_combinations,
+            'ttest_different_combinations': ttest_different_combinations,
+            'prop_z_different_combinations': prop_z_different_combinations,
+            'binomial_different_combinations': binomial_different_combinations,
             'practically_different_combinations': pract_different_combinations
         }
 
         # Save to CSV
         overall_file = output_path / f"{scenario}_overall_summary.csv"
-        stat_different_file = output_path / f"{scenario}_statistically_different_combinations.csv"
+        ttest_different_file = output_path / f"{scenario}_ttest_different_combinations.csv"
+        prop_z_different_file = output_path / f"{scenario}_prop_z_different_combinations.csv"
+        binomial_different_file = output_path / f"{scenario}_binomial_different_combinations.csv"
         pract_different_file = output_path / f"{scenario}_practically_different_combinations.csv"
 
         overall_summary.to_csv(overall_file, index=False)
-        stat_different_combinations.to_csv(stat_different_file, index=False)
+        ttest_different_combinations.to_csv(ttest_different_file, index=False)
+        prop_z_different_combinations.to_csv(prop_z_different_file, index=False)
+        binomial_different_combinations.to_csv(binomial_different_file, index=False)
         pract_different_combinations.to_csv(pract_different_file, index=False)
 
         print(f"Saved overall summary to: {overall_file}")
-        print(f"Saved statistically different combinations to: {stat_different_file}")
+        print(f"Saved t-test different combinations to: {ttest_different_file}")
+        print(f"Saved proportion z-test different combinations to: {prop_z_different_file}")
+        print(f"Saved binomial test different combinations to: {binomial_different_file}")
         print(f"Saved practically different combinations to: {pract_different_file}")
         print(
-            f"  Statistical Test: {stat_same_count} same, {stat_different_count} different ({stat_different_rows:,} ground truth rows)")
+            f"  T-Test: {ttest_same_count} same, {ttest_different_count} different ({ttest_different_rows:,} ground truth rows)")
+        print(
+            f"  Prop Z-Test: {prop_z_same_count} same, {prop_z_different_count} different ({prop_z_different_rows:,} ground truth rows)")
+        print(
+            f"  Binomial Test: {binomial_same_count} same, {binomial_different_count} different ({binomial_different_rows:,} ground truth rows)")
         print(
             f"  Practical Test: {pract_same_count} same, {pract_different_count} different ({pract_different_rows:,} ground truth rows)")
 
@@ -952,14 +1127,32 @@ def summarize_statistical_comparison(
         combined_overall.to_csv(combined_overall_file, index=False)
         print(f"\nSaved combined overall summary to: {combined_overall_file}")
 
-        # Combine statistically different combinations
-        combined_stat_different = pd.concat(
-            [summary['statistically_different_combinations'] for summary in all_summaries.values()],
+        # Combine t-test different combinations
+        combined_ttest_different = pd.concat(
+            [summary['ttest_different_combinations'] for summary in all_summaries.values()],
             ignore_index=True
         )
-        combined_stat_different_file = output_path / "all_scenarios_statistically_different_combinations.csv"
-        combined_stat_different.to_csv(combined_stat_different_file, index=False)
-        print(f"Saved combined statistically different combinations to: {combined_stat_different_file}")
+        combined_ttest_different_file = output_path / "all_scenarios_ttest_different_combinations.csv"
+        combined_ttest_different.to_csv(combined_ttest_different_file, index=False)
+        print(f"Saved combined t-test different combinations to: {combined_ttest_different_file}")
+
+        # Combine prop z-test different combinations
+        combined_prop_z_different = pd.concat(
+            [summary['prop_z_different_combinations'] for summary in all_summaries.values()],
+            ignore_index=True
+        )
+        combined_prop_z_different_file = output_path / "all_scenarios_prop_z_different_combinations.csv"
+        combined_prop_z_different.to_csv(combined_prop_z_different_file, index=False)
+        print(f"Saved combined prop z-test different combinations to: {combined_prop_z_different_file}")
+
+        # Combine binomial test different combinations
+        combined_binomial_different = pd.concat(
+            [summary['binomial_different_combinations'] for summary in all_summaries.values()],
+            ignore_index=True
+        )
+        combined_binomial_different_file = output_path / "all_scenarios_binomial_different_combinations.csv"
+        combined_binomial_different.to_csv(combined_binomial_different_file, index=False)
+        print(f"Saved combined binomial test different combinations to: {combined_binomial_different_file}")
 
         # Combine practically different combinations
         combined_pract_different = pd.concat(
@@ -971,6 +1164,15 @@ def summarize_statistical_comparison(
         print(f"Saved combined practically different combinations to: {combined_pract_different_file}")
 
     return all_summaries
+
+
+
+
+
+
+
+
+
 
 
 
