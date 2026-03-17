@@ -157,10 +157,18 @@ def generate_synthetic_data(
     options: SyntheticOptions,
 ) -> pd.DataFrame:
     """Generate synthetic consignment data and persist it."""
-    if seed_path is None or not Path(seed_path).exists():
+    if seed_path is None:
+        raise FileNotFoundError("Seed data path was not provided.")
+    seed_path = Path(seed_path).resolve()
+    output_path = Path(output_path).resolve()
+    if not seed_path.exists():
         raise FileNotFoundError(f"Seed data not found at {seed_path}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    generator = SyntheticConsignmentDataGenerator(seed_path)
+    config = None
+    config_path = Path(DEFAULT_DATA_DIR / CONFIG_FILENAME).resolve()
+    if config_path.exists():
+        config = load_configuration(config_path)
+    generator = SyntheticConsignmentDataGenerator(config=config, input_data_file=seed_path)
     synth_data = generator.generate_from_input_data(
         n_consignments=options.n_samples,
         sampling_method=options.sampling_method,

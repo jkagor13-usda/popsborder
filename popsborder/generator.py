@@ -191,8 +191,19 @@ def apply_producer_grouping(input_data, producer_group_mapping_df, use_shortest_
     Returns:
         DataFrame with added 'producer_name_preprocessed' and 'producer_group' columns
     """
+    if input_data is None:
+        return None
+
     # Create a copy to avoid modifying original
     data = input_data.copy()
+
+    if 'PRODUCER_NAME' not in data.columns:
+        return data
+
+    if producer_group_mapping_df is None:
+        data['producer_name_preprocessed'] = data['PRODUCER_NAME'].apply(preprocess_producer_name)
+        data['producer_group'] = 'NO_GROUP_MATCH'
+        return data
 
     # Preprocess producer names in input data
     data['producer_name_preprocessed'] = data['PRODUCER_NAME'].apply(preprocess_producer_name)
@@ -233,7 +244,8 @@ class SyntheticConsignmentDataGenerator:
             use_shortest_name=True  # Set to False if wanting to use numeric grouping labels
         )
 
-        self.input_data  = construct_risk_units(config=config, data=self.input_data)
+        if config is not None and self.input_data is not None:
+            self.input_data = construct_risk_units(config=config, data=self.input_data)
         
         # Initialize random seed for reproducible results
         random.seed(42)

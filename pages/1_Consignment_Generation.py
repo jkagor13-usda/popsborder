@@ -243,7 +243,7 @@ with ingest_tab:
     pis_df: Optional[pd.DataFrame] = state.get("pis_data")
     rbs_df: Optional[pd.DataFrame] = state.get("pending_rbs_upload")
 
-    st.subheader("Upload RBS calculator")
+    st.subheader("Upload Actual Consignment Data")
     rbs_upload = st.file_uploader("RBS calculator CSV", type=["csv"], key="rbs_upload_ingest")
     if rbs_upload is not None:
         rbs_df = pd.read_csv(rbs_upload)
