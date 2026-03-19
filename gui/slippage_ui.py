@@ -7,6 +7,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .runtime_warnings import suppress_optional_dependency_warnings
+
+suppress_optional_dependency_warnings()
+
 import pandas as pd
 import streamlit as st
 

@@ -2,6 +2,10 @@
 
 from pathlib import Path
 
+from gui.runtime_warnings import suppress_optional_dependency_warnings
+
+suppress_optional_dependency_warnings()
+
 import pandas as pd
 import altair as alt
 import streamlit as st

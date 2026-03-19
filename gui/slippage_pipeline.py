@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+from .runtime_warnings import suppress_optional_dependency_warnings
+
+suppress_optional_dependency_warnings()
+
 import pandas as pd
 
 from popsborder.generator import SyntheticConsignmentDataGenerator, save_to_csv

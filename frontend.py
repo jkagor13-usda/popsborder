@@ -5,7 +5,10 @@ import streamlit as st
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
 from gui.page_styles import apply_shared_page_styles, render_page_intro
+from gui.runtime_warnings import suppress_optional_dependency_warnings
 from gui.slippage_ui import init_slippage_state
+
+suppress_optional_dependency_warnings()
 
 
 st.set_page_config(page_title="Home", layout="wide")

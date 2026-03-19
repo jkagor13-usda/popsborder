@@ -10,13 +10,22 @@ from typing import Optional
 
 import altair as alt
 import numpy as np
+from gui.runtime_warnings import suppress_optional_dependency_warnings
+
+suppress_optional_dependency_warnings()
+
 import pandas as pd
 import streamlit as st
 from scipy.stats import betabinom
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
-from gui.page_styles import apply_shared_page_styles, render_page_intro
+from gui.page_styles import (
+    apply_shared_page_styles,
+    render_labeled_help,
+    render_metric_card,
+    render_page_intro,
+)
 from gui.slippage_pipeline import ClarkeFit, create_default_paths, fit_contamination_distribution
 from gui.slippage_ui import get_slippage_state, set_paths
 
@@ -570,26 +579,10 @@ with fit_tab:
 # Manual assignment tab
 with assign_tab:
 
-    # Custom label with tooltip
-    st.markdown("""
-        <div style="margin-bottom: 0.5rem;">
-            <span style="font-size: 20px; font-weight: 600; color: #1f77b4;">
-                Choose How to Assign Contamination
-                <span class="info-icon">
-                    ?
-                    <span class="tooltip"; line-height: 1>
-                        <p style='margin-bottom: 12px;'>
-                             Options Include
-                         </p>
-                         <p style='margin-bottom: 0;'>
-                             <strong>Specify Beta-Binomial Parameters (alpha and beta):</strong> Specify alpha and beta parameters directly<br><br>
-                        <strong>Specify Contamination Rate (at lowest unit level):</strong> Specify contamination rate as a percentage
-                         </p>
-                    </span>
-                </span>
-            </span>
-        </div>
-    """, unsafe_allow_html=True)
+    render_labeled_help(
+        "Choose How to Assign Contamination",
+        "Options include specifying beta-binomial parameters directly or specifying a contamination rate at the lowest unit level.",
+    )
 
     # Selectbox without label (since we added custom one above)
     mode = st.selectbox(
@@ -614,18 +607,10 @@ with assign_tab:
         pct_default = float(stored_mean) * 100.0
 
         st.write("")
-        # Numerical Input Specification for Contamination Rate
-        st.markdown("""
-            <div class="number_and_slider_label">
-                Average Contamination Rate (0%-100%)
-                <span class="help-icon">
-                    ?
-                    <span class="helptext">
-                        Enter the percentage of plants that are typically contaminated in your samples.
-                    </span>
-                </span>
-            </div>
-        """, unsafe_allow_html=True)
+        render_labeled_help(
+            "Average Contamination Rate (0%-100%)",
+            "Enter the percentage of plants that are typically contaminated in your samples.",
+        )
 
         pct_input = st.number_input(
             "pct",
@@ -646,18 +631,10 @@ with assign_tab:
         )
 
         st.write("")
-        # Slider for Confidence
-        st.markdown("""
-                    <div class="number_and_slider_label">
-                        % Confidence in Specified Contamination Rate
-                        <span class="help-icon">
-                            ?
-                            <span class="helptext">
-                                (0% = No Confidence, 100% = Full Confidence)
-                            </span>
-                        </span>
-                    </div>
-                """, unsafe_allow_html=True)
+        render_labeled_help(
+            "% Confidence in Specified Contamination Rate",
+            "(0% = No Confidence, 100% = Full Confidence)",
+        )
 
         concentration_input = st.slider(
             "concentration",
@@ -698,45 +675,20 @@ with assign_tab:
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            st.markdown(f"""
-                <div class="metric-container">
-                    <p style="font-size: 20px; font-weight: 500; color: #1f77b4; margin: 0; line-height: 0.5;">
-                        Sample Size
-                        <span class="info-icon">
-                            ?
-                            <span class="tooltip">Total number of plants sampled for contamination testing</span>
-                        </span>
-                    </p>
-                    <p style="font-size: 20px; font-weight: 500; color: #2c3e50; margin: 10px 0 0 0;">{n_trials} plants</p>
-                </div>
-            """, unsafe_allow_html=True)
+            render_metric_card("Sample Size", f"{n_trials} plants", "Total number of plants sampled for contamination testing")
         with col2:
-            st.markdown(f"""
-                <div class="metric-container">
-                    <p style="font-size: 20px; font-weight: 500; color: #1f77b4; margin: 0; line-height: 0.5">
-                        Expected Average
-                        <span class="info-icon">
-                            ?
-                            <span class="tooltip">Average number of contaminated plants you can expect to find in the sample based on your contamination rate</span>
-                        </span>
-                    </p>
-                    <p style="font-size: 20px; font-weight: 500; color: #2c3e50; margin: 10px 0 0 0;">{mean:.1f}</p>
-                </div>
-            """, unsafe_allow_html=True)
+            render_metric_card(
+                "Expected Average",
+                f"{mean:.1f}",
+                "Average number of contaminated plants you can expect to find in the sample based on your contamination rate",
+            )
 
         with col3:
-            st.markdown(f"""
-                <div class="metric-container">
-                    <p style="font-size: 20px; font-weight: 500; color: #1f77b4; margin: 0; line-height: 0.5">
-                        95% Range
-                        <span class="info-icon">
-                            ?
-                            <span class="tooltip">The typical range where 95% of observed contaminated plant counts will fall. This accounts for natural variability in the sampling process.</span>
-                        </span>
-                    </p>
-                    <p style="font-size: 20px; font-weight: 500; color: #2c3e50; margin: 10px 0 0 0;">{lb:.1f} - {ub:.1f}</p>
-                </div>
-            """, unsafe_allow_html=True)
+            render_metric_card(
+                "95% Range",
+                f"{lb:.1f} - {ub:.1f}",
+                "The typical range where 95% of observed contaminated plant counts will fall. This accounts for natural variability in the sampling process.",
+            )
 
         st.write("")
         st.write("")
@@ -747,17 +699,10 @@ with assign_tab:
 
         st.write("")
         st.write("")
-        st.markdown("""
-                            <div class="number_and_slider_label">
-                                Parameter Set Name
-                                <span class="help-icon">
-                                    ?
-                                    <span class="helptext">
-                                        File name to appear in the "Save Parameter Sets" associated with these set parameters
-                                    </span>
-                                </span>
-                            </div>
-                        """, unsafe_allow_html=True)
+        render_labeled_help(
+            "Parameter Set Name",
+            'File name to appear in the "Save Parameter Sets" associated with these set parameters',
+        )
 
         manual_name = st.text_input(
             "Parameter set name for manual values",

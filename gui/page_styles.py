@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from html import escape
+
 import streamlit as st
 
 
@@ -22,7 +24,14 @@ _SHARED_PAGE_STYLES = """
     gap: 2px;
 }
 
-.stSelectbox label {
+.stSelectbox label,
+.stNumberInput label,
+.stTextInput label,
+.stSlider label,
+.stRadio label,
+.stTextArea label,
+.stFileUploader label,
+.stMultiSelect label {
     font-size: 20px !important;
     font-weight: 600 !important;
     color: #1f77b4 !important;
@@ -159,6 +168,29 @@ _SHARED_PAGE_STYLES = """
     visibility: visible;
     opacity: 1;
 }
+
+.metric-container {
+    border: 1px solid rgba(31, 119, 180, 0.18);
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(31,119,180,0.05), rgba(31,119,180,0.02));
+    padding: 14px 16px;
+    min-height: 96px;
+}
+
+.metric-title {
+    font-size: 20px;
+    font-weight: 500;
+    color: #1f77b4;
+    margin: 0;
+    line-height: 1.2;
+}
+
+.metric-value {
+    font-size: 20px;
+    font-weight: 500;
+    color: #2c3e50;
+    margin: 10px 0 0 0;
+}
 </style>
 """
 
@@ -174,6 +206,40 @@ def render_page_intro(description_html: str) -> None:
             <p style='margin-bottom: 12px;'>
                 {description_html}
             </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_labeled_help(label: str, help_text: str, *, compact: bool = False) -> None:
+    css_class = "custom_label2" if compact else "number_and_slider_label"
+    st.markdown(
+        f"""
+        <div class="{css_class}">
+            {escape(label)}
+            <span class="help-icon">
+                ?
+                <span class="helptext">{escape(help_text)}</span>
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_metric_card(title: str, value: str, help_text: str) -> None:
+    st.markdown(
+        f"""
+        <div class="metric-container">
+            <p class="metric-title">
+                {escape(title)}
+                <span class="info-icon">
+                    ?
+                    <span class="tooltip">{escape(help_text)}</span>
+                </span>
+            </p>
+            <p class="metric-value">{escape(value)}</p>
         </div>
         """,
         unsafe_allow_html=True,

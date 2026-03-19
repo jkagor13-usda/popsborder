@@ -9,6 +9,10 @@ from typing import List, Optional
 
 import altair as alt
 import numpy as np
+from gui.runtime_warnings import suppress_optional_dependency_warnings
+
+suppress_optional_dependency_warnings()
+
 import pandas as pd
 import streamlit as st
 
