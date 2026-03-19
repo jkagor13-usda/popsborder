@@ -212,18 +212,25 @@ def render_page_intro(description_html: str) -> None:
     )
 
 
-def render_labeled_help(label: str, help_text: str, *, compact: bool = False) -> None:
+def render_section_header(label: str, *, compact: bool = False) -> None:
     css_class = "custom_label2" if compact else "number_and_slider_label"
     st.markdown(
-        f"""
-        <div class="{css_class}">
-            {escape(label)}
-            <span class="help-icon">
-                ?
-                <span class="helptext">{escape(help_text)}</span>
-            </span>
-        </div>
-        """,
+        f'<div class="{css_class}">{escape(label)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_labeled_help(label: str, help_text: str = "", *, compact: bool = False) -> None:
+    css_class = "custom_label2" if compact else "number_and_slider_label"
+    help_html = ""
+    if help_text:
+        help_html = (
+            '<span class="help-icon">?'
+            f'<span class="helptext">{escape(help_text)}</span>'
+            "</span>"
+        )
+    st.markdown(
+        f'<div class="{css_class}">{escape(label)}{help_html}</div>',
         unsafe_allow_html=True,
     )
 
