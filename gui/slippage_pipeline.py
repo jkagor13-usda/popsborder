@@ -6,6 +6,7 @@ import copy
 import json
 import pickle
 import subprocess
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -134,6 +135,7 @@ class PipelineResult:
     pis_data: pd.DataFrame
     rbs_data: pd.DataFrame
     num_consignments: int
+    output_files: List[Path]
 
 
 def create_default_paths(base_dir: Path = DEFAULT_DATA_DIR) -> SlippagePaths:
@@ -551,9 +553,12 @@ def run_slippage_pipeline(
         result_columns=RESULT_COLUMNS,
     )
 
-    results_df.to_csv(output_dir / "pis_contamination_scenario_results.csv", index=False)
+    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    results_output_path = output_dir / f"pis_contamination_scenario_results_{run_timestamp}.csv"
+    results_df.to_csv(results_output_path, index=False)
 
     # Per-replication output
+    output_files: List[Path] = [results_output_path]
     if run_rows:
         runs_records = []
         for rep_idx, _details, result, cfg in run_rows:
@@ -565,7 +570,9 @@ def run_slippage_pipeline(
             if isinstance(cfg, dict) and "name" in cfg:
                 record.setdefault("name", cfg.get("name"))
             runs_records.append(record)
-        pd.DataFrame(runs_records).to_csv(output_dir / "all_runs.csv", index=False)
+        all_runs_output_path = output_dir / f"all_runs_{run_timestamp}.csv"
+        pd.DataFrame(runs_records).to_csv(all_runs_output_path, index=False)
+        output_files.append(all_runs_output_path)
 
     fit = ClarkeFit(alpha=0.0, beta=0.0, theta=float("inf"), raw_result={"source": "scenario_table"})
     total_cons = sum(consignment_counts) if consignment_counts else num_consignments_default
@@ -578,6 +585,7 @@ def run_slippage_pipeline(
         pis_data=pd.DataFrame(),
         rbs_data=pd.DataFrame(),
         num_consignments=total_cons,
+        output_files=output_files,
     )
 
 

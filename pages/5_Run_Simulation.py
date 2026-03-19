@@ -123,18 +123,11 @@ if results_df is None or results_df.empty:
     st.info("Run the pipeline to generate scenario results.")
     st.stop()
 
-# Persist results into the selected experiment folder for convenience
-try:
-    scenario_table = state["paths"].scenario_table if hasattr(state["paths"], "scenario_table") else None
-    if scenario_table:
-        exp_dir = Path(scenario_table).parent
-        out_dir = exp_dir / "output"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / "pis_contamination_scenario_results.csv"
-        results_df.to_csv(out_path, index=False)
-        st.caption(f"Results saved to {out_path}")
-except Exception as exc:  # pylint: disable=broad-except
-    st.warning(f"Could not save results to experiment folder: {exc}")
+saved_output_files = state.get("run_output_files") or []
+if saved_output_files:
+    st.caption("Output files saved:")
+    for output_file in saved_output_files:
+        st.caption(str(output_file))
 
 render_labeled_help(
     "Overall summary",
