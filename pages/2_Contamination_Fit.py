@@ -16,6 +16,7 @@ from scipy.stats import betabinom
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
+from gui.page_styles import apply_shared_page_styles, render_page_intro
 from gui.slippage_pipeline import ClarkeFit, create_default_paths, fit_contamination_distribution
 from gui.slippage_ui import get_slippage_state, set_paths
 
@@ -46,7 +47,7 @@ def _beta_pdf(alpha: float, beta: float, num_points: int = 200) -> pd.DataFrame:
     xs = np.linspace(eps, 1 - eps, num_points)
     log_norm = math.lgamma(alpha + beta) - math.lgamma(alpha) - math.lgamma(beta)
     ys = np.exp(log_norm + (alpha - 1) * np.log(xs) + (beta - 1) * np.log(1 - xs))
-    area = np.trapezoid(ys, xs)
+    area = np.trapz(ys, xs)
     if area > 0:
         ys = ys / area
     return pd.DataFrame({"prevalence": xs, "density": ys})
@@ -214,6 +215,7 @@ init_state()
 slippage_state = get_slippage_state()
 paths = slippage_state["paths"]
 render_sidebar_navigation()
+apply_shared_page_styles()
 
 
 st.warning(
@@ -222,18 +224,11 @@ st.warning(
 )
 
 st.title("Page 2 - Contamination Fit")
-
-
-# Description via markdown
-st.markdown("""
-    <div style='font-size: 18px; color: #2c3e50; line-height: 1;'>
-        <p style='margin-bottom: 12px;'>
-            Fit, assign, and manage contamination parameters. 
-            PIS upload and RBS selection live in the <i>Fit Contamination</i> tab.
-            All outputs are written to <i>tmp/contamination</i>.
-        </p>
-    </div>
-""", unsafe_allow_html=True)
+render_page_intro(
+    "Fit, assign, and manage contamination parameters. "
+    "PIS upload and RBS selection live in the <i>Fit Contamination</i> tab. "
+    "All outputs are written to <i>tmp/contamination</i>."
+)
 
 
 ########### Notes on using Markdowns ############
@@ -422,253 +417,6 @@ st.markdown("""
 
 
 
-### CSS markdown implementations###
-# Tabs
-st.markdown("""
-    <style>
-    /* Make tab labels larger and bolder */
-    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
-        font-size: 24px;
-        font-weight: 700;
-    }
-
-    /* Increase tab padding */
-    .stTabs [data-baseweb="tab-list"] button {
-        padding: 18px 24px;
-    }
-
-    /* Style the active tab */
-    .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] [data-testid="stMarkdownContainer"] p {
-        color: #1f77b4;
-    }
-
-    /* Remove gap between tabs */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 2px;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-
-
-
-
-# Select box and tool tip
-st.markdown("""
-    <style>
-    /* Selectbox label styling */
-    .stSelectbox label {
-        font-size: 20px !important;
-        font-weight: 600 !important;
-        color: #1f77b4 !important;
-    }
-
-    /* Selectbox dropdown styling */
-    .stSelectbox div[data-baseweb="select"] > div {
-        font-size: 18px !important;
-    }
-
-    /* Tooltip styling */
-    .selectbox-with-tooltip {
-        position: relative;
-        display: inline-block;
-    }
-
-    .info-icon {
-        display: inline-block;
-        width: 20px;
-        height: 20px;
-        border-radius: 50%;
-        background-color: #1f77b4;
-        color: white;
-        text-align: center;
-        line-height: 20px;
-        font-size: 14px;
-        margin-left: 8px;
-        cursor: help;
-        position: relative;
-        vertical-align: middle;
-        bottom: 125%;
-        left: -0.5%;
-    }
-
-    .info-icon .tooltip {
-        visibility: hidden;
-        line-height: 18px;
-        width: 300px;
-        background-color: #2c3e50;
-        color: #fff;
-        text-align: left;
-        border-radius: 8px;
-        padding: 15px;
-        position: absolute;
-        z-index: 999;
-        bottom: 125%;
-        left: 50%;
-        margin-left: -150px;
-        opacity: 0;
-        transition: opacity 0.3s;
-        font-size: 14px;
-        font-weight: 400;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.2);
-    }
-
-    .info-icon .tooltip::after {
-        content: "";
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        margin-left: -6px;
-        border-width: 6px;
-        border-style: solid;
-        border-color: #2c3e50 transparent transparent transparent;
-    }
-
-    .info-icon:hover .tooltip {
-        visibility: visible;
-        opacity: 1;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-
-
-
-# Custom labels to be used for number entry and slider
-st.markdown("""
-    <style>
-    .number_and_slider_label {
-        font-size: 20px;
-        font-weight: 600;
-        color: #1f77b4;
-        margin-bottom: 8px;
-    }
-
-    .help-icon {
-        display: inline-block;
-        width: 22px;
-        height: 22px;
-        border-radius: 50%;
-        border: 2px solid #1f77b4;
-        color: #1f77b4;
-        text-align: center;
-        line-height: 18px;
-        font-size: 15px;
-        font-weight: bold;
-        margin-left: 8px;
-        cursor: help;
-        position: relative;
-        vertical-align: middle;
-    }
-
-    .help-icon .helptext {
-        visibility: hidden;
-        width: 340px;
-        background-color: #1f77b4;
-        color: white;
-        text-align: left;
-        border-radius: 8px;
-        padding: 15px;
-        position: absolute;
-        z-index: 999;
-        bottom: 140%;
-        left: 50%;
-        margin-left: -170px;
-        opacity: 0;
-        transition: opacity 0.3s;
-        font-size: 14px;
-        font-weight: normal;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-        line-height: 1.6;
-    }
-
-    .help-icon .helptext::after {
-        content: "";
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        margin-left: -8px;
-        border-width: 8px;
-        border-style: solid;
-        border-color: #1f77b4 transparent transparent transparent;
-    }
-
-    .help-icon:hover .helptext {
-        visibility: visible;
-        opacity: 1;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-
-
-# Custom labels to be used for number entry and slider
-st.markdown("""
-    <style>
-    .custom_label2 {
-        font-size: 15px;
-        font-weight: 600;
-        color: #1f77b4;
-        margin-bottom: 8px;
-    }
-
-    .help-icon {
-        display: inline-block;
-        width: 22px;
-        height: 22px;
-        border-radius: 50%;
-        border: 2px solid #1f77b4;
-        color: #1f77b4;
-        text-align: center;
-        line-height: 18px;
-        font-size: 15px;
-        font-weight: bold;
-        margin-left: 8px;
-        cursor: help;
-        position: relative;
-        vertical-align: middle;
-    }
-
-    .help-icon .helptext {
-        visibility: hidden;
-        width: 340px;
-        background-color: #1f77b4;
-        color: white;
-        text-align: left;
-        border-radius: 8px;
-        padding: 15px;
-        position: absolute;
-        z-index: 999;
-        bottom: 140%;
-        left: 50%;
-        margin-left: -170px;
-        opacity: 0;
-        transition: opacity 0.3s;
-        font-size: 14px;
-        font-weight: normal;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-        line-height: 1.6;
-    }
-
-    .help-icon .helptext::after {
-        content: "";
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        margin-left: -8px;
-        border-width: 8px;
-        border-style: solid;
-        border-color: #1f77b4 transparent transparent transparent;
-    }
-
-    .help-icon:hover .helptext {
-        visibility: visible;
-        opacity: 1;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-
 fit_tab, assign_tab, saved_tab = st.tabs(
     ["Fit Contamination Using Data", "Assign Contamination Manually", "Saved Parameter Sets"]
 )
@@ -786,7 +534,7 @@ with fit_tab:
         metrics[2].metric("Theta", f"{fit_to_show.theta}")
         st.altair_chart(
             _beta_chart(fit_to_show.alpha, fit_to_show.beta, "Beta-Binomial Probability Density Function"),
-            width='stretch',
+            use_container_width=True,
         )
 
     st.markdown("**Save fitted parameters**")
@@ -985,7 +733,7 @@ with assign_tab:
         st.write("")
         st.altair_chart(
             _beta_chart(adj_alpha, adj_beta, "Beta-Binomial Probability Density Function"),
-            width='stretch',
+            use_container_width=True,
         )
 
         st.write("")
@@ -1052,7 +800,7 @@ with assign_tab:
 
         st.altair_chart(
             _beta_chart(alpha_val, beta_val, "Beta-Binomial Probability Density Function"),
-            width='stretch',
+            use_container_width=True,
         )
         manual_name = st.text_input(
             "Parameter set name for manual values",
@@ -1098,7 +846,7 @@ with saved_tab:
                 st.metric("Plant unit contamination rate", f"{sample_unit_rate}")
             st.altair_chart(
                 _beta_chart(alpha, beta, f"Beta-binomial PDF for {sel}"),
-                width='stretch',
+                use_container_width=True,
             )
             st.info("Sets are stored in tmp/contamination/contamination_parameter_sets.json.")
 

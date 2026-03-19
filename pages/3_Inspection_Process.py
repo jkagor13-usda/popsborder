@@ -11,6 +11,7 @@ import plotly.express as px
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
+from gui.page_styles import apply_shared_page_styles, render_page_intro
 from gui.slippage_ui import get_slippage_state, set_paths, create_default_paths
 
 
@@ -23,6 +24,7 @@ init_state()
 
 state = get_slippage_state()
 render_sidebar_navigation()
+apply_shared_page_styles()
 paths = state["paths"]
 TMP_DIR = Path("tmp")
 TMP_DIR.mkdir(exist_ok=True)
@@ -61,7 +63,7 @@ st.warning(
     "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
     "Features may be incomplete and subject to change. Results have not been validated.**"
 )
-st.caption(
+render_page_intro(
     "Ingest the compliance lookup table, configure low/medium/high types, and review RBS parameters."
 )
 

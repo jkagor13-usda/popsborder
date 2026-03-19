@@ -155,6 +155,7 @@ def generate_synthetic_data(
     seed_path: Path,
     output_path: Path,
     options: SyntheticOptions,
+    producer_grouping_path: Optional[Path] = None,
 ) -> pd.DataFrame:
     """Generate synthetic consignment data and persist it."""
     if seed_path is None:
@@ -168,7 +169,17 @@ def generate_synthetic_data(
     config_path = Path(DEFAULT_DATA_DIR / CONFIG_FILENAME).resolve()
     if config_path.exists():
         config = load_configuration(config_path)
-    generator = SyntheticConsignmentDataGenerator(config=config, input_data_file=seed_path)
+    producer_grouping = None
+    if producer_grouping_path is not None:
+        producer_grouping_path = Path(producer_grouping_path).resolve()
+        if not producer_grouping_path.exists():
+            raise FileNotFoundError(f"Producer grouping file not found at {producer_grouping_path}")
+        producer_grouping = pd.read_csv(producer_grouping_path)
+    generator = SyntheticConsignmentDataGenerator(
+        config=config,
+        producer_group_mapping=producer_grouping,
+        input_data_file=seed_path,
+    )
     synth_data = generator.generate_from_input_data(
         n_consignments=options.n_samples,
         sampling_method=options.sampling_method,

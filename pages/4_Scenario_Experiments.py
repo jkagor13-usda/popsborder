@@ -12,6 +12,7 @@ import streamlit as st
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
+from gui.page_styles import apply_shared_page_styles, render_page_intro
 from gui.slippage_ui import get_slippage_state
 
 # --- Constants / setup --------------------------------------------------------
@@ -36,6 +37,17 @@ st.set_page_config(
 init_state()
 state = get_slippage_state()
 render_sidebar_navigation()
+apply_shared_page_styles()
+
+st.title("Page 4 - Scenario Experiments")
+st.warning(
+    "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
+    "Features may be incomplete and subject to change. Results have not been validated.**"
+)
+render_page_intro(
+    "Build, review, and save experiment-ready scenario tables. "
+    "Scenario bundles are written to <i>tmp/experiments</i> for execution on Page 5."
+)
 
 # --- Helpers ------------------------------------------------------------------
 def _slugify(name: str) -> str:
@@ -155,17 +167,6 @@ def _normalize_rows(rows_df: pd.DataFrame) -> pd.DataFrame:
         df[beta_col] = df[beta_col].apply(lambda v: 5.0 if pd.isna(v) or float(v) <= 0 else float(v))
     return df
 
-
-# --- Page header --------------------------------------------------------------
-st.title("Page 4 - Experiment Builder")
-st.warning(
-    "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
-    "Features may be incomplete and subject to change. Results have not been validated.**"
-)
-st.caption(
-    "Assemble scenarios using outputs from Pages 1-3: pick consignments (RBS), contamination parameter set, "
-    "and compliance table. Saved experiment packages are written to tmp/experiments."
-)
 
 tabs = st.tabs(["Upload custom scenario", "Build experiments", "Saved experiments"])
 
