@@ -7,6 +7,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .runtime_warnings import suppress_optional_dependency_warnings
+
+suppress_optional_dependency_warnings()
+
 import pandas as pd
 import streamlit as st
 
@@ -37,6 +41,19 @@ def _safe_preview(df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
     return df.head(PREVIEW_ROWS)
 
 
+def _load_optional_scenario_dataframe(path: Optional[Path]) -> pd.DataFrame:
+    """Load scenario data when available, otherwise return an empty DataFrame."""
+    if path is None:
+        return pd.DataFrame()
+    try:
+        path = Path(path)
+        if not path.exists():
+            return pd.DataFrame()
+        return load_scenario_dataframe(path, dtype="object")
+    except Exception:
+        return pd.DataFrame()
+
+
 def init_slippage_state() -> Dict[str, Any]:
     """Initialize session state for slippage UI."""
     try:
@@ -53,7 +70,7 @@ def init_slippage_state() -> Dict[str, Any]:
         tmp_rbs = Path("tmp/consignments/consignment_uploaded_rbs_data.csv")
         if tmp_rbs.exists():
             paths = paths.__class__(**{**paths.__dict__, "rbs_data": tmp_rbs, "synthetic_seed": tmp_rbs})
-        scenario_df = load_scenario_dataframe(paths.scenario_table, dtype="object")
+        scenario_df = _load_optional_scenario_dataframe(paths.scenario_table)
         st.session_state[STATE_KEY] = {
             "paths": paths,
             "scenario_df": scenario_df,
@@ -86,7 +103,7 @@ def set_paths(**kwargs: Path):
     updated = current_paths.__class__(**{**current_paths.__dict__, **kwargs})
     state["paths"] = updated
     if "scenario_table" in kwargs:
-        state["scenario_df"] = load_scenario_dataframe(updated.scenario_table, dtype="object")
+        state["scenario_df"] = _load_optional_scenario_dataframe(updated.scenario_table)
 
 
 def set_scenario_dataframe(df: pd.DataFrame):

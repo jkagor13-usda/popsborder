@@ -2,12 +2,17 @@
 
 from pathlib import Path
 
+from gui.runtime_warnings import suppress_optional_dependency_warnings
+
+suppress_optional_dependency_warnings()
+
 import pandas as pd
 import altair as alt
 import streamlit as st
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
+from gui.page_styles import apply_shared_page_styles, render_page_intro
 from gui.slippage_ui import get_slippage_state, run_pipeline, set_engine_options
 from gui.slippage_pipeline import create_default_paths
 
@@ -21,18 +26,19 @@ init_state()
 
 state = get_slippage_state()
 render_sidebar_navigation()
+apply_shared_page_styles()
 engine_options = state["engine_options"]
 run_error = state.get("run_error")
 paths = state["paths"]
 TMP_DIR = Path("tmp")
 
 
-st.title("Page 5 - Run Simulation")
 st.warning(
     "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
     "Features may be incomplete and subject to change. Results have not been validated.**"
 )
-st.caption("Execute the slippage pipeline and compare policies based on slippage metrics.")
+st.title("Page 5 - Run Simulation")
+render_page_intro("Execute the slippage pipeline and compare policies based on slippage metrics.")
 
 with st.sidebar:
     st.subheader("Execution options")
