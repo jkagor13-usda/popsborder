@@ -231,7 +231,7 @@ with tabs[0]:
             st.error(f"Failed to save compliance table: {exc}")
 
 with tabs[1]:
-    st.subheader("Compliance table (manual)")
+    st.subheader("Manual Creation of RBS Compliance Policy ")
 
     rbs_path = state["paths"].rbs_data
     rbs_cols = []
