@@ -92,7 +92,7 @@ def random_seed(seed):
 def simulation(
     config,
     num_consignments,
-    seed,
+    rng=None,
     output_f280_file=None,
     verbose=False,
     pretty=None,
@@ -105,11 +105,13 @@ def simulation(
     :param num_consignments: Number of consignments to generate
     :param f280_file: Filename for output F280 records
     :param verbose: If True, prints messages about each consignment
+    :param rng : numpy.random.Generator or None
+        Random number generator for this simulation.
     """
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements
 
-    if seed is not None:
-        random_seed(seed)
+    if rng is None:
+        rng = np.random.default_rng()
 
     pis_sim_data = PISSimData(output_dir_rep=output_dir_rep, config=config)
 
@@ -157,15 +159,21 @@ def simulation(
     # Dictionary to capture additional metrics per consignment
     rbs_additional_metrics = {}
 
+    prop = 0
+    increment = 0.1
     for i in range(num_consignments):
-        print(f'\nSimulating Consignment {i+1} out of {num_consignments} total consignments')
+        if i == int(prop*num_consignments):
+            percent_complete = int(prop*100)
+            print(f'   {percent_complete}% complete ({i+1} out of {num_consignments} consignments)')
+            prop += increment
+        #print(f'\nSimulating Consignment {i+1} out of {num_consignments} total consignments')
         try:
             consignment = consignment_generator.generate_consignment()
-            print(f"   Generated consignment with {consignment.num_inspection_units} inspection units and {consignment.num_sample_units} sample units")
-            print("   Starting contamination...")
+            #print(f"   Generated consignment with {consignment.num_inspection_units} inspection units and {consignment.num_sample_units} sample units")
+            #print("   Starting contamination...")
             add_contaminant(consignment)
             synchronize_contamination_arrays_from_plants(consignment)
-            print("   Finished contamination.")
+            #print("   Finished contamination.")
             total_contaminated_units = 0
             total_contaminated_inspection_units = 0
             total_contaminated_sample_units = 0
@@ -192,13 +200,13 @@ def simulation(
                     total_contaminated_inspection_units += 1
                 inspection_unit_counter+=1
 
-            print(f'\n**** CONSIGNMENT {i+1} CONTAMINATED.  SUMMARY INFO BELOW ****')
-            print(f'   Number of Contaminated Plants: {total_contaminated_units}')
-            print(f'   Proportion of Contaminated Plants (total # of plants = {len(consignment.plants)}): {total_contaminated_units/len(consignment.plants)}')
-            print(f'\n   Number of Contaminated Sample Units: {total_contaminated_sample_units}')
-            print(f'   Proportion of Contaminated Sample Units (total # sample units= {len(consignment.sample_units)}): {total_contaminated_sample_units/len(consignment.sample_units)}')
-            print(f'\n   Number of Contaminated Inspection Units: {total_contaminated_inspection_units}')
-            print(f'   Proportion of Contaminated Inspection Units (total # inspection units = {len(consignment.inspection_units)}): {total_contaminated_inspection_units/len(consignment.inspection_units)}')
+            # print(f'\n**** CONSIGNMENT {i+1} CONTAMINATED.  SUMMARY INFO BELOW ****')
+            # print(f'   Number of Contaminated Plants: {total_contaminated_units}')
+            # print(f'   Proportion of Contaminated Plants (total # of plants = {len(consignment.plants)}): {total_contaminated_units/len(consignment.plants)}')
+            # print(f'\n   Number of Contaminated Sample Units: {total_contaminated_sample_units}')
+            # print(f'   Proportion of Contaminated Sample Units (total # sample units= {len(consignment.sample_units)}): {total_contaminated_sample_units/len(consignment.sample_units)}')
+            # print(f'\n   Number of Contaminated Inspection Units: {total_contaminated_inspection_units}')
+            # print(f'   Proportion of Contaminated Inspection Units (total # inspection units = {len(consignment.inspection_units)}): {total_contaminated_inspection_units/len(consignment.inspection_units)}')
 
 
             pis_sim_data.add_consignment(consignment)
@@ -213,12 +221,12 @@ def simulation(
                 consignment, consignment.date
             )
             if must_inspect:
-                print(f'\n\n==== INSPECTION OF CONSIGNMENT {i + 1} NOW BEING EXECUTED ====')
+                #print(f'\n\n==== INSPECTION OF CONSIGNMENT {i + 1} NOW BEING EXECUTED ====')
                 n_units_to_inspect = sample(consignment)
-                print(f"   Requested sample units to inspect (total): {n_units_to_inspect}")
+                #print(f"   Requested sample units to inspect (total): {n_units_to_inspect}")
                 ret = inspect(config, consignment, n_units_to_inspect, detailed)
                 pis_sim_data.add_to_pis_synthetic_data(ret, consignment, n_units_to_inspect)
-                print(f"   Completed inspection. Sample units inspected: {ret.sample_units_inspected_completion}")
+                #print(f"   Completed inspection. Sample units inspected: {ret.sample_units_inspected_completion}")
                 consignment_checked_ok = ret.consignment_checked_ok
                 num_inspections += 1
                 total_num_inspection_units += consignment.num_inspection_units
@@ -290,7 +298,7 @@ def simulation(
                         }
                     )
 
-            print(f'\n==== INSPECTION OF CONSIGNMENT {i + 1} COMPLETED ====')
+            #print(f'\n==== INSPECTION OF CONSIGNMENT {i + 1} COMPLETED ====')
 
             form280.fill(
                 consignment.date,
@@ -454,7 +462,7 @@ def run_simulation(
     config,
     num_simulations,
     num_consignments,
-    seed=None,
+    rng=None,
     output_f280_file=None,
     verbose=False,
     pretty=None,
@@ -467,7 +475,15 @@ def run_simulation(
 
     Returns averages computed from the individual simulation runs otherwise
     it relies on :func:`simulation` function to do the hard work.
+
+    rng : numpy.random.Generator or None
+        Random number generator. If None, creates a new unseeded one.
     """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    # Spawn independent RNGs for each simulation run
+    simulation_rngs = rng.spawn(num_simulations)
     # pylint: disable=too-many-branches,too-many-statements
 
     totals = types.SimpleNamespace(
@@ -535,7 +551,7 @@ def run_simulation(
         result = simulation(
             config=config,
             num_consignments=num_consignments,
-            seed=seed + i if seed is not None else None,
+            rng=simulation_rngs[i],
             output_f280_file=output_f280_file,
             verbose=verbose,
             pretty=pretty,

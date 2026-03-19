@@ -78,6 +78,7 @@ from scipy import stats
 from popsborder.inspections import construct_risk_units
 from slippage_model_utils.r_script_wrapper import VariableCreator
 
+warnings.filterwarnings('ignore')
 
 ### Support functions:
 
@@ -191,8 +192,19 @@ def apply_producer_grouping(input_data, producer_group_mapping_df, use_shortest_
     Returns:
         DataFrame with added 'producer_name_preprocessed' and 'producer_group' columns
     """
+    if input_data is None:
+        return None
+
     # Create a copy to avoid modifying original
     data = input_data.copy()
+
+    if 'PRODUCER_NAME' not in data.columns:
+        return data
+
+    if producer_group_mapping_df is None:
+        data['producer_name_preprocessed'] = data['PRODUCER_NAME'].apply(preprocess_producer_name)
+        data['producer_group'] = 'NO_GROUP_MATCH'
+        return data
 
     # Preprocess producer names in input data
     data['producer_name_preprocessed'] = data['PRODUCER_NAME'].apply(preprocess_producer_name)
@@ -232,6 +244,9 @@ class SyntheticConsignmentDataGenerator:
             producer_group_mapping,
             use_shortest_name=True  # Set to False if wanting to use numeric grouping labels
         )
+
+        if 'RISK_UNIT' not in self.input_data.columns and "RISK_UNIT".lower() in self.input_data.columns:
+            self.input_data.rename(columns={'risk_unit': 'RISK_UNIT'}, inplace=True)
 
         self.input_data  = construct_risk_units(config=config, data=self.input_data)
         

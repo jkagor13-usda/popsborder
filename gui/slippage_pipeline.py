@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import copy
 import json
+import pickle
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+from .runtime_warnings import suppress_optional_dependency_warnings
+
+suppress_optional_dependency_warnings()
+
 import pandas as pd
 
 from popsborder.generator import SyntheticConsignmentDataGenerator, save_to_csv
@@ -151,16 +156,44 @@ def load_scenario_dataframe(path: Path, *, dtype: str = "object"):
     scenarios = load_scenario_table(path)
     return scenarios
 
+
+def load_compliance_policy(path: Path) -> Dict[str, Any]:
+    """Load either a CSV compliance table or a pickled compliance policy."""
+    policy_path = Path(path)
+    if policy_path.suffix.lower() == ".pkl":
+        with open(policy_path, "rb") as handle:
+            return pickle.load(handle)
+    return load_compliance_lookup_csv(policy_path)
+
 def generate_synthetic_data(
     seed_path: Path,
     output_path: Path,
     options: SyntheticOptions,
+    producer_grouping_path: Optional[Path] = None,
 ) -> pd.DataFrame:
     """Generate synthetic consignment data and persist it."""
-    if seed_path is None or not Path(seed_path).exists():
+    if seed_path is None:
+        raise FileNotFoundError("Seed data path was not provided.")
+    seed_path = Path(seed_path).resolve()
+    output_path = Path(output_path).resolve()
+    if not seed_path.exists():
         raise FileNotFoundError(f"Seed data not found at {seed_path}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    generator = SyntheticConsignmentDataGenerator(seed_path)
+    config = None
+    config_path = Path(DEFAULT_DATA_DIR / CONFIG_FILENAME).resolve()
+    if config_path.exists():
+        config = load_configuration(config_path)
+    producer_grouping = None
+    if producer_grouping_path is not None:
+        producer_grouping_path = Path(producer_grouping_path).resolve()
+        if not producer_grouping_path.exists():
+            raise FileNotFoundError(f"Producer grouping file not found at {producer_grouping_path}")
+        producer_grouping = pd.read_csv(producer_grouping_path)
+    generator = SyntheticConsignmentDataGenerator(
+        config=config,
+        producer_group_mapping=producer_grouping,
+        input_data_file=seed_path,
+    )
     synth_data = generator.generate_from_input_data(
         n_consignments=options.n_samples,
         sampling_method=options.sampling_method,
@@ -221,73 +254,67 @@ def fit_contamination_distribution(
             "Ensure both files reference the same consignments."
         )
     try:
-        inputs = gen_clarke_model_inputs(pis_df, rbs_df)
-        print(inputs)
+        inputs_by_quantity = gen_clarke_model_inputs(pis_df)
     except StopIteration as exc:
         raise ValueError(
             "Fitting failed: no compatible scenarios found between PIS and RBS data. "
             "Verify that shared INSPECTION_NUMBER rows contain sampling/plant quantities."
         ) from exc
 
-    if not inputs.freq or sum(inputs.freq) <= 0:
+    if not inputs_by_quantity:
         raise ValueError("Fitting failed: no frequency counts available after aligning PIS and RBS data.")
 
-    # Use Clarke inputs, but if any are invalid fall back to averages from RBS.
-    b_val, B_val, Nbar_val = inputs.b, inputs.B, inputs.Nbar
-
-    def _fallback_mean(df: pd.DataFrame, col: str, default: float = 1.0) -> float:
-        if col in df.columns and df[col].notna().any():
-            return float(pd.to_numeric(df[col], errors="coerce").dropna().mean())
-        return default
-
-    fb_b = _fallback_mean(rbs_df, "TOTAL_SAMPLING_UNITS", 1.0)
-    fb_nbar = _fallback_mean(rbs_df, "TOTAL_PLANT_QUANTITY", 1.0)
-    fb_B = max(1, len(shared_ids))
-
-    if not (np.isfinite(b_val) and b_val > 0):
-        b_val = fb_b
-    if not (np.isfinite(Nbar_val) and Nbar_val > 0):
-        Nbar_val = fb_nbar
-    if not (np.isfinite(B_val) and B_val > 0):
-        B_val = fb_B
-
-    if not (np.isfinite(b_val) and np.isfinite(B_val) and np.isfinite(Nbar_val) and b_val > 0 and B_val > 0 and Nbar_val > 0):
-        raise ValueError(
-            "Fitting failed: computed b/B/Nbar are invalid (NaN or <=0) even after fallback. "
-            "Check RBS calculator columns (TOTAL_SAMPLING_UNITS, TOTAL_PLANT_QUANTITY) and PIS/RBS alignment."
-        )
-    # Always force theta to infinity when invoking the Clarke model
     theta_val = float("inf")
+    results_by_quantity: Dict[str, Any] = {}
+    weighted_alpha = 0.0
+    weighted_beta = 0.0
+    total_weight = 0.0
 
-    # Stabilize start values (R can fail when both are zero)
-    start_vals = [float(v) for v in (inputs.start_val or [])]
-    if not start_vals or all(abs(v) < 1e-9 for v in start_vals):
-        start_vals = [0.1, 0.1]
+    for quantity_range, inputs in inputs_by_quantity.items():
+        if not inputs.freq or sum(inputs.freq) <= 0:
+            continue
 
-    try:
-        result = run_clarke_bb_group_model(
-            inputs.ty,
-            int(round(b_val)),
-            int(round(B_val)),
-            int(round(Nbar_val)),
-            inputs.freq,
-            theta_val,
-            inputs.R,
-            start_vals,
-            inputs.se,
-        )
-    except subprocess.CalledProcessError as exc:
-        stderr_preview = (exc.stderr or "")[:500].replace("\n", " | ")
-        stdout_preview = (exc.output or "")[:500].replace("\n", " | ")
-        raise ValueError(
-            f"Fitting failed in R (returncode {exc.returncode}). "
-            f"stdout: {stdout_preview} stderr: {stderr_preview}"
-        ) from exc
-    alpha_val = float(result.get("alpha", 0) or 0)
-    beta_val = float(result.get("beta", 0) or 0)
-    alpha_val = max(alpha_val, 1e-3)
-    beta_val = max(beta_val, 1e-3)
-    fit = ClarkeFit(alpha=alpha_val, beta=beta_val, theta=theta_val, raw_result=result)
+        start_vals = [float(v) for v in (inputs.start_val or [])]
+        if not start_vals or all(abs(v) < 1e-9 for v in start_vals):
+            start_vals = [0.1, 0.1]
+
+        try:
+            result = run_clarke_bb_group_model(
+                inputs.ty,
+                int(round(inputs.b)),
+                int(round(inputs.B)),
+                int(round(inputs.Nbar)),
+                inputs.freq,
+                theta_val,
+                inputs.R,
+                start_vals,
+                inputs.se,
+            )
+        except subprocess.CalledProcessError as exc:
+            stderr_preview = (exc.stderr or "")[:500].replace("\n", " | ")
+            stdout_preview = (exc.output or "")[:500].replace("\n", " | ")
+            raise ValueError(
+                f"Fitting failed in R (returncode {exc.returncode}). "
+                f"stdout: {stdout_preview} stderr: {stderr_preview}"
+            ) from exc
+
+        alpha_val = max(float(result.get("alpha", 0) or 0), 1e-3)
+        beta_val = max(float(result.get("beta", 0) or 0), 1e-3)
+        weight = float(sum(inputs.freq))
+        weighted_alpha += alpha_val * weight
+        weighted_beta += beta_val * weight
+        total_weight += weight
+        results_by_quantity[str(quantity_range)] = result
+
+    if total_weight <= 0:
+        raise ValueError("Fitting failed: no usable Clarke model results were produced.")
+
+    fit = ClarkeFit(
+        alpha=weighted_alpha / total_weight,
+        beta=weighted_beta / total_weight,
+        theta=theta_val,
+        raw_result=results_by_quantity,
+    )
     return fit, pis_df, rbs_df
 
 
@@ -419,7 +446,7 @@ def run_slippage_pipeline(
             f"Compliance table not found for experiment {experiment_dir}. Expected {COMPLIANCE_FILENAME}."
         )
 
-    compliance_table = load_compliance_lookup_csv(comp_lookup_path)
+    compliance_table = load_compliance_policy(comp_lookup_path)
 
     # Ensure base config points to base consignment/compliance (scenario overrides still apply later)
     config = copy.deepcopy(config)
@@ -467,7 +494,7 @@ def run_slippage_pipeline(
             consignment_counts.append(rec_num_consignments)
 
             cfg_local = _build_cfg_for_scenario(base_cfg, rec_cons_path, rec_comp_path)
-            comp_table = load_compliance_lookup_csv(rec_comp_path) if rec_comp_path else compliance_table
+            comp_table = load_compliance_policy(rec_comp_path) if rec_comp_path else compliance_table
 
             # Aggregated run
             scenario_results_raw.extend(
