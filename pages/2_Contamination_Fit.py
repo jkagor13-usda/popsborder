@@ -427,31 +427,56 @@ with fit_tab:
     st.caption("Fits are based on the PIS action upload and RBS calculator selection in this tab.")
 
     st.subheader("PIS action data upload")
-    pis_upload = st.file_uploader(
-        "Upload PIS action CSV",
-        type=["csv"],
-        key="pis_upload",
-        help="PIS action data is required for contamination fitting.",
+    st.markdown("**Consignment data source**")
+    rbs_candidates = sorted((Path("tmp") / "consignments").glob("*.csv"))
+    rbs_source = st.radio(
+        "Consignment data source",
+        ["Use consignment data from Page 1", "Upload a new consignment data file"],
+        index=0,
+        key="page2_rbs_source",
     )
-    if pis_upload is not None:
-        dest = CONTAM_DIR / "fit_pis_data.csv"
-        df = pd.read_csv(pis_upload)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(dest, index=False)
-        set_paths(pis_data=dest)
-        paths = slippage_state["paths"]
-        st.success(f"Saved PIS data to {dest}")
+    if rbs_source == "Use consignment data from Page 1":
+        if not rbs_candidates:
+            st.warning("No consignment files found in tmp/consignments. Add one on Page 1 or upload a file below.")
+        else:
+            current_rbs = slippage_state["paths"].rbs_data
+            default_idx = 0
+            if current_rbs in rbs_candidates:
+                default_idx = rbs_candidates.index(current_rbs)
+            chosen_rbs = st.selectbox(
+                "Consignment file",
+                rbs_candidates,
+                index=default_idx,
+                format_func=lambda p: p.name,
+            )
+            set_paths(pis_data=chosen_rbs, rbs_data=chosen_rbs, synthetic_seed=chosen_rbs)
+            paths = slippage_state["paths"]
+    else:
+        rbs_upload = st.file_uploader(
+            "Upload consignment data CSV",
+            type=["csv"],
+            key="page2_rbs_upload",
+            help="Upload a new consignment data file to use for contamination fitting on this page.",
+        )
+        if rbs_upload is not None:
+            dest = CONTAM_DIR / "fit_rbs_data.csv"
+            rbs_df = pd.read_csv(rbs_upload)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            rbs_df.to_csv(dest, index=False)
+            set_paths(pis_data=dest, rbs_data=dest, synthetic_seed=dest)
+            paths = slippage_state["paths"]
+            st.success(f"Saved consignment data to {dest}")
 
     pis_df = None
-    pis_preview = _load_preview(slippage_state["paths"].pis_data)
+    pis_preview = _load_preview(slippage_state["paths"].rbs_data)
     if pis_preview is not None:
-        st.dataframe(pis_preview, width='stretch')
+        st.dataframe(pis_preview, use_container_width=True)
         try:
-            pis_df = pd.read_csv(slippage_state["paths"].pis_data)
+            pis_df = pd.read_csv(slippage_state["paths"].rbs_data)
         except Exception:  # pylint: disable=broad-except
             pis_df = None
     else:
-        st.info("No PIS action data loaded yet.")
+        st.info("No consignment data loaded yet.")
 
     # Summary stats beneath the table (one-column flow)
     if pis_df is not None and not pis_df.empty:
@@ -480,21 +505,6 @@ with fit_tab:
         stats[2].metric("Rows with action = 1", f"{action_ones}")
         stats2 = st.columns(1)
         stats2[0].metric("Total sampling units", f"{total_sampling:,}")
-
-    st.subheader("Select RBS calculator file")
-    rbs_candidates = sorted(
-        [p for p in (Path("tmp") / "consignments").glob("*.csv") if "rbs" in p.name.lower()]
-    )
-    if not rbs_candidates:
-        st.warning("No RBS files found in tmp/consignments. Add one on Page 1.")
-    else:
-        current_rbs = slippage_state["paths"].rbs_data
-        default_idx = 0
-        if current_rbs in rbs_candidates:
-            default_idx = rbs_candidates.index(current_rbs)
-        chosen_rbs = st.selectbox("RBS file", rbs_candidates, index=default_idx, format_func=lambda p: p.name)
-        set_paths(rbs_data=chosen_rbs, synthetic_seed=chosen_rbs)
-        paths = slippage_state["paths"]
 
     fit_cols = st.columns(2)
     with fit_cols[0]:

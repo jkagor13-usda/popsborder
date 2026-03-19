@@ -206,7 +206,7 @@ with tabs[1]:
     col_left, col_right = st.columns([2, 1])
 
     consignment_files = _list_files(TMP_DIR / "consignments", "*.csv")
-    compliance_files = _list_files(TMP_DIR / "compliance", "*.csv")
+    compliance_files = _list_files(TMP_DIR / "compliance", "*.pkl")
     param_sets = _load_param_sets()
     param_keys = list(param_sets.keys())
 
@@ -234,7 +234,7 @@ with tabs[1]:
 
         compliance_choice = (
             st.selectbox(
-                "Compliance table",
+                "RBS compliance policy",
                 compliance_files,
                 format_func=lambda p: p.name,
             )
@@ -253,7 +253,7 @@ with tabs[1]:
                 f"{', '.join(param_keys) if param_keys else 'none'}"
             )
             st.write(
-                f"**Inspection Process ({len(compliance_files)}):** "
+                f"**RBS Compliance Policies ({len(compliance_files)}):** "
                 f"{', '.join(p.name for p in compliance_files) if compliance_files else 'none'}"
             )
 

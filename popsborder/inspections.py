@@ -176,8 +176,11 @@ def load_compliance_lookup(
     # Initialize paths if not provided
     default_paths = DefaultPaths()
 
-    # Get full path using DefaultPaths
-    full_path = default_paths.compliance_dir() / filename
+    candidate_path = Path(filename)
+    if candidate_path.exists():
+        full_path = candidate_path
+    else:
+        full_path = default_paths.compliance_dir() / filename
 
     # Check if file exists
     if not full_path.exists():
