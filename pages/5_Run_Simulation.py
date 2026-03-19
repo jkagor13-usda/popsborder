@@ -12,7 +12,12 @@ import streamlit as st
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
-from gui.page_styles import apply_shared_page_styles, render_page_intro
+from gui.page_styles import (
+    apply_shared_page_styles,
+    render_labeled_help,
+    render_page_intro,
+    render_section_header,
+)
 from gui.slippage_ui import get_slippage_state, run_pipeline, set_engine_options
 from gui.slippage_pipeline import create_default_paths
 
@@ -131,7 +136,10 @@ try:
 except Exception as exc:  # pylint: disable=broad-except
     st.warning(f"Could not save results to experiment folder: {exc}")
 
-st.markdown("### Overall summary")
+render_labeled_help(
+    "Overall summary",
+    "Summarizes how many scenarios were run, the total inspections performed, and the total slipped plant units across results.",
+)
 summary = results_df.copy()
 
 kpi_cols = st.columns(3)
@@ -142,7 +150,10 @@ kpi_cols[2].metric("Slipped plant units", f"{slipped_total:,}")
 
 # Slippage across scenarios (contaminated plant units that slipped)
 if "total_slipped_units" in results_df.columns and "name" in results_df.columns:
-    st.markdown("### Slippage by scenario (contaminated plant units missed)")
+    render_labeled_help(
+        "Slippage by scenario",
+        "Shows contaminated plant units that were missed under each scenario.",
+    )
     slip_df = results_df[["name", "total_slipped_units"]]
     slip_chart = (
         alt.Chart(slip_df)
@@ -165,7 +176,13 @@ if all(
         "avg_inspection_units_opened_completion",
     ]
 ):
-    st.markdown("### Inspected quantities (completion) by scenario")
+    render_labeled_help(
+        "Number of units inspected",
+        (
+            "Includes the number of inspection units opened, sample units inspected, "
+            "and plant units inspected during the simulation."
+        ),
+    )
     inspected_df = results_df[
         [
             "name",
@@ -198,7 +215,10 @@ required_cols = [
     "num_inspection_units",
 ]
 if all(col in results_df.columns for col in required_cols):
-    st.markdown("### Contamination totals by level")
+    render_labeled_help(
+        "Contamination totals by level",
+        "Compares contaminated and uncontaminated counts at the plant, sample unit, and inspection unit levels.",
+    )
 
     def level_chart(level_label, contam_col, total_col):
         data = results_df[["name", contam_col, total_col]].copy()
@@ -238,7 +258,7 @@ if all(col in results_df.columns for col in required_cols):
 else:
     st.info("Contamination totals by level are unavailable in the current results.")
 
-st.markdown("### Raw Output")
+render_section_header("Raw output")
 st.dataframe(state["results"], use_container_width=True)
 
 st.divider()
