@@ -222,7 +222,6 @@ st.warning(
     "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
     "Features may be incomplete and subject to change. Results have not been validated.**"
 )
-
 st.title("Page 2 - Contamination Fit")
 render_page_intro(
     "Fit, assign, and manage contamination parameters. "

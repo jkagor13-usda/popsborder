@@ -39,11 +39,11 @@ state = get_slippage_state()
 render_sidebar_navigation()
 apply_shared_page_styles()
 
-st.title("Page 4 - Scenario Experiments")
 st.warning(
     "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
     "Features may be incomplete and subject to change. Results have not been validated.**"
 )
+st.title("Page 4 - Scenario Experiments")
 render_page_intro(
     "Build, review, and save experiment-ready scenario tables. "
     "Scenario bundles are written to <i>tmp/experiments</i> for execution on Page 5."

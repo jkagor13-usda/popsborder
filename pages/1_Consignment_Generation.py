@@ -232,11 +232,11 @@ config_origins = config.get("consignment", {}).get("parameter_based", {}).get("o
 config_ports = config.get("consignment", {}).get("parameter_based", {}).get("ports", [])
 config_materials = config.get("consignment", {}).get("parameter_based", {}).get("flowers", [])
 
-st.title("Page 1 - Consignment Generation")
 st.warning(
     "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
     "Features may be incomplete and subject to change. Results have not been validated.**"
 )
+st.title("Page 1 - Consignment Generation")
 render_page_intro(
     "Ingest curated consignment data or define consignments from scratch. "
     "Use the <i>Generate consignments based on data</i> tab to upload data and create synthetic consignments. "

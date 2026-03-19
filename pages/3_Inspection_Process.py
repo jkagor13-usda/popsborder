@@ -132,11 +132,11 @@ def _save_policy_artifact(
     return policy_path
 
 
-st.title("Page 3 - Inspection Process")
 st.warning(
     "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
     "Features may be incomplete and subject to change. Results have not been validated.**"
 )
+st.title("Page 3 - Inspection Process")
 render_page_intro(
     "Ingest the compliance lookup table, configure low/medium/high types, and review RBS parameters."
 )
