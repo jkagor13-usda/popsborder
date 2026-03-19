@@ -78,6 +78,7 @@ from scipy import stats
 from popsborder.inspections import construct_risk_units
 from slippage_model_utils.r_script_wrapper import VariableCreator
 
+warnings.filterwarnings('ignore')
 
 ### Support functions:
 
@@ -244,8 +245,10 @@ class SyntheticConsignmentDataGenerator:
             use_shortest_name=True  # Set to False if wanting to use numeric grouping labels
         )
 
-        if config is not None and self.input_data is not None:
-            self.input_data = construct_risk_units(config=config, data=self.input_data)
+        if 'RISK_UNIT' not in self.input_data.columns and "RISK_UNIT".lower() in self.input_data.columns:
+            self.input_data.rename(columns={'risk_unit': 'RISK_UNIT'}, inplace=True)
+
+        self.input_data  = construct_risk_units(config=config, data=self.input_data)
         
         # Initialize random seed for reproducible results
         random.seed(42)

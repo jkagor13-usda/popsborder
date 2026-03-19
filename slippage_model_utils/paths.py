@@ -18,6 +18,12 @@ class DefaultPaths:
     def impact_data_dir(self) -> Path:
         return self.root / "impact_data"
 
+    def output_dir(self) -> Path:
+        return self.root / "output"
+
+    def validation_output_dir(self) -> Path:
+        return self.output_dir() / "validation_outputs"
+
     def tmp_dir(self) -> Path:
         """Root temporary data directory"""
         return self.root / "tmp"
@@ -47,6 +53,13 @@ class BoxPaths:
 
     def rbs_calc_data(self) -> Path:
          return self.shared_ppq_data() / "PIS_RBS_calculator.xlsx"
+
+    def validation_data(self) -> Path:
+        primary_path = self.shared_ppq_data() / "APL Created Data Related Items" / "Joe Data Analysis" / "validation_data"
+        if primary_path.exists():
+            return primary_path
+        else:
+            raise FileNotFoundError("No path found to use as the PPQ Data Folder")
 
     def apl_created_data_folder(self) -> Path:
          return self.shared_ppq_data() / "APL Created Data Related Items"
