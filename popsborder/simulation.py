@@ -627,6 +627,9 @@ def run_simulation(
         sim_rep_outputs[f'Rep_{i}']['num_plants'] = result.total_num_plants
         sim_rep_outputs[f'Rep_{i}']['num_sample_units'] = result.total_num_sample_units
         sim_rep_outputs[f'Rep_{i}']['num_inspection_units'] = result.total_num_inspection_units
+        sim_rep_outputs[f'Rep_{i}']['avg_plant_units_inspected_completion'] = result.avg_plant_units_inspected_completion
+        sim_rep_outputs[f'Rep_{i}']['avg_sample_units_inspected_completion'] = result.avg_sample_units_inspected_completion
+        sim_rep_outputs[f'Rep_{i}']['avg_inspection_units_opened_completion'] = result.avg_inspection_units_opened_completion
 
 
     # Convert the sim replication metric storage to a dataframe for analysis

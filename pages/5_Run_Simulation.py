@@ -179,7 +179,7 @@ with kpi_cols[1]:
     render_metric_card(
         "Total inspections",
         f"{int(summary['num_inspections'].sum()):,}",
-        "Total number of inspections across the displayed scenario results.",
+        "Total number of consignments inspected across the displayed scenario results.",
     )
 with kpi_cols[2]:
     render_metric_card(
@@ -253,8 +253,9 @@ if all(
     render_labeled_help(
         "Number of units inspected",
         (
-            "Includes the number of inspection units opened, sample units inspected, "
-            "and plant units inspected during the simulation."
+            "Shows the mean number of inspection units opened, sample units inspected, "
+            "and plant units inspected for each scenario. When available, 95% intervals "
+            "are computed across replications within the same scenario."
         ),
     )
     inspected_df = results_df[
@@ -264,19 +265,92 @@ if all(
             "avg_sample_units_inspected_completion",
             "avg_inspection_units_opened_completion",
         ]
-    ]
-    inspected_long = inspected_df.rename(
+    ].rename(
         columns={
-            "avg_plant_units_inspected_completion": "Plants inspected (avg)",
-            "avg_sample_units_inspected_completion": "Sample units inspected (avg)",
-            "avg_inspection_units_opened_completion": "Inspection units opened (avg)",
+            "avg_plant_units_inspected_completion": "Plants inspected",
+            "avg_sample_units_inspected_completion": "Sample units inspected",
+            "avg_inspection_units_opened_completion": "Inspection units opened",
         }
-    ).melt(id_vars="name", var_name="level", value_name="count")
-
-    st.dataframe(
-        inspected_long.pivot(index="name", columns="level", values="count"),
-        use_container_width=True,
     )
+
+    if all_runs_df is not None and {
+        "name",
+        "avg_plant_units_inspected_completion",
+        "avg_sample_units_inspected_completion",
+        "avg_inspection_units_opened_completion",
+    }.issubset(all_runs_df.columns):
+        inspected_intervals = (
+            all_runs_df[
+                [
+                    "name",
+                    "avg_plant_units_inspected_completion",
+                    "avg_sample_units_inspected_completion",
+                    "avg_inspection_units_opened_completion",
+                ]
+            ]
+            .dropna()
+            .groupby("name")
+            .agg(
+                plant_lower=("avg_plant_units_inspected_completion", lambda s: s.quantile(0.025)),
+                plant_upper=("avg_plant_units_inspected_completion", lambda s: s.quantile(0.975)),
+                sample_lower=("avg_sample_units_inspected_completion", lambda s: s.quantile(0.025)),
+                sample_upper=("avg_sample_units_inspected_completion", lambda s: s.quantile(0.975)),
+                inspection_lower=("avg_inspection_units_opened_completion", lambda s: s.quantile(0.025)),
+                inspection_upper=("avg_inspection_units_opened_completion", lambda s: s.quantile(0.975)),
+                replications=("avg_plant_units_inspected_completion", "size"),
+            )
+            .reset_index()
+        )
+        inspected_df = inspected_df.merge(inspected_intervals, on="name", how="left")
+        inspected_df["Plants 95% interval"] = inspected_df.apply(
+            lambda row: f"{row['plant_lower']:.1f} - {row['plant_upper']:.1f}"
+            if pd.notna(row.get("plant_lower")) and row.get("replications", 0) > 1
+            else "n/a",
+            axis=1,
+        )
+        inspected_df["Sample units 95% interval"] = inspected_df.apply(
+            lambda row: f"{row['sample_lower']:.1f} - {row['sample_upper']:.1f}"
+            if pd.notna(row.get("sample_lower")) and row.get("replications", 0) > 1
+            else "n/a",
+            axis=1,
+        )
+        inspected_df["Inspection units 95% interval"] = inspected_df.apply(
+            lambda row: f"{row['inspection_lower']:.1f} - {row['inspection_upper']:.1f}"
+            if pd.notna(row.get("inspection_lower")) and row.get("replications", 0) > 1
+            else "n/a",
+            axis=1,
+        )
+
+    display_cols = [
+        "name",
+        "Plants inspected",
+        "Plants 95% interval",
+        "Sample units inspected",
+        "Sample units 95% interval",
+        "Inspection units opened",
+        "Inspection units 95% interval",
+    ]
+    available_cols = [col for col in display_cols if col in inspected_df.columns]
+    display_df = inspected_df[available_cols].rename(columns={"name": "Scenario"}).copy()
+    numeric_cols = [
+        col for col in ["Plants inspected", "Sample units inspected", "Inspection units opened"]
+        if col in display_df.columns
+    ]
+    for col in numeric_cols:
+        display_df[col] = display_df[col].map(lambda value: f"{value:,.1f}")
+    styled_inspected = (
+        display_df.style
+        .set_properties(subset=["Scenario"], **{"font-weight": "600", "color": "#1f3b63"})
+        .set_properties(
+            subset=[col for col in ["Plants inspected", "Sample units inspected", "Inspection units opened"] if col in display_df.columns],
+            **{"background-color": "#eaf3fb", "font-weight": "600", "color": "#16324f"},
+        )
+        .set_properties(
+            subset=[col for col in ["Plants 95% interval", "Sample units 95% interval", "Inspection units 95% interval"] if col in display_df.columns],
+            **{"background-color": "#f5f9fd", "color": "#355070"},
+        )
+    )
+    st.dataframe(styled_inspected, use_container_width=True, height=min(420, 70 + 38 * max(len(display_df), 1)))
 
 # Contamination totals by level (plant, sample, inspection)
 required_cols = [
