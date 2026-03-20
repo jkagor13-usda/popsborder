@@ -39,6 +39,22 @@ _SHARED_PAGE_STYLES = """
 
 .stSelectbox div[data-baseweb="select"] > div {
     font-size: 18px !important;
+    color: #2c3e50 !important;
+    font-weight: 500 !important;
+}
+
+.stTextInput input,
+.stNumberInput input,
+.stTextArea textarea {
+    font-size: 18px !important;
+    color: #2c3e50 !important;
+    font-weight: 500 !important;
+}
+
+.stMultiSelect div[data-baseweb="select"] > div {
+    font-size: 18px !important;
+    color: #2c3e50 !important;
+    font-weight: 500 !important;
 }
 
 .selectbox-with-tooltip {

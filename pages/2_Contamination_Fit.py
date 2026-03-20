@@ -219,6 +219,18 @@ def transform_input_to_concentration(
     return concentration
 
 
+def transform_concentration_to_input(
+        concentration: float,
+        conc_min: float = 0.5,
+        conc_max: float = 100.0
+) -> float:
+    """Invert the UI concentration transform back to the 0-100 control scale."""
+    concentration = float(np.clip(concentration, conc_min, conc_max))
+    log_min = np.log(conc_min)
+    log_max = np.log(conc_max)
+    return float(((np.log(concentration) - log_min) / (log_max - log_min)) * 100.0)
+
+
 # ---- Page setup ----
 init_state()
 slippage_state = get_slippage_state()
@@ -604,7 +616,8 @@ with assign_tab:
             1e-6,
         )
         stored_mean = st.session_state.get("manual_mean_rate", float(assigned_state.get("sample_unit_rate", 0.01)))
-        pct_default = float(stored_mean) * 100.0
+        stored_mean_input = st.session_state.get("manual_mean_input_pct", float(stored_mean) * 100.0)
+        pct_default = float(stored_mean_input)
 
         st.write("")
         render_labeled_help(
@@ -629,6 +642,10 @@ with assign_tab:
             "manual_concentration",
             float(max(2.0, assigned_state.get("alpha", FALLBACK_ALPHA) + assigned_state.get("beta", FALLBACK_BETA))),
         )
+        stored_concentration_input = st.session_state.get(
+            "manual_concentration_input",
+            transform_concentration_to_input(stored_conc),
+        )
 
         st.write("")
         render_labeled_help(
@@ -640,7 +657,7 @@ with assign_tab:
             "concentration",
             min_value=0.0,
             max_value=100.0,
-            value=float(stored_conc),
+            value=float(stored_concentration_input),
             step=0.5,
             key="manual_concentration_slider",
             label_visibility="collapsed"
@@ -667,7 +684,9 @@ with assign_tab:
             "sample_unit_rate": sample_unit_rate,
         }
         st.session_state["manual_concentration"] = concentration
+        st.session_state["manual_concentration_input"] = concentration_input
         st.session_state["manual_mean_rate"] = sample_unit_rate
+        st.session_state["manual_mean_input_pct"] = pct_input
 
 
         st.write("Contamination Summary")
