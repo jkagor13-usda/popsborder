@@ -18,7 +18,12 @@ import streamlit as st
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
-from gui.page_styles import apply_shared_page_styles, render_page_intro
+from gui.page_styles import (
+    apply_shared_page_styles,
+    render_labeled_help,
+    render_metric_card,
+    render_page_intro,
+)
 from gui.slippage_pipeline import SyntheticOptions, generate_synthetic_data
 from gui.slippage_ui import (
     get_slippage_state,
@@ -272,8 +277,16 @@ with ingest_tab:
     pis_df: Optional[pd.DataFrame] = state.get("pis_data")
     rbs_df: Optional[pd.DataFrame] = state.get("pending_rbs_upload")
 
-    st.subheader("Upload Actual Consignment Data")
-    rbs_upload = st.file_uploader("RBS calculator CSV", type=["csv"], key="rbs_upload_ingest")
+    render_labeled_help(
+        "Upload actual consignment data",
+        "Upload the RBS calculator CSV that will be saved directly or used as the seed input for synthetic consignment generation.",
+    )
+    rbs_upload = st.file_uploader(
+        "RBS calculator CSV",
+        type=["csv"],
+        key="rbs_upload_ingest",
+        label_visibility="collapsed",
+    )
     if rbs_upload is not None:
         rbs_df = pd.read_csv(rbs_upload)
         state["pending_rbs_upload"] = rbs_df
@@ -283,13 +296,33 @@ with ingest_tab:
         # Inline summary (mirrors Page 3 layout: table + stats together)
         metrics_top = st.columns(4)
         if "INSPECTION_NUMBER" in rbs_df.columns:
-            metrics_top[0].metric("Consignments", f"{rbs_df['INSPECTION_NUMBER'].nunique():,}")
+            with metrics_top[0]:
+                render_metric_card(
+                    "Consignments",
+                    f"{rbs_df['INSPECTION_NUMBER'].nunique():,}",
+                    "Number of unique consignments in the uploaded RBS data.",
+                )
         if "PATHWAY" in rbs_df.columns:
-            metrics_top[1].metric("Pathways", f"{rbs_df['PATHWAY'].nunique():,}")
+            with metrics_top[1]:
+                render_metric_card(
+                    "Pathways",
+                    f"{rbs_df['PATHWAY'].nunique():,}",
+                    "Number of unique shipment pathways represented in the uploaded data.",
+                )
         if "INSPECTION_LOCATION_NAME" in rbs_df.columns:
-            metrics_top[2].metric("Locations", f"{rbs_df['INSPECTION_LOCATION_NAME'].nunique():,}")
+            with metrics_top[2]:
+                render_metric_card(
+                    "Locations",
+                    f"{rbs_df['INSPECTION_LOCATION_NAME'].nunique():,}",
+                    "Number of unique inspection locations represented in the uploaded data.",
+                )
         if "COUNTRY_OF_ORIGIN_NAME" in rbs_df.columns:
-            metrics_top[3].metric("Countries", f"{rbs_df['COUNTRY_OF_ORIGIN_NAME'].nunique():,}")
+            with metrics_top[3]:
+                render_metric_card(
+                    "Countries",
+                    f"{rbs_df['COUNTRY_OF_ORIGIN_NAME'].nunique():,}",
+                    "Number of unique countries of origin represented in the uploaded data.",
+                )
 
         totals_cards = st.columns(2)
         if "TOTAL_PLANT_QUANTITY" in rbs_df.columns:
@@ -300,6 +333,10 @@ with ingest_tab:
     else:
         st.info("Upload RBS calculator data here.")
 
+    render_labeled_help(
+        "Consignment source for downstream analysis",
+        "Choose whether downstream pages should use synthetic consignments generated from uploaded data or use historical consignment data directly.",
+    )
     source_choice = st.radio(
         "Consignment source for downstream analysis",
         [
@@ -307,6 +344,7 @@ with ingest_tab:
             "Use historical consignments",
         ],
         index=0 if state["consignment_source"] == "synthetic" else 1,
+        label_visibility="collapsed",
     )
     state["consignment_source"] = "synthetic" if source_choice.startswith("Generate") else "historical"
 
@@ -316,26 +354,44 @@ with ingest_tab:
     if st.session_state.get("consignment_base_name") in ("Generated", "Historical", "Generated_Historical"):
         st.session_state["consignment_base_name"] = default_base
     current_base = st.session_state.get("consignment_base_name", default_base) or default_base
+    render_labeled_help(
+        "Consignment input file base name",
+        "Base name used when saving consignment CSV files into tmp/consignments for downstream pages.",
+    )
     st.text_input(
         "Consignment input file base name",
         value=current_base,
         key="consignment_base_name",
         help="Used to name RBS files in tmp/consignments (e.g., <name>.csv).",
+        label_visibility="collapsed",
     )
     state["consignment_base_name"] = st.session_state.get("consignment_base_name", current_base) or default_base
 
     if state["consignment_source"] == "synthetic":
-        st.markdown("### Synthetic consignment generation")
+        render_labeled_help(
+            "Synthetic consignment generation",
+            "Generate new synthetic consignments from the uploaded consignment dataset and save them for downstream analysis.",
+        )
         gen_cols = st.columns(2)
-        n_samples = gen_cols[0].number_input("Number of consignments to generate", min_value=1, max_value=10000, value=20, step=10)
+        gen_cols[0].markdown("Number of consignments to generate")
+        n_samples = gen_cols[0].number_input(
+            "Number of consignments to generate",
+            min_value=1,
+            max_value=10000,
+            value=20,
+            step=10,
+            label_visibility="collapsed",
+        )
         method_dict = {
             "multinomial sequential": "sequential",
             "gaussian mixture": "gmm",
         }
+        gen_cols[1].markdown("Sampling method")
         method_selection = gen_cols[1].selectbox(
             "Sampling method",
             options=list(method_dict),
             index=0,
+            label_visibility="collapsed",
         )
         method = method_dict[method_selection]
         state["use_custom_producer_grouping"] = st.checkbox(
@@ -352,7 +408,6 @@ with ingest_tab:
         if st.button(
             "Generate synthetic consignments",
             type="primary",
-            use_container_width=True,
             disabled=not has_synthetic_seed,
         ):
             set_synthetic_options(SyntheticOptions(n_samples=int(n_samples), sampling_method=method))
