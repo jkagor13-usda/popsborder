@@ -16,6 +16,7 @@ from gui.navigation import render_sidebar_navigation
 from gui.page_styles import (
     apply_shared_page_styles,
     render_labeled_help,
+    render_metric_card,
     render_page_intro,
     render_section_header,
 )
@@ -46,6 +47,18 @@ def _latest_output_run_dir(experiment_dir: Optional[Path]) -> Optional[Path]:
     if not candidates:
         return None
     return max(candidates, key=lambda path: path.stat().st_mtime)
+
+
+def _load_all_runs_df(output_dir: Optional[Path]) -> Optional[pd.DataFrame]:
+    if output_dir is None:
+        return None
+    all_runs_path = output_dir / "all_runs.csv"
+    if not all_runs_path.exists():
+        return None
+    try:
+        return pd.read_csv(all_runs_path)
+    except Exception:  # pylint: disable=broad-except
+        return None
 
 
 st.warning(
@@ -137,6 +150,7 @@ if results_df is None or results_df.empty:
 saved_output_files = state.get("run_output_files") or []
 selected_experiment_dir = selected_experiment.parent if selected_experiment else None
 latest_output_dir = _latest_output_run_dir(selected_experiment_dir)
+all_runs_df = _load_all_runs_df(latest_output_dir)
 saved_output_dir = state.get("run_output_dir")
 if latest_output_dir is not None:
     saved_output_dir = str(latest_output_dir)
@@ -144,41 +158,87 @@ if latest_output_dir is not None:
     if latest_output_files:
         saved_output_files = [str(path) for path in latest_output_files]
 if saved_output_dir:
-    st.caption(f"Output folder: {saved_output_dir}")
-if saved_output_files:
-    st.caption("Output files saved:")
-    for output_file in saved_output_files:
-        st.caption(str(output_file))
+    output_dir_path = Path(saved_output_dir)
+    output_file_names = ", ".join(Path(path).name for path in saved_output_files) if saved_output_files else "none"
+    st.caption(
+        f"Latest output: `{output_dir_path.name}` in `tmp/experiments/{output_dir_path.parent.parent.name}`. "
+        f"Files: {output_file_names}."
+    )
 
 render_labeled_help(
     "Overall summary",
-    "Summarizes how many scenarios were run, the total inspections performed, and the total slipped plant units across results.",
+    "Summarizes how many scenarios were run, the total inspections performed, and the mean slipped plant units aggregated across the scenario results.",
 )
 summary = results_df.copy()
 
 kpi_cols = st.columns(3)
-kpi_cols[0].metric("Scenarios", len(summary))
-kpi_cols[1].metric("Total inspections", f"{int(summary['num_inspections'].sum()):,}")
 slipped_total = int(summary["total_slipped_units"].sum()) if "total_slipped_units" in summary.columns else 0
-kpi_cols[2].metric("Slipped plant units", f"{slipped_total:,}")
+with kpi_cols[0]:
+    render_metric_card("Scenarios", f"{len(summary):,}", "Number of scenarios included in the current results.")
+with kpi_cols[1]:
+    render_metric_card(
+        "Total inspections",
+        f"{int(summary['num_inspections'].sum()):,}",
+        "Total number of inspections across the displayed scenario results.",
+    )
+with kpi_cols[2]:
+    render_metric_card(
+        "Slipped plant units",
+        f"{slipped_total:,}",
+        "Mean contaminated plant units missed, summed across the displayed scenario results.",
+    )
 
 # Slippage across scenarios (contaminated plant units that slipped)
 if "total_slipped_units" in results_df.columns and "name" in results_df.columns:
     render_labeled_help(
         "Slippage by scenario",
-        "Shows contaminated plant units that were missed under each scenario.",
+        "Bars show the mean number of contaminated plant units missed for each scenario across simulation replications. When available, error bars show the 95% interval across replications within that same scenario.",
     )
     slip_df = results_df[["name", "total_slipped_units"]]
     slip_chart = (
         alt.Chart(slip_df)
-        .mark_bar()
+        .mark_bar(color="#1f77b4")
         .encode(
             y=alt.Y("name:N", title="Scenario"),
             x=alt.X("total_slipped_units:Q", title="Slipped plant units"),
-            tooltip=["name", "total_slipped_units"],
+            tooltip=[
+                "name",
+                alt.Tooltip("total_slipped_units:Q", title="Slipped plant units", format=".2f"),
+            ],
         )
     )
+    if all_runs_df is not None and {"name", "total_slipped_units"}.issubset(all_runs_df.columns):
+        slip_interval_df = (
+            all_runs_df[["name", "total_slipped_units"]]
+            .dropna()
+            .groupby("name")["total_slipped_units"]
+            .agg(
+                lower=lambda s: s.quantile(0.025),
+                upper=lambda s: s.quantile(0.975),
+                n="size",
+            )
+            .reset_index()
+        )
+        slip_interval_df = slip_interval_df[slip_interval_df["n"] > 1]
+        if not slip_interval_df.empty:
+            slip_error_bars = (
+                alt.Chart(slip_interval_df)
+                .mark_errorbar(color="#08306b", ticks=True)
+                .encode(
+                    y=alt.Y("name:N", title="Scenario"),
+                    x=alt.X("lower:Q"),
+                    x2=alt.X2("upper:Q"),
+                    tooltip=[
+                        "name",
+                        alt.Tooltip("lower:Q", title="95% interval lower", format=".2f"),
+                        alt.Tooltip("upper:Q", title="95% interval upper", format=".2f"),
+                    ],
+                )
+            )
+            slip_chart = slip_chart + slip_error_bars
     st.altair_chart(slip_chart, use_container_width=True)
+    if all_runs_df is not None and not all_runs_df.empty and "replication" in all_runs_df.columns:
+        st.caption("Bars show scenario means. Error bars show 95% intervals across replications within the same scenario when multiple simulation replications are available.")
 
 # Inspected quantities by level
 if all(
@@ -231,25 +291,77 @@ required_cols = [
 if all(col in results_df.columns for col in required_cols):
     render_labeled_help(
         "Contamination totals by level",
-        "Compares contaminated and uncontaminated counts at the plant, sample unit, and inspection unit levels.",
+        "For each scenario, bars show the mean contaminated and not-contaminated counts across simulation replications at the plant, sample unit, and inspection unit levels. Error bars show 95% intervals across replications within the same scenario when available.",
     )
 
     def level_chart(level_label, contam_col, total_col):
         data = results_df[["name", contam_col, total_col]].copy()
         data = data.rename(columns={contam_col: "contaminated", total_col: "total"})
         data["not_contaminated"] = data["total"] - data["contaminated"]
-        data = data.melt(id_vars="name", value_vars=["contaminated", "not_contaminated"], var_name="metric", value_name="value")
-        return (
-            alt.Chart(data)
-            .mark_bar()
-            .encode(
+        data = data.melt(
+            id_vars="name",
+            value_vars=["contaminated", "not_contaminated"],
+            var_name="metric",
+            value_name="value",
+        )
+        interval_df = None
+        if all_runs_df is not None and contam_col in all_runs_df.columns and total_col in all_runs_df.columns:
+            interval_source = all_runs_df[["name", contam_col, total_col]].dropna()
+            if not interval_source.empty:
+                interval_source = interval_source.rename(columns={contam_col: "contaminated", total_col: "total"})
+                interval_source["not_contaminated"] = interval_source["total"] - interval_source["contaminated"]
+                interval_source = interval_source.melt(
+                    id_vars="name",
+                    value_vars=["contaminated", "not_contaminated"],
+                    var_name="metric",
+                    value_name="value",
+                )
+                interval_df = (
+                    interval_source.groupby(["name", "metric"])["value"]
+                    .agg(
+                        lower=lambda s: s.quantile(0.025),
+                        upper=lambda s: s.quantile(0.975),
+                        n="size",
+                    )
+                    .reset_index()
+                )
+                interval_df = interval_df[interval_df["n"] > 1]
+
+        charts = []
+        for metric_name, metric_title, metric_color in [
+            ("contaminated", "Contaminated", "#1f77b4"),
+            ("not_contaminated", "Not Contaminated", "#9ecae1"),
+        ]:
+            metric_data = data[data["metric"] == metric_name]
+            base = alt.Chart(metric_data).encode(
                 y=alt.Y("name:N", title="Scenario"),
                 x=alt.X("value:Q", title="Count"),
-                color=alt.Color("metric:N", title="Metric"),
-                tooltip=["name", "metric", "value"],
+                tooltip=[
+                    "name",
+                    alt.Tooltip("value:Q", title="Count", format=".2f"),
+                ],
             )
-            .properties(title=level_label)
-        )
+            metric_chart = base.mark_bar(color=metric_color).properties(title=metric_title)
+            if interval_df is not None and not interval_df.empty:
+                metric_intervals = interval_df[interval_df["metric"] == metric_name]
+                if not metric_intervals.empty:
+                    error_bars = (
+                        alt.Chart(metric_intervals)
+                        .mark_errorbar(color="#08306b", ticks=True)
+                        .encode(
+                            y=alt.Y("name:N", title="Scenario"),
+                            x=alt.X("lower:Q"),
+                            x2=alt.X2("upper:Q"),
+                            tooltip=[
+                                "name",
+                                alt.Tooltip("lower:Q", title="95% interval lower", format=".2f"),
+                                alt.Tooltip("upper:Q", title="95% interval upper", format=".2f"),
+                            ],
+                        )
+                    )
+                    metric_chart = metric_chart + error_bars
+            charts.append(metric_chart)
+        return alt.hconcat(*charts).properties(title=level_label)
 
     st.altair_chart(
         level_chart("Plant units", "total_contaminated_units", "num_plants"),
@@ -269,6 +381,8 @@ if all(col in results_df.columns for col in required_cols):
         ),
         use_container_width=True,
     )
+    if all_runs_df is not None and not all_runs_df.empty and "replication" in all_runs_df.columns:
+        st.caption("Bars show scenario means. Error bars show 95% intervals across replications within the same scenario when multiple simulation replications are available.")
 else:
     st.info("Contamination totals by level are unavailable in the current results.")
 
