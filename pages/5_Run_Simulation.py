@@ -405,7 +405,7 @@ if all(col in results_df.columns for col in required_cols):
         charts = []
         for metric_name, metric_title, metric_color in [
             ("contaminated", "Contaminated", "#1f77b4"),
-            ("not_contaminated", "Not Contaminated", "#9ecae1"),
+            ("not_contaminated", "Not contaminated", "#9ecae1"),
         ]:
             metric_data = data[data["metric"] == metric_name]
             base = alt.Chart(metric_data).encode(
@@ -439,20 +439,18 @@ if all(col in results_df.columns for col in required_cols):
         return alt.hconcat(*charts).properties(title=level_label)
 
     st.altair_chart(
-        level_chart("Plant units", "total_contaminated_units", "num_plants"),
+        level_chart("PLANT UNITS", "total_contaminated_units", "num_plants"),
         use_container_width=True,
     )
     st.altair_chart(
         level_chart(
-            "Sample units", "total_contaminated_sample_units", "num_sample_units"
+            "SAMPLE UNITS", "total_contaminated_sample_units", "num_sample_units"
         ),
         use_container_width=True,
     )
     st.altair_chart(
         level_chart(
-            "Inspection units",
-            "total_contaminated_inspection_units",
-            "num_inspection_units",
+            "INSPECTION UNITS", "total_contaminated_inspection_units", "num_inspection_units",
         ),
         use_container_width=True,
     )
