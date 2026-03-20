@@ -224,6 +224,7 @@ def run_pipeline(experiment_dir):
     # Persist results so Page 5 can render visuals
     state["results"] = result.scenario_results
     state["num_consignments"] = result.num_consignments
+    state["run_output_dir"] = str(result.output_dir)
     state["run_output_files"] = [str(path) for path in result.output_files]
     state["run_error"] = None
     return result

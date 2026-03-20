@@ -135,6 +135,7 @@ class PipelineResult:
     pis_data: pd.DataFrame
     rbs_data: pd.DataFrame
     num_consignments: int
+    output_dir: Path
     output_files: List[Path]
 
 
@@ -463,6 +464,10 @@ def run_slippage_pipeline(
     counts = [_infer_num_consignments(p) for p in unique_cons_files] if unique_cons_files else []
     num_consignments_default = min(counts) if counts else 1
 
+    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = experiment_dir / f"output_{run_timestamp}"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     def _run(
         cfg: Dict[str, Any],
         rec: Dict[str, Any],
@@ -479,6 +484,7 @@ def run_slippage_pipeline(
             num_consignments=cons_count,
             compliance_table=comp_table,
             detailed=True,
+            output_root=output_dir,
         )
 
     # --- Core executor (supports a single retry config) ---
@@ -544,17 +550,13 @@ def run_slippage_pipeline(
     # --- Convert results and write outputs ---
     scenario_results = [(result, cfg) for _details, result, cfg in scenario_results_raw]
 
-    output_dir = experiment_dir / "output"
-    output_dir.mkdir(parents=True, exist_ok=True)
-
     results_df = save_scenario_result_to_pandas(
         scenario_results,
         config_columns=CONFIG_COLUMNS,
         result_columns=RESULT_COLUMNS,
     )
 
-    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_output_path = output_dir / f"pis_contamination_scenario_results_{run_timestamp}.csv"
+    results_output_path = output_dir / "pis_contamination_scenario_results.csv"
     results_df.to_csv(results_output_path, index=False)
 
     # Per-replication output
@@ -570,7 +572,7 @@ def run_slippage_pipeline(
             if isinstance(cfg, dict) and "name" in cfg:
                 record.setdefault("name", cfg.get("name"))
             runs_records.append(record)
-        all_runs_output_path = output_dir / f"all_runs_{run_timestamp}.csv"
+        all_runs_output_path = output_dir / "all_runs.csv"
         pd.DataFrame(runs_records).to_csv(all_runs_output_path, index=False)
         output_files.append(all_runs_output_path)
 
@@ -585,6 +587,7 @@ def run_slippage_pipeline(
         pis_data=pd.DataFrame(),
         rbs_data=pd.DataFrame(),
         num_consignments=total_cons,
+        output_dir=output_dir,
         output_files=output_files,
     )
 

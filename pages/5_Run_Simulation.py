@@ -1,6 +1,7 @@
 # © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
 from pathlib import Path
+from typing import Optional
 
 from gui.runtime_warnings import suppress_optional_dependency_warnings
 
@@ -38,6 +39,15 @@ paths = state["paths"]
 TMP_DIR = Path("tmp")
 
 
+def _latest_output_run_dir(experiment_dir: Optional[Path]) -> Optional[Path]:
+    if experiment_dir is None or not experiment_dir.exists():
+        return None
+    candidates = [p for p in experiment_dir.glob("output_*") if p.is_dir()]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: path.stat().st_mtime)
+
+
 st.warning(
     "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
     "Features may be incomplete and subject to change. Results have not been validated.**"
@@ -45,6 +55,7 @@ st.warning(
 st.title("Page 5 - Run Simulation")
 render_page_intro("Execute the slippage pipeline and compare policies based on slippage metrics.")
 
+selected_experiment = None
 with st.sidebar:
     st.subheader("Execution options")
     simulations = st.number_input(
@@ -124,6 +135,16 @@ if results_df is None or results_df.empty:
     st.stop()
 
 saved_output_files = state.get("run_output_files") or []
+selected_experiment_dir = selected_experiment.parent if selected_experiment else None
+latest_output_dir = _latest_output_run_dir(selected_experiment_dir)
+saved_output_dir = state.get("run_output_dir")
+if latest_output_dir is not None:
+    saved_output_dir = str(latest_output_dir)
+    latest_output_files = sorted(p for p in latest_output_dir.glob("*.csv") if p.is_file())
+    if latest_output_files:
+        saved_output_files = [str(path) for path in latest_output_files]
+if saved_output_dir:
+    st.caption(f"Output folder: {saved_output_dir}")
 if saved_output_files:
     st.caption("Output files saved:")
     for output_file in saved_output_files:

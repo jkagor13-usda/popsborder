@@ -46,8 +46,14 @@ import numpy as np
 from slippage_model_utils.r_script_wrapper import find_repo_root
 
 def run_scenarios(
-    config, scenario_table, seed, num_simulations, num_consignments, compliance_table=None, 
-    detailed=False
+    config,
+    scenario_table,
+    seed,
+    num_simulations,
+    num_consignments,
+    compliance_table=None,
+    detailed=False,
+    output_root=None,
 ):
     """Run scenarios based on the configuration and list of scenarios
 
@@ -78,9 +84,13 @@ def run_scenarios(
     master_rng = np.random.default_rng(seed)
 
     # Define output directory for the simulated data
-    run_ts = datetime.now().strftime("%m_%d_%Y_%H_%M_%S")
-    run_dir = find_repo_root() / "output" / f"pops_border_scenario_data_{run_ts}"
+    if output_root is None:
+        run_ts = datetime.now().strftime("%m_%d_%Y_%H_%M_%S")
+        run_dir = find_repo_root() / "output" / f"pops_border_scenario_data_{run_ts}"
+    else:
+        run_dir = Path(output_root)
     run_dir = Path(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
     for record in scenario_table:
         scenario_name = record["name"]
         print(f"Running scenario: {scenario_name}")
