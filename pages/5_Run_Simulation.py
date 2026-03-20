@@ -9,6 +9,7 @@ suppress_optional_dependency_warnings()
 
 import pandas as pd
 import altair as alt
+import numpy as np
 import streamlit as st
 
 from gui.models import init_state
@@ -457,6 +458,149 @@ if all(col in results_df.columns for col in required_cols):
     )
     if all_runs_df is not None and not all_runs_df.empty and "replication" in all_runs_df.columns:
         st.caption("Bars show scenario means. Error bars show 95% intervals across replications within the same scenario when multiple simulation replications are available.")
+
+    pct_df = results_df[
+        [
+            "name",
+            "total_contaminated_units",
+            "total_contaminated_sample_units",
+            "total_contaminated_inspection_units",
+            "num_plants",
+            "num_sample_units",
+            "num_inspection_units",
+        ]
+    ].copy()
+    pct_df["Plant contamination %"] = np.where(
+        pct_df["num_plants"] > 0,
+        (pct_df["total_contaminated_units"] / pct_df["num_plants"]) * 100.0,
+        np.nan,
+    )
+    pct_df["Sample unit contamination %"] = np.where(
+        pct_df["num_sample_units"] > 0,
+        (pct_df["total_contaminated_sample_units"] / pct_df["num_sample_units"]) * 100.0,
+        np.nan,
+    )
+    pct_df["Inspection unit contamination %"] = np.where(
+        pct_df["num_inspection_units"] > 0,
+        (pct_df["total_contaminated_inspection_units"] / pct_df["num_inspection_units"]) * 100.0,
+        np.nan,
+    )
+
+    if all_runs_df is not None and {
+        "name",
+        "total_contaminated_units",
+        "total_contaminated_sample_units",
+        "total_contaminated_inspection_units",
+        "num_plants",
+        "num_sample_units",
+        "num_inspection_units",
+    }.issubset(all_runs_df.columns):
+        pct_runs = all_runs_df[
+            [
+                "name",
+                "total_contaminated_units",
+                "total_contaminated_sample_units",
+                "total_contaminated_inspection_units",
+                "num_plants",
+                "num_sample_units",
+                "num_inspection_units",
+            ]
+        ].copy()
+        pct_runs["plant_pct"] = np.where(
+            pct_runs["num_plants"] > 0,
+            (pct_runs["total_contaminated_units"] / pct_runs["num_plants"]) * 100.0,
+            np.nan,
+        )
+        pct_runs["sample_pct"] = np.where(
+            pct_runs["num_sample_units"] > 0,
+            (pct_runs["total_contaminated_sample_units"] / pct_runs["num_sample_units"]) * 100.0,
+            np.nan,
+        )
+        pct_runs["inspection_pct"] = np.where(
+            pct_runs["num_inspection_units"] > 0,
+            (pct_runs["total_contaminated_inspection_units"] / pct_runs["num_inspection_units"]) * 100.0,
+            np.nan,
+        )
+        pct_intervals = (
+            pct_runs.groupby("name")
+            .agg(
+                plant_lower=("plant_pct", lambda s: s.quantile(0.025)),
+                plant_upper=("plant_pct", lambda s: s.quantile(0.975)),
+                sample_lower=("sample_pct", lambda s: s.quantile(0.025)),
+                sample_upper=("sample_pct", lambda s: s.quantile(0.975)),
+                inspection_lower=("inspection_pct", lambda s: s.quantile(0.025)),
+                inspection_upper=("inspection_pct", lambda s: s.quantile(0.975)),
+                replications=("plant_pct", "size"),
+            )
+            .reset_index()
+        )
+        pct_df = pct_df.merge(pct_intervals, on="name", how="left")
+        pct_df["Plant 95% interval"] = pct_df.apply(
+            lambda row: f"{row['plant_lower']:.2f}% - {row['plant_upper']:.2f}%"
+            if pd.notna(row.get("plant_lower")) and row.get("replications", 0) > 1
+            else "n/a",
+            axis=1,
+        )
+        pct_df["Sample unit 95% interval"] = pct_df.apply(
+            lambda row: f"{row['sample_lower']:.2f}% - {row['sample_upper']:.2f}%"
+            if pd.notna(row.get("sample_lower")) and row.get("replications", 0) > 1
+            else "n/a",
+            axis=1,
+        )
+        pct_df["Inspection unit 95% interval"] = pct_df.apply(
+            lambda row: f"{row['inspection_lower']:.2f}% - {row['inspection_upper']:.2f}%"
+            if pd.notna(row.get("inspection_lower")) and row.get("replications", 0) > 1
+            else "n/a",
+            axis=1,
+        )
+
+    render_labeled_help(
+        "Contamination percentages by level",
+        "Shows the mean percentage contaminated at the plant, sample unit, and inspection unit levels for each scenario. When available, 95% intervals are computed across replications within the same scenario.",
+    )
+    pct_display_cols = [
+        "name",
+        "Plant contamination %",
+        "Plant 95% interval",
+        "Sample unit contamination %",
+        "Sample unit 95% interval",
+        "Inspection unit contamination %",
+        "Inspection unit 95% interval",
+    ]
+    pct_available_cols = [col for col in pct_display_cols if col in pct_df.columns]
+    pct_display_df = pct_df[pct_available_cols].rename(columns={"name": "Scenario"}).copy()
+    pct_numeric_cols = [
+        col
+        for col in [
+            "Plant contamination %",
+            "Sample unit contamination %",
+            "Inspection unit contamination %",
+        ]
+        if col in pct_display_df.columns
+    ]
+    for col in pct_numeric_cols:
+        pct_display_df[col] = pct_display_df[col].map(lambda value: f"{value:.2f}%")
+    styled_pct = (
+        pct_display_df.style
+        .set_properties(subset=["Scenario"], **{"font-weight": "600", "color": "#1f3b63"})
+        .set_properties(
+            subset=[col for col in pct_numeric_cols if col in pct_display_df.columns],
+            **{"background-color": "#eaf3fb", "font-weight": "600", "color": "#16324f"},
+        )
+        .set_properties(
+            subset=[
+                col
+                for col in [
+                    "Plant 95% interval",
+                    "Sample unit 95% interval",
+                    "Inspection unit 95% interval",
+                ]
+                if col in pct_display_df.columns
+            ],
+            **{"background-color": "#f5f9fd", "color": "#355070"},
+        )
+    )
+    st.dataframe(styled_pct, use_container_width=True, height=min(420, 70 + 38 * max(len(pct_display_df), 1)))
 else:
     st.info("Contamination totals by level are unavailable in the current results.")
 
