@@ -435,7 +435,6 @@ with fit_tab:
     st.caption("Fits are based on the PIS action upload and RBS calculator selection in this tab.")
 
     st.subheader("PIS action data upload")
-    st.markdown("**Consignment data source**")
     rbs_candidates = sorted((Path("tmp") / "consignments").glob("*.csv"))
     rbs_source = st.radio(
         "Consignment data source",
@@ -561,7 +560,8 @@ with fit_tab:
         value=st.session_state.get("last_saved_param_set", ""),
         key="fit_save_name",
     )
-    if st.button("Save fitted parameters", key="save_fit_params"):
+    can_save_fitted_parameters = fit_to_show is not None and bool(name_input.strip())
+    if st.button("Save fitted parameters", key="save_fit_params", disabled=not can_save_fitted_parameters):
         if fit_to_show is None:
             st.error("No parameters to save. Fit parameters first.")
         else:
@@ -710,7 +710,12 @@ with assign_tab:
             key="manual_save_name_sample_rate",
             label_visibility="collapsed"
         )
-        if st.button("Save current parameters", key="save_manual_params_sample_rate"):
+        can_save_manual_sample_rate = bool(manual_name.strip())
+        if st.button(
+            "Save current parameters",
+            key="save_manual_params_sample_rate",
+            disabled=not can_save_manual_sample_rate,
+        ):
             saved_name = _save_param_set(
                 manual_name or _next_param_name(_read_param_store()),
                 adj_alpha,
@@ -761,7 +766,12 @@ with assign_tab:
             value=st.session_state.get("last_saved_param_set", ""),
             key="manual_save_name_alpha_beta",
         )
-        if st.button("Save current parameters", key="save_manual_params_alpha_beta"):
+        can_save_manual_alpha_beta = bool(manual_name.strip())
+        if st.button(
+            "Save current parameters",
+            key="save_manual_params_alpha_beta",
+            disabled=not can_save_manual_alpha_beta,
+        ):
             saved_name = _save_param_set(
                 manual_name or _next_param_name(_read_param_store()),
                 alpha_val,

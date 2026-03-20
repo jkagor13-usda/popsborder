@@ -188,7 +188,7 @@ with tabs[0]:
         except Exception:  # pylint: disable=broad-except
             st.info("Unable to preview upload.")
 
-    if uploaded and st.button("Save custom scenario table", type="primary"):
+    if st.button("Save custom scenario table", type="primary", disabled=uploaded is None):
         try:
             uploaded.seek(0)
             df = pd.read_csv(uploaded)
