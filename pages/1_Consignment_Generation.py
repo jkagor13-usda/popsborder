@@ -233,7 +233,7 @@ paths = state["paths"]
 state.setdefault("consignment_source", "synthetic")
 state.setdefault("consignment_base_name", "consignment")
 state.setdefault("pending_rbs_upload", None)
-state.setdefault("use_custom_producer_grouping", False)
+state.setdefault("use_custom_producer_grouping", True)
 default_producer_grouping = Path("data_input/producer_grouping.csv")
 if "producer_grouping_path" not in state:
     state["producer_grouping_path"] = default_producer_grouping if default_producer_grouping.exists() else None
@@ -396,7 +396,7 @@ with ingest_tab:
         method = method_dict[method_selection]
         state["use_custom_producer_grouping"] = st.checkbox(
             "Use producer grouping CSV during synthetic generation",
-            value=bool(state.get("use_custom_producer_grouping", False)),
+            value=bool(state.get("use_custom_producer_grouping", True)),
             key="use_custom_producer_grouping",
             help="When enabled, synthetic generation will load producer grouping from the selected CSV on the Producer grouping tab.",
         )
