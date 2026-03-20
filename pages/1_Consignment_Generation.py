@@ -385,7 +385,6 @@ with ingest_tab:
             "Save uploaded consignments",
             type="primary",
             key="save_consignment_ingest",
-            use_container_width=True,
             disabled=not can_save_uploaded_consignments,
         ):
             ok, msg = _save_historical_rbs(current_rbs, state.get("pending_rbs_upload"), base_name=current_base)
@@ -546,7 +545,7 @@ with manual_tab:
         key="consignment_base_name_manual",
         help="Used to name RBS files in tmp/consignments (e.g., <name>.csv).",
     ) or "Manual"
-    if st.button("Save manual consignments", type="primary", key="save_consignment_manual", use_container_width=True):
+    if st.button("Save manual consignments", type="primary", key="save_consignment_manual"):
         ok, msg = _save_manual_rbs(pending_manual_rbs, base_name=manual_base)
         if ok:
             st.success(msg)
