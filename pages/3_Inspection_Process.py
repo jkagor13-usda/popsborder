@@ -16,7 +16,7 @@ import plotly.express as px
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
-from gui.page_styles import apply_shared_page_styles, render_page_intro
+from gui.page_styles import apply_shared_page_styles, render_labeled_help, render_page_intro
 from gui.slippage_ui import get_slippage_state, set_paths, create_default_paths
 from popsborder.inputs import build_compliance_lookup_table, load_compliance_lookup_csv
 from popsborder.inspections import normalize_rbs_variables_using_risk_unit_config
@@ -148,13 +148,16 @@ render_page_intro(
 tabs = st.tabs(["Upload table", "Create policy manually", "Saved RBS compliance policy"])
 
 with tabs[0]:
-    st.subheader("Define RBS Compliance Policy")
     
-    st.markdown("**Compliance level upload**")
+    render_labeled_help(
+        "Compliance level upload",
+        "Upload the table that defines the compliance category assigned to each policy combination, such as origin and propagative material type.",
+    )
     compliance_upload = st.file_uploader(
         "Upload CSV with compliance levels",
         type=["csv"],
         key="base_compliance_upload",
+        label_visibility="collapsed",
     )
     upload_preview = None
     if compliance_upload is not None:
@@ -175,11 +178,15 @@ with tabs[0]:
         st.markdown("**Compliance policy table**")
         st.dataframe(styled_base, use_container_width=True, height=360)
 
-    st.markdown("**Detection/confidence mapping upload**")
+    render_labeled_help(
+        "Detection/confidence mapping upload",
+        "Upload the table that maps each compliance category to its detection level and confidence level values used by the inspection policy.",
+    )
     mapping_upload = st.file_uploader(
         "Upload CSV with compliance level mapping of detection/confidence values",
         type=["csv"],
         key="compliance_mapping_upload",
+        label_visibility="collapsed",
     )
     mapping_preview = None
     if mapping_upload is not None:
@@ -206,7 +213,15 @@ with tabs[0]:
             )
             st.markdown("**Detection/confidence mapping policy table**")
             st.dataframe(styled_mapping, use_container_width=True, height=260)
-    save_name = st.text_input("Save as name", value="rbs_compliance_policy")
+    render_labeled_help(
+        "Save as name",
+        "Name of the consolidated RBS compliance policy file that will be saved and used on downstream pages.",
+    )
+    save_name = st.text_input(
+        "Save as name",
+        value="rbs_compliance_policy",
+        label_visibility="collapsed",
+    )
     can_save_uploaded_policy = compliance_upload is not None and mapping_upload is not None
     if st.button("Save policy", type="secondary", disabled=not can_save_uploaded_policy):
         try:
