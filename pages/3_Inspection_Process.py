@@ -207,7 +207,8 @@ with tabs[0]:
             st.markdown("**Detection/confidence mapping policy table**")
             st.dataframe(styled_mapping, use_container_width=True, height=260)
     save_name = st.text_input("Save as name", value="rbs_compliance_policy")
-    if (compliance_upload is not None or mapping_upload is not None) and st.button("Save policy", type="secondary"):
+    can_save_uploaded_policy = compliance_upload is not None and mapping_upload is not None
+    if st.button("Save policy", type="secondary", disabled=not can_save_uploaded_policy):
         try:
             if compliance_upload is None or mapping_upload is None:
                 raise ValueError("Both the compliance table and the detection/confidence mapping file are required.")
@@ -316,7 +317,8 @@ with tabs[1]:
 
     manual_df = state.get("manual_compliance_df")
     manual_name = st.text_input("Save as name (manual)", value="manual_compliance_policy")
-    if manual_df is not None and st.button("Save manual policy", type="secondary"):
+    can_save_manual_policy = manual_df is not None and not manual_df.empty
+    if st.button("Save manual policy", type="secondary", disabled=not can_save_manual_policy):
         target_path = COMPLIANCE_SOURCE_ROOT / f"{manual_name}.csv"
         target_path.parent.mkdir(parents=True, exist_ok=True)
         manual_df.to_csv(target_path, index=False)

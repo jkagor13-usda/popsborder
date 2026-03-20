@@ -59,6 +59,17 @@ def _unique_path(path: Path) -> Path:
             return candidate
 
 
+def _is_tmp_consignment_path(path: Optional[Path]) -> bool:
+    if path is None:
+        return False
+    try:
+        resolved = Path(path).resolve()
+        consignment_root = CONSIGNMENT_ROOT.resolve()
+        return str(resolved).startswith(str(consignment_root))
+    except Exception:
+        return False
+
+
 def _save_rbs_to_tmp(
     current_rbs: Optional[Path],
     pending_manual_rbs: Optional[pd.DataFrame],
@@ -289,7 +300,7 @@ with ingest_tab:
     else:
         st.info("Upload RBS calculator data here.")
 
-    source_choice = st.selectbox(
+    source_choice = st.radio(
         "Consignment source for downstream analysis",
         [
             "Generate synthetic consignments from data",
@@ -333,7 +344,17 @@ with ingest_tab:
             key="use_custom_producer_grouping",
             help="When enabled, synthetic generation will load producer grouping from the selected CSV on the Producer grouping tab.",
         )
-        if st.button("Generate synthetic consignments", type="primary", use_container_width=True):
+        has_tmp_saved_consignments = any(CONSIGNMENT_ROOT.glob("*.csv"))
+        has_synthetic_seed = (
+            (state.get("pending_rbs_upload") is not None and not state.get("pending_rbs_upload").empty)
+            or has_tmp_saved_consignments
+        )
+        if st.button(
+            "Generate synthetic consignments",
+            type="primary",
+            use_container_width=True,
+            disabled=not has_synthetic_seed,
+        ):
             set_synthetic_options(SyntheticOptions(n_samples=int(n_samples), sampling_method=method))
             set_paths(synthetic_seed=_consignment_paths()["uploaded_rbs"])
             producer_grouping_path = None
@@ -356,7 +377,17 @@ with ingest_tab:
             (pis_df is None or pis_df.empty) or (rbs_df is None or rbs_df.empty)
         ):
             st.warning("Upload both PIS action and RBS data on **Page 2 - Contamination Fit** to rely on historical consignments.")
-        if st.button("Save uploaded consignments", type="primary", key="save_consignment_ingest", use_container_width=True):
+        can_save_uploaded_consignments = (
+            (state.get("pending_rbs_upload") is not None and not state.get("pending_rbs_upload").empty)
+            or any(CONSIGNMENT_ROOT.glob("*.csv"))
+        )
+        if st.button(
+            "Save uploaded consignments",
+            type="primary",
+            key="save_consignment_ingest",
+            use_container_width=True,
+            disabled=not can_save_uploaded_consignments,
+        ):
             ok, msg = _save_historical_rbs(current_rbs, state.get("pending_rbs_upload"), base_name=current_base)
             if ok:
                 if state["paths"].rbs_data:
