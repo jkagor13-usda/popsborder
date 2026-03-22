@@ -76,7 +76,6 @@ import re
 from typing import Optional, Union
 from scipy import stats
 from popsborder.inspections import construct_risk_units
-from slippage_model_utils.r_script_wrapper import VariableCreator
 
 warnings.filterwarnings('ignore')
 
