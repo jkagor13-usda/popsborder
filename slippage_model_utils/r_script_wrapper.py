@@ -14,6 +14,8 @@ from math import isinf
 import time
 import pandas as pd
 
+import tempfile
+
 # === CONFIG ===
 # Name of the conda environment that contains R + required R packages.
 # Can be overridden by setting the environment variable POPS_R_CONDA_ENV.
@@ -432,7 +434,7 @@ def run_clarke_bb_group_model(
 
 
 
-class VariableCreator:
+class RVariableCreator:
     """
     Executes R functions from variable_creator.R using the conda-based R wrapper infrastructure.
     """
@@ -451,11 +453,7 @@ class VariableCreator:
         self.function_execution_times: List[Tuple[str, float]] = []
 
         # List of functions to execute: (name, method)
-        self.functions_to_execute: List[Tuple[str, Callable[..., bool]]] = [
-            ('Function1', self.function1),
-            ('Function2', self.function2),
-            ('Function3', self.function3),
-            ('Function4', self.function4),
+        self.functions_to_execute: List[Tuple[str, Callable[..., Any]]] = [
             ('basic_text_preproc', self.basic_text_preproc),
             ('generate_quantity_binaries', self.generate_quantity_binaries),
         ]
@@ -557,6 +555,168 @@ class VariableCreator:
                 f"Expected JSON from R function '{function_name}'; got (preview): {preview}"
             ) from e
 
+    def _call_r_function_df(
+            self,
+            function_name: str,
+            args: Optional[Dict[str, Any]] = None,
+            timeout_sec: float = 120.0,
+            use_parquet: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Call a specific R function from variable_creator.R using temp files for data transfer.
+        """
+        r_script_path = str(self._get_r_script_path())
+        cmd, env = _pick_rscript_command()
+
+        temp_files = []
+        temp_dir = tempfile.gettempdir()  # 🟢 Get Python's temp directory
+
+        try:
+            # Separate DataFrames from other arguments
+            df_paths = {}
+            simple_args = {}
+
+            if args:
+                for key, value in args.items():
+                    if isinstance(value, pd.DataFrame):
+                        if use_parquet:
+                            # Use temp_dir explicitly
+                            tmp_file = tempfile.NamedTemporaryFile(
+                                suffix='.parquet',
+                                delete=False,
+                                dir=temp_dir  # 🟢 Specify directory
+                            )
+                            tmp_file.close()
+                            value.to_parquet(tmp_file.name, engine='pyarrow', index=False)
+                        else:
+                            tmp_file = tempfile.NamedTemporaryFile(
+                                mode='w',
+                                suffix='.csv',
+                                delete=False,
+                                newline='',
+                                encoding='utf-8',
+                                dir=temp_dir  # 🟢 Specify directory
+                            )
+                            value.to_csv(tmp_file.name, index=False)
+                            tmp_file.close()
+
+                        df_paths[key] = tmp_file.name
+                        temp_files.append(tmp_file.name)
+                    else:
+                        simple_args[key] = value
+
+            payload = {
+                "func_name": function_name,
+                "args": simple_args,
+                "df_args": df_paths,
+                "use_parquet": use_parquet,
+                "temp_dir": temp_dir  # 🟢 Pass temp directory to R
+            }
+
+            tmp_json = tempfile.NamedTemporaryFile(
+                mode='w',
+                suffix='.json',
+                delete=False,
+                encoding='utf-8',
+                dir=temp_dir  # 🟢 Specify directory
+            )
+            json.dump(payload, tmp_json, allow_nan=False)
+            tmp_json.close()
+            temp_files.append(tmp_json.name)
+
+            subprocess_env = env if env else None
+
+            proc = subprocess.run(
+                cmd + [r_script_path, tmp_json.name],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout_sec,
+                env=subprocess_env,
+            )
+
+        except subprocess.TimeoutExpired as e:
+            raise TimeoutError(
+                f"R function '{function_name}' timed out after {timeout_sec}s."
+            ) from e
+        finally:
+            # Clean up INPUT temp files only (not output files yet!)
+            for tmp_file in temp_files:
+                try:
+                    if os.path.exists(tmp_file):
+                        os.unlink(tmp_file)
+                except Exception as cleanup_err:
+                    print(f"Warning: Could not delete temp file {tmp_file}: {cleanup_err}")
+
+        if proc.returncode != 0:
+            error_msg = (
+                f"R function '{function_name}' failed with return code {proc.returncode}\n"
+                f"STDOUT: {proc.stdout}\n"
+                f"STDERR: {proc.stderr}"
+            )
+            print(error_msg)
+            raise subprocess.CalledProcessError(
+                returncode=proc.returncode,
+                cmd=proc.args,
+                output=proc.stdout,
+                stderr=proc.stderr,
+            )
+
+        # Parse JSON output from R
+        try:
+            result = _parse_json_from_r_stdout(proc.stdout)
+
+            # Check if R returned file paths for DataFrames
+            if isinstance(result, dict) and "df_results" in result:
+                file_paths = result["df_results"]
+                df_results = {}
+
+                for key, file_path in file_paths.items():
+                    try:
+                        # 🟢 Add debug output
+                        print(f"Looking for result file: {file_path}")
+                        print(f"File exists: {os.path.exists(file_path)}")
+
+                        if os.path.exists(file_path):
+                            if file_path.endswith('.parquet'):
+                                df_results[key] = pd.read_parquet(file_path, engine='pyarrow')
+                            else:
+                                df_results[key] = pd.read_csv(file_path)
+
+                            print(f"Successfully read {len(df_results[key])} rows")
+
+                            # 🟢 Clean up AFTER reading
+                            try:
+                                os.unlink(file_path)
+                                print(f"Cleaned up: {file_path}")
+                            except Exception as e:
+                                print(f"Warning: Could not delete {file_path}: {e}")
+                        else:
+                            print(f"Warning: File not found: {file_path}")
+                            # 🟢 List files in temp directory for debugging
+                            if os.path.exists(temp_dir):
+                                print(f"Files in {temp_dir}:")
+                                for f in os.listdir(temp_dir)[:10]:  # Show first 10
+                                    print(f"  - {f}")
+
+                    except Exception as read_err:
+                        print(f"Error reading file {file_path}: {read_err}")
+                        import traceback
+                        traceback.print_exc()
+
+                # Merge DataFrame results with other results
+                result = {**result, **df_results}
+                if "df_results" in result:
+                    del result["df_results"]
+
+            return result
+
+        except ValueError as e:
+            preview = proc.stdout[:500].replace("\n", "\\n")
+            raise ValueError(
+                f"Expected JSON from R function '{function_name}'; got (preview): {preview}"
+            ) from e
+
     def basic_text_preproc(
             self,
             text_field: str,
@@ -613,180 +773,56 @@ class VariableCreator:
     def generate_quantity_binaries(
             self,
             df: pd.DataFrame,
-            quantity_threshold: float=200.0,
-            group_cols: Optional[List[str]] = None
+            quantity_threshold: float = 200.0,
+            group_cols: Optional[List[str]] = None,
+            use_parquet: bool = True
     ) -> pd.DataFrame:
         """
-        Aggregate data by inspection (or custom grouping) and calculate quantity features
+        Aggregate data by inspection (or custom grouping) and calculate quantity binary features
+
+        Args:
+            df: Input DataFrame with QUANTITY column
+            quantity_threshold: Threshold for binary classification
+            group_cols: Columns to group by (default: ['RISK_UNIT'])
+            use_parquet: If True, use Parquet format for file transfer (faster for large data)
+
+        Returns:
+            Aggregated DataFrame with quantity features
         """
         try:
             if 'QUANTITY' not in df.columns:
                 raise ValueError("DataFrame must contain 'QUANTITY' column")
 
-            df_dict = df.to_dict(orient='list')
-
             args: Dict[str, Any] = {
-                "df": df_dict,
+                "df": df,
                 "quantity_threshold": float(quantity_threshold)
             }
 
             if group_cols is not None:
                 args["group_cols"] = list(group_cols)
 
-            result = self._call_r_function("generate_quantity_binaries", args)
+            # Call R function with parquet option
+            result = self._call_r_function_df(
+                "generate_quantity_binaries",
+                args,
+                use_parquet=use_parquet
+            )
 
-            if isinstance(result, dict):
-                if result.get("status") == "error":
-                    raise ValueError(f"R function error: {result.get('error')}")
+            if isinstance(result, dict) and result.get("status") == "error":
+                raise ValueError(f"R function error: {result.get('error')}")
 
-                # Check if all values are scalars (single row result)
-                all_scalars = all(
-                    not isinstance(v, (list, tuple))
-                    for k, v in result.items()
-                    if k != "status"
-                )
-
-                if all_scalars:
-                    # Convert scalars to single-element lists
-                    result_dict = {k: [v] for k, v in result.items() if k != "status"}
-                    result_df = pd.DataFrame(result_dict)
+            if "result_df" in result:
+                result_df = result["result_df"]
+                if isinstance(result_df, pd.DataFrame):
+                    print(f"Aggregated to {result_df.shape[0]} groups")
+                    return result_df
                 else:
-                    # Normal case - lists already
-                    result_df = pd.DataFrame(result)
-                print(f"Aggregated to {result_df.shape[0]} groups")
-                return result_df
+                    raise ValueError(f"Expected DataFrame, got {type(result_df)}")
             else:
-                raise ValueError(f"Expected dict from R, got {type(result)}")
+                raise ValueError(f"No 'result_df' in result: {result.keys()}")
 
         except Exception as e:
-            print(f"Error in aggregate_by_inspection: {e}")
-            raise
-
-
-
-
-    def function1(self, param1: Optional[int] = None, param2: Optional[int] = None) -> bool:
-        """
-        Executes R function1 to create variable 1
-
-        Args:
-            param1: Optional integer parameter
-            param2: Optional integer parameter
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            # Prepare arguments for R function with explicit type conversion
-            args: Dict[str, Any] = {}
-            if param1 is not None:
-                args["param1"] = int(param1)
-            if param2 is not None:
-                args["param2"] = int(param2)
-
-            # Call R function
-            result = self._call_r_function("function1", args)
-
-            # Process result as needed
-            print(f"Function1 result: {result}")
-            return True
-
-        except Exception as e:
-            print(f"Error in function1: {e}")
-            return False
-
-    def function2(self, data: Optional[List[float]] = None) -> bool:
-        """
-        Executes R function2 to create variable 2
-
-        Args:
-            data: Optional list of numeric data
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            # Prepare arguments for R function with explicit type conversion
-            args: Dict[str, Any] = {}
-            if data is not None:
-                args["data"] = [float(x) for x in data]
-
-            # Call R function
-            result = self._call_r_function("function2", args)
-
-            # Process result as needed
-            print(f"Function2 result: {result}")
-            return True
-
-        except Exception as e:
-            print(f"Error in function2: {e}")
-            return False
-
-    def function3(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Executes R function3 to add a column to a dataframe
-
-        Args:
-            df: Pandas DataFrame to process
-
-        Returns:
-            Pandas DataFrame with the new column added
-        """
-        try:
-            # Convert pandas DataFrame to dict (orient='list' matches R's column format)
-            df_dict = df.to_dict(orient='list')
-
-            # Prepare arguments for R function
-            args: Dict[str, Any] = {
-                "df": df_dict
-            }
-
-            # Call R function
-            result = self._call_r_function("function3", args)
-
-            # Convert result back to pandas DataFrame
-            # Result should be a dict with column names as keys
-            if isinstance(result, dict):
-                result_df = pd.DataFrame(result)
-                print(f"Function3 result: Added column(s), shape: {result_df.shape}")
-                return result_df
-            else:
-                raise ValueError(f"Expected dict from R, got {type(result)}")
-
-        except Exception as e:
-            print(f"Error in function3: {e}")
-            raise
-
-    def function4(self, df: pd.DataFrame, operation: str = "sum", multiplier: float = 1.0) -> pd.DataFrame:
-        """
-        Executes R function3 with custom parameters
-
-        Args:
-            df: Pandas DataFrame to process
-            operation: Type of operation ('sum', 'product', 'mean')
-            multiplier: Multiplier to apply
-
-        Returns:
-            Pandas DataFrame with the new column added
-        """
-        try:
-            df_dict = df.to_dict(orient='list')
-
-            args: Dict[str, Any] = {
-                "df": df_dict,
-                "operation": operation,
-                "multiplier": float(multiplier)
-            }
-
-            result = self._call_r_function("function4", args)
-
-            if isinstance(result, dict):
-                return pd.DataFrame(result)
-            else:
-                raise ValueError(f"Expected dict from R, got {type(result)}")
-
-        except Exception as e:
-            print(f"Error in function3: {e}")
+            print(f"Error in generate_quantity_binaries: {e}")
             raise
 
     def run_all(self) -> Dict[str, Any]:
@@ -838,6 +874,4 @@ class VariableCreator:
         print(f"{'=' * 50}\n")
 
         return results
-
-
 
