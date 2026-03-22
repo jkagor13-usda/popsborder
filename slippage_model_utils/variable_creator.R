@@ -6,26 +6,39 @@ suppressPackageStartupMessages({
   library(jsonlite)
   library(stringr)
   library(dplyr)
+  library(arrow)  # For Parquet support
 })
 
-# Parse command line arguments
+# ===== Parse Command Line Arguments =====
+
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 1) {
   cat(toJSON(list(
-    error = "Expected exactly one JSON argument",
+    error = "Expected exactly one argument (JSON file path)",
     status = "error"
   ), auto_unbox = TRUE))
   quit(status = 1)
 }
 
-# Parse JSON input
+json_path <- args[1]
+
+# Read payload from JSON file
+if (!file.exists(json_path)) {
+  cat(toJSON(list(
+    error = paste("JSON file not found:", json_path),
+    status = "error"
+  ), auto_unbox = TRUE))
+  quit(status = 1)
+}
+
+# Parse JSON input from file
 input <- tryCatch({
-  fromJSON(args[1], simplifyVector = FALSE)
+  fromJSON(json_path, simplifyVector = FALSE)
 }, error = function(e) {
   cat(toJSON(list(
-    error = paste("Failed to parse JSON input:", e$message),
+    error = paste("Failed to parse JSON file:", e$message),
     status = "error",
-    input_received = args[1]
+    json_path = json_path
   ), auto_unbox = TRUE))
   quit(status = 1)
 })
@@ -40,7 +53,71 @@ if (is.null(input$func_name)) {
   quit(status = 1)
 }
 
-# ===== Helper Functions =====
+# Extract components
+func_name <- as.character(input$func_name)
+func_args <- input$args
+df_args <- input$df_args
+use_parquet <- if (!is.null(input$use_parquet)) input$use_parquet else FALSE
+
+# ===== Helper Functions for File I/O =====
+
+# Read DataFrames from file paths (Parquet or CSV)
+read_df_args <- function(df_paths, use_parquet) {
+  dfs <- list()
+  if (!is.null(df_paths) && length(df_paths) > 0) {
+    for (arg_name in names(df_paths)) {
+      file_path <- df_paths[[arg_name]]
+      if (!file.exists(file_path)) {
+        stop(paste("File not found:", file_path))
+      }
+
+      # Auto-detect format from extension or use_parquet flag
+      if (use_parquet || grepl("\\.parquet$", file_path, ignore.case = TRUE)) {
+        dfs[[arg_name]] <- as.data.frame(read_parquet(file_path))
+      } else {
+        dfs[[arg_name]] <- read.csv(file_path, stringsAsFactors = FALSE)
+      }
+    }
+  }
+  return(dfs)
+}
+
+# Write result DataFrames to temp files
+write_result_dfs <- function(result, use_parquet, temp_dir = NULL) {
+  df_results <- list()
+  cleaned_result <- list()
+
+  for (name in names(result)) {
+    value <- result[[name]]
+    if (is.data.frame(value)) {
+      # Write DataFrame to temp file in Python's temp directory
+      if (is.null(temp_dir)) {
+        # Fallback to R's temp dir (but this causes the issue!)
+        temp_dir <- tempdir()
+      }
+
+      if (use_parquet) {
+        temp_file <- file.path(temp_dir, paste0(name, "_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".parquet"))
+        write_parquet(value, temp_file)
+      } else {
+        temp_file <- file.path(temp_dir, paste0(name, "_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv"))
+        write.csv(value, temp_file, row.names = FALSE)
+      }
+      df_results[[name]] <- temp_file
+    } else {
+      cleaned_result[[name]] <- value
+    }
+  }
+
+  # Add file paths to result
+  if (length(df_results) > 0) {
+    cleaned_result$df_results <- df_results
+  }
+
+  return(cleaned_result)
+}
+
+# ===== Text Processing Helper Functions =====
 
 remove_extra_chars <- function(suffix_string, prefix_string, text) {
   text <- gsub(suffix_string, "", text)
@@ -48,45 +125,6 @@ remove_extra_chars <- function(suffix_string, prefix_string, text) {
   text <- str_squish(text)
   return(text)
 }
-
-# Helper function to properly convert JSON list to data.frame
-json_list_to_dataframe <- function(json_list) {
-  # json_list is a named list where each element is a vector (column)
-
-  if (!is.list(json_list)) {
-    stop("Input must be a list")
-  }
-
-  if (length(json_list) == 0) {
-    stop("Input list is empty")
-  }
-
-  # Get column names
-  col_names <- names(json_list)
-
-  if (is.null(col_names) || any(col_names == "")) {
-    stop("All list elements must be named")
-  }
-
-  # Check all columns have same length
-  lengths <- sapply(json_list, length)
-  if (length(unique(lengths)) > 1) {
-    stop(paste("All columns must have same length. Got:", paste(lengths, collapse=", ")))
-  }
-
-  n_rows <- lengths[1]
-
-  # Create empty data.frame with correct number of rows
-  df <- data.frame(row.names = 1:n_rows, stringsAsFactors = FALSE)
-
-  # Add each column
-  for (col_name in col_names) {
-    df[[col_name]] <- json_list[[col_name]]
-  }
-
-  return(df)
-}
-
 
 # ===== Main Functions =====
 
@@ -126,10 +164,8 @@ basic_text_preproc <- function(text_field, suffix_string = NULL, prefix_string =
   ))
 }
 
-
-
-
 # ===== Quantity Threshold Binary Function =====
+
 generate_quantity_binaries <- function(df,
                                       quantity_threshold = 200,
                                       group_cols = c("RISK_UNIT")) {
@@ -137,12 +173,15 @@ generate_quantity_binaries <- function(df,
     stop("df argument is required")
   }
 
-  # Properly convert to data frame
+  # Ensure df is a data frame
   if (!is.data.frame(df)) {
-    df <- json_list_to_dataframe(df)
+    stop("df must be a data.frame")
   }
 
   # Ensure QUANTITY is numeric
+  if (!"QUANTITY" %in% names(df)) {
+    stop(paste("QUANTITY column not found. Available columns:", paste(names(df), collapse = ", ")))
+  }
   df$QUANTITY <- as.numeric(df$QUANTITY)
 
   # Ensure group_cols is a character vector (flatten if nested list)
@@ -169,9 +208,9 @@ generate_quantity_binaries <- function(df,
     ))
   }
 
-  # Use !! and sym() for dynamic column selection
+  # Perform aggregation
   if (length(group_cols) == 1) {
-    # Single grouping column - use simpler approach
+    # Single grouping column
     dt <- df %>%
       group_by(.data[[group_cols[1]]]) %>%
       summarize(
@@ -202,125 +241,78 @@ generate_quantity_binaries <- function(df,
       )
   }
 
-  # Convert to data.frame
+  # Convert to data.frame and ensure proper types
   dt <- as.data.frame(dt, stringsAsFactors = FALSE)
 
-  # Convert to list format for JSON transfer
-  result_list <- as.list(dt)
-
-  # Ensure character/factor columns are converted to character vectors
-  for (col in names(result_list)) {
-    if (is.factor(result_list[[col]])) {
-      result_list[[col]] <- as.character(result_list[[col]])
+  # Ensure character/factor columns are converted to character
+  for (col in names(dt)) {
+    if (is.factor(dt[[col]])) {
+      dt[[col]] <- as.character(dt[[col]])
     }
   }
 
-  return(result_list)
-}
-
-
-
-
-
-
-
-
-
-
-
-function1 <- function(param1 = NULL, param2 = NULL) {
-  result <- list(
-    sum = if(!is.null(param1) && !is.null(param2)) param1 + param2 else NA,
-    param1 = param1,
-    param2 = param2,
-    status = "success"
-  )
-  return(result)
-}
-
-function2 <- function(data = NULL) {
-  result <- list(
-    mean_value = if(!is.null(data)) mean(data) else NA,
-    length = if(!is.null(data)) length(data) else 0,
-    status = "success"
-  )
-  return(result)
-}
-
-function3 <- function(df = NULL) {
-  if (is.null(df)) {
-    stop("df argument is required")
-  }
-
-  df <- as.data.frame(df)
-  numeric_cols <- sapply(df, is.numeric)
-  if (any(numeric_cols)) {
-    df$new_column <- rowSums(df[, numeric_cols, drop = FALSE])
-  } else {
-    df$new_column <- NA
-  }
-
-  return(df)
-}
-
-function4 <- function(df = NULL, operation = "sum", multiplier = 1.0) {
-  if (is.null(df)) {
-    stop("df argument is required")
-  }
-
-  df <- as.data.frame(df)
-  numeric_cols <- sapply(df, is.numeric)
-
-  if (!any(numeric_cols)) {
-    df$result <- NA
-    return(df)
-  }
-
-  if (operation == "sum") {
-    df$result <- rowSums(df[, numeric_cols, drop = FALSE]) * multiplier
-  } else if (operation == "product") {
-    df$result <- apply(df[, numeric_cols, drop = FALSE], 1, prod) * multiplier
-  } else if (operation == "mean") {
-    df$result <- rowMeans(df[, numeric_cols, drop = FALSE]) * multiplier
-  } else {
-    stop(paste("Unknown operation:", operation))
-  }
-
-  return(df)
+  # Return as DataFrame (will be written to file by wrapper)
+  return(list(result_df = dt))
 }
 
 # ===== Main Execution =====
 
-# Ensure func_name is a character string
-func_name <- as.character(input$func_name)
+# Read DataFrames from file paths
+tryCatch({
+  dfs <- read_df_args(df_args, use_parquet)
 
-# Execute function with error handling
-result <- tryCatch({
-  switch(
+  # Extract temp directory from payload (Python will provide this)
+  temp_dir <- if (!is.null(input$temp_dir)) input$temp_dir else NULL
+
+  # Merge DataFrame arguments with simple arguments
+  all_args <- c(func_args, dfs)
+
+  # Execute the requested function
+  result <- switch(
     func_name,
-    "basic_text_preproc" = do.call(basic_text_preproc, input$args),
-    "generate_quantity_binaries" = do.call(generate_quantity_binaries, input$args),
-    "function1" = do.call(function1, input$args),
-    "function2" = do.call(function2, input$args),
-    "function3" = do.call(function3, input$args),
-    "function4" = do.call(function4, input$args),
-    # Default case if function name doesn't match
+    "basic_text_preproc" = do.call(basic_text_preproc, all_args),
+    "generate_quantity_binaries" = do.call(generate_quantity_binaries, all_args),
     {
       list(
         error = paste("Unknown function:", func_name),
         status = "error",
-        available_functions = c("basic_text_preproc", "function1", "function2", "function3", "function4")
+        available_functions = c("basic_text_preproc", "generate_quantity_binaries")
       )
     }
   )
+
+  # Check if result has an error status
+  if (!is.null(result$status) && result$status == "error") {
+    cat(toJSON(result, auto_unbox = TRUE, digits = NA, null = "null"))
+    cat("\n")
+    flush(stdout())
+    quit(save = "no", status = 1, runLast = FALSE)
+  }
+
+  # Process result - write DataFrames to files (pass temp_dir)
+  final_result <- write_result_dfs(result, use_parquet, temp_dir)
+
+  # Output JSON to stdout
+  cat(toJSON(final_result, auto_unbox = TRUE, digits = NA, null = "null"))
+  cat("\n")
+  flush(stdout())
+  flush(stderr())
+
+  # Explicit clean exit
+  quit(save = "no", status = 0, runLast = FALSE)
+
 }, error = function(e) {
-  list(
+  error_result <- list(
     error = e$message,
     status = "error",
     function_name = func_name,
     traceback = paste(capture.output(traceback()), collapse = "\n")
   )
+  cat(toJSON(error_result, auto_unbox = TRUE, digits = NA, null = "null"))
+  cat("\n")
+  flush(stdout())
+  flush(stderr())
+  quit(save = "no", status = 1, runLast = FALSE)
 })
 
-# Output as JSON (must be last line)
-cat(toJSON(result, auto_unbox = TRUE, digits = NA, null = "null"))
+quit(save = "no", status = 0, runLast = FALSE)
