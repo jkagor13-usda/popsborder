@@ -85,10 +85,15 @@ def main():
         config["consignment"]["input_file"]["file_name"] = "slippage_data/Synthetic_PIS_SampleQuantity.csv"
 
     # Pull in the VariableCreator object to use R code to create engineered columns
-    creator = VariableCreator()
+    creator = RVariableCreator()
 
-    quantity_binary_variables = creator.generate_quantity_binaries(synth_data, quantity_threshold=500,
-                                                                   group_cols=['RISK_UNIT'])
+    # Fall back to CSV if needed (smaller data, compatibility)
+    quantity_binary_variables = creator.generate_quantity_binaries(
+        df=synth_data,
+        quantity_threshold=200,
+        group_cols=['RISK_UNIT'],
+        use_parquet=False
+    )
 
     synth_data = synth_data.merge(
         quantity_binary_variables,
