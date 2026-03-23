@@ -72,6 +72,8 @@ RESULT_COLUMNS = [
     "total_contaminated_units",
     "total_contaminated_sample_units",
     "total_contaminated_inspection_units",
+    "total_intercepted_inspection_units",
+    "total_slipped_inspection_units",
 ]
 
 @dataclass
