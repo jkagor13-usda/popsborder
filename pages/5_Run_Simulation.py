@@ -198,17 +198,17 @@ with kpi_cols[0]:
     render_metric_card("Scenarios", f"{len(summary):,}", "Number of scenarios included in the current results.")
 with kpi_cols[1]:
     render_metric_card(
-        "Total inspections",
-        f"{int(summary['num_inspections'].sum()):,}",
-        "Total number of consignments inspected across the displayed scenario results.",
-    )
-with kpi_cols[2]:
-    render_metric_card(
         "Replications per scenario",
         f"{replications_per_scenario:,}",
         "Number of simulation replications used for each scenario in the current results.",
     )
-
+with kpi_cols[2]:
+    render_metric_card(
+        "Total inspections simulated",
+        f"{int(summary['num_inspections'].sum()):,}",
+        "Total number of consignments inspected across the displayed scenario results.",
+    )
+    
 # Slippage across scenarios (contaminated plant units that slipped)
 if "total_slipped_units" in results_df.columns and "name" in results_df.columns:
     render_labeled_help(
