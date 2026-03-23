@@ -488,10 +488,9 @@ def run_slippage_pipeline(
         )
 
     # --- Core executor (supports a single retry config) ---
-    def _execute_all(base_cfg: Dict[str, Any]) -> Tuple[List[Tuple[Any, Dict, Dict]], List[int], List[Tuple[int, Any, Dict, Dict]]]:
+    def _execute_all(base_cfg: Dict[str, Any]) -> Tuple[List[Tuple[Any, Dict, Dict]], List[int]]:
         scenario_results_raw: List[Tuple[Any, Dict, Dict]] = []
         consignment_counts: List[int] = []
-        run_rows: List[Tuple[int, Any, Dict, Dict]] = []
 
         for rec0 in scenarios:
             rec = _normalize_inspection(_apply_contam_defaults(rec0, base_cfg))
@@ -508,24 +507,11 @@ def run_slippage_pipeline(
             scenario_results_raw.extend(
                 _run(cfg_local, rec, rec_num_consignments, num_sims=num_simulations, comp_table=comp_table)
             )
-
-            # Per-replication runs
-            if num_simulations > 1:
-                for rep in range(num_simulations):
-                    results = _run(
-                        copy.deepcopy(cfg_local),
-                        rec,
-                        rec_num_consignments,
-                        num_sims=1,
-                        comp_table=comp_table,
-                    )
-                    run_rows.extend((rep, *tup) for tup in results)
-
-        return scenario_results_raw, consignment_counts, run_rows
+        return scenario_results_raw, consignment_counts
 
     # --- Run with one retry path for "Sample larger than population" ---
     try:
-        scenario_results_raw, consignment_counts, run_rows = _execute_all(config)
+        scenario_results_raw, consignment_counts = _execute_all(config)
     except ValueError as exc:
         if "Sample larger than population" not in str(exc):
             raise
@@ -536,7 +522,7 @@ def run_slippage_pipeline(
         cfg_retry["inspection"]["proportion"]["value"] = min(float(current_prop), 0.001)
         cfg_retry["inspection"]["min_inspection_units"] = 0
 
-        scenario_results_raw, consignment_counts, run_rows = _execute_all(cfg_retry)
+        scenario_results_raw, consignment_counts = _execute_all(cfg_retry)
     except ZeroDivisionError as exc:
         raise ValueError(
             "Division by zero during scenario run. Check inspection proportion, sampling units, and config values."
@@ -561,17 +547,16 @@ def run_slippage_pipeline(
 
     # Per-replication output
     output_files: List[Path] = [results_output_path]
-    if run_rows:
-        runs_records = []
-        for rep_idx, _details, result, cfg in run_rows:
-            record = {"replication": rep_idx}
-            try:
-                record.update(vars(result))
-            except Exception:
-                pass
-            if isinstance(cfg, dict) and "name" in cfg:
-                record.setdefault("name", cfg.get("name"))
-            runs_records.append(record)
+    runs_records: List[Dict[str, Any]] = []
+    for _details, result, cfg in scenario_results_raw:
+        rep_df = getattr(result, "replication_outputs", None)
+        if rep_df is None or getattr(rep_df, "empty", True):
+            continue
+        rep_records = rep_df.copy()
+        if isinstance(cfg, dict) and "name" in cfg:
+            rep_records["name"] = cfg.get("name")
+        runs_records.extend(rep_records.to_dict(orient="records"))
+    if runs_records:
         all_runs_output_path = output_dir / "all_runs.csv"
         pd.DataFrame(runs_records).to_csv(all_runs_output_path, index=False)
         output_files.append(all_runs_output_path)

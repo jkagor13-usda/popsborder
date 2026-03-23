@@ -615,15 +615,26 @@ def run_simulation(
         totals.avg_plant_units_inspected_detection += result.avg_plant_units_inspected_detection
 
         sim_rep_outputs[f'Rep_{i}'] = {}
+        sim_rep_outputs[f'Rep_{i}']['replication'] = i
         sim_rep_outputs[f'Rep_{i}']['total_slipped_units'] = result.total_slipped_units
         sim_rep_outputs[f'Rep_{i}']['total_unit_slippage_rate'] = (result.total_slipped_units/result.total_num_plants)
         sim_rep_outputs[f'Rep_{i}']['total_slipped_sample_units'] = result.total_slipped_sample_units
         sim_rep_outputs[f'Rep_{i}']['avg_slipped_units_per_consignment'] = result.avg_slipped_units_per_consignment
         sim_rep_outputs[f'Rep_{i}']['avg_slipped_sample_units_per_consignment'] = result.avg_slipped_sample_units_per_consignment
+        sim_rep_outputs[f'Rep_{i}']['total_contaminated_units'] = result.total_contaminated_units
+        sim_rep_outputs[f'Rep_{i}']['total_contaminated_sample_units'] = result.total_contaminated_sample_units
+        sim_rep_outputs[f'Rep_{i}']['total_contaminated_inspection_units'] = result.total_contaminated_inspection_units
+        sim_rep_outputs[f'Rep_{i}']['num_plants'] = result.total_num_plants
+        sim_rep_outputs[f'Rep_{i}']['num_sample_units'] = result.total_num_sample_units
+        sim_rep_outputs[f'Rep_{i}']['num_inspection_units'] = result.total_num_inspection_units
+        sim_rep_outputs[f'Rep_{i}']['avg_plant_units_inspected_completion'] = result.avg_plant_units_inspected_completion
+        sim_rep_outputs[f'Rep_{i}']['avg_sample_units_inspected_completion'] = result.avg_sample_units_inspected_completion
+        sim_rep_outputs[f'Rep_{i}']['avg_inspection_units_opened_completion'] = result.avg_inspection_units_opened_completion
 
 
     # Convert the sim replication metric storage to a dataframe for analysis
     df_rep_outputs = pd.DataFrame.from_dict(sim_rep_outputs, orient='index')
+    totals.replication_outputs = df_rep_outputs.reset_index(drop=True)
 
     # make these relative (reusing the variables)
     totals.missing /= float(num_simulations)
