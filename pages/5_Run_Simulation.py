@@ -63,7 +63,7 @@ def _load_all_runs_df(output_dir: Optional[Path]) -> Optional[pd.DataFrame]:
         return None
 
 
-def _styled_summary_table(df: pd.DataFrame, mean_columns: list[str], interval_columns: list[str]) -> pd.io.formats.style.Styler:
+def _styled_summary_table(df: pd.DataFrame, mean_columns: list[str], interval_columns: list[str]):
     return (
         df.style
         .set_properties(subset=["Scenario"], **{"font-weight": "600", "color": "#1f3b63"})
