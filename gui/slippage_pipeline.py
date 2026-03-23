@@ -493,6 +493,8 @@ def run_slippage_pipeline(
         )
 
     # --- Core executor (supports a single retry config) ---
+    skipped_scenarios: List[str] = []
+
     def _execute_all(base_cfg: Dict[str, Any]) -> Tuple[List[Tuple[Any, Dict, Dict]], List[int]]:
         scenario_results_raw: List[Tuple[Any, Dict, Dict]] = []
         consignment_counts: List[int] = []
@@ -510,7 +512,7 @@ def run_slippage_pipeline(
 
             # Aggregated run
             last_exc: Optional[Exception] = None
-            for retry_idx in range(3):
+            for retry_idx in range(10):
                 try:
                     scenario_results_raw.extend(
                         _run(
@@ -530,7 +532,8 @@ def run_slippage_pipeline(
                     last_exc = exc
                     continue
             if last_exc is not None:
-                raise last_exc
+                skipped_scenarios.append(str(rec.get("name", f"scenario_{len(skipped_scenarios) + 1}")))
+                continue
         return scenario_results_raw, consignment_counts
 
     # --- Run with one retry path for "Sample larger than population" ---
@@ -558,6 +561,14 @@ def run_slippage_pipeline(
         ) from exc
 
     # --- Convert results and write outputs ---
+    if not scenario_results_raw:
+        if skipped_scenarios:
+            raise ValueError(
+                "All scenarios were skipped after repeated 'a <= 0' contamination errors: "
+                + ", ".join(skipped_scenarios)
+            )
+        raise ValueError("No scenario results were generated.")
+
     scenario_results = [(result, cfg) for _details, result, cfg in scenario_results_raw]
 
     results_df = save_scenario_result_to_pandas(
@@ -568,9 +579,17 @@ def run_slippage_pipeline(
 
     results_output_path = output_dir / "pis_contamination_scenario_results.csv"
     results_df.to_csv(results_output_path, index=False)
+    if skipped_scenarios:
+        skipped_path = output_dir / "skipped_scenarios.txt"
+        skipped_path.write_text(
+            "Skipped after repeated 'a <= 0' errors:\n" + "\n".join(skipped_scenarios),
+            encoding="utf-8",
+        )
 
     # Per-replication output
     output_files: List[Path] = [results_output_path]
+    if skipped_scenarios:
+        output_files.append(skipped_path)
     runs_records: List[Dict[str, Any]] = []
     for _details, result, cfg in scenario_results_raw:
         rep_df = getattr(result, "replication_outputs", None)
