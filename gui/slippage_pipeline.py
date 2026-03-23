@@ -62,6 +62,8 @@ RESULT_COLUMNS = [
     "pct_sample_units_inspected_detection",
     "avg_plant_units_inspected_completion",
     "avg_plant_units_inspected_detection",
+    "pct_plant_units_inspected_completion",
+    "pct_plant_units_inspected_detection",
     "total_missed_contaminants",
     "total_intercepted_contaminants",
     "total_slipped_units",
@@ -70,6 +72,8 @@ RESULT_COLUMNS = [
     "total_contaminated_units",
     "total_contaminated_sample_units",
     "total_contaminated_inspection_units",
+    "total_intercepted_inspection_units",
+    "total_slipped_inspection_units",
 ]
 
 @dataclass
