@@ -430,6 +430,12 @@ def simulation(
         ),
         avg_plant_units_inspected_completion=total_plant_units_inspected_completion / num_consignments,
         avg_plant_units_inspected_detection=total_plant_units_inspected_detection / num_consignments,
+        pct_plant_units_inspected_completion=(
+            (total_plant_units_inspected_completion / total_num_plants) * 100
+        ),
+        pct_plant_units_inspected_detection=(
+            (total_plant_units_inspected_detection / total_num_plants) * 100
+        ),
         total_contaminated_units=total_contaminated_units_all,
         total_contaminated_sample_units=total_contaminated_sample_units_all,
         total_contaminated_inspection_units=total_contaminated_inspection_units_all,
@@ -505,6 +511,8 @@ def run_simulation(
         pct_sample_units_inspected_detection=0,
         avg_plant_units_inspected_completion=0,
         avg_plant_units_inspected_detection=0,
+        pct_plant_units_inspected_completion=0,
+        pct_plant_units_inspected_detection=0,
         pct_contaminant_unreported_if_detection=0,
         true_contamination_rate=0,
         max_missed_contamination_rate=0,
@@ -583,6 +591,8 @@ def run_simulation(
         totals.avg_sample_units_inspected_detection += result.avg_sample_units_inspected_detection
         totals.pct_sample_units_inspected_completion += result.pct_sample_units_inspected_completion
         totals.pct_sample_units_inspected_detection += result.pct_sample_units_inspected_detection
+        totals.pct_plant_units_inspected_completion += result.pct_plant_units_inspected_completion
+        totals.pct_plant_units_inspected_detection += result.pct_plant_units_inspected_detection
         totals.pct_contaminant_unreported_if_detection += (
             result.pct_contaminant_unreported_if_detection
         )
@@ -630,6 +640,9 @@ def run_simulation(
         sim_rep_outputs[f'Rep_{i}']['avg_plant_units_inspected_completion'] = result.avg_plant_units_inspected_completion
         sim_rep_outputs[f'Rep_{i}']['avg_sample_units_inspected_completion'] = result.avg_sample_units_inspected_completion
         sim_rep_outputs[f'Rep_{i}']['avg_inspection_units_opened_completion'] = result.avg_inspection_units_opened_completion
+        sim_rep_outputs[f'Rep_{i}']['pct_plant_units_inspected_completion'] = result.pct_plant_units_inspected_completion
+        sim_rep_outputs[f'Rep_{i}']['pct_sample_units_inspected_completion'] = result.pct_sample_units_inspected_completion
+        sim_rep_outputs[f'Rep_{i}']['pct_inspection_units_opened_completion'] = result.pct_inspection_units_opened_completion
 
 
     # Convert the sim replication metric storage to a dataframe for analysis
@@ -652,6 +665,8 @@ def run_simulation(
     totals.avg_sample_units_inspected_detection /= float(num_simulations)
     totals.pct_sample_units_inspected_completion /= float(num_simulations)
     totals.pct_sample_units_inspected_detection /= float(num_simulations)
+    totals.pct_plant_units_inspected_completion /= float(num_simulations)
+    totals.pct_plant_units_inspected_detection /= float(num_simulations)
     totals.pct_contaminant_unreported_if_detection /= float(num_simulations)
     totals.true_contamination_rate /= float(num_simulations)
     if totals.num_plants:

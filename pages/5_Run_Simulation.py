@@ -204,7 +204,7 @@ with kpi_cols[1]:
     )
 with kpi_cols[2]:
     render_metric_card(
-        "Total inspections simulated",
+        "Total consignments simulated",
         f"{int(summary['num_inspections'].sum()):,}",
         "Total number of consignments inspected across the displayed scenario results.",
     )
@@ -408,6 +408,108 @@ if all(
         interval_columns=["Plants 95% interval", "Sample units 95% interval", "Inspection units 95% interval"],
     )
     st.dataframe(styled_inspected, use_container_width=True, height=min(420, 70 + 38 * max(len(display_df), 1)))
+
+    inspected_pct_df = results_df[
+        [
+            "name",
+            "pct_plant_units_inspected_completion",
+            "pct_sample_units_inspected_completion",
+            "pct_inspection_units_opened_completion",
+        ]
+    ].copy()
+    inspected_pct_df = inspected_pct_df.rename(
+        columns={
+            "pct_plant_units_inspected_completion": "Plant units inspected %",
+            "pct_sample_units_inspected_completion": "Sample units inspected %",
+            "pct_inspection_units_opened_completion": "Inspection units opened %",
+        }
+    )
+    if all_runs_df is not None and {
+        "name",
+        "pct_plant_units_inspected_completion",
+        "pct_sample_units_inspected_completion",
+        "pct_inspection_units_opened_completion",
+    }.issubset(all_runs_df.columns):
+        inspected_pct_runs = all_runs_df[
+            [
+                "name",
+                "pct_plant_units_inspected_completion",
+                "pct_sample_units_inspected_completion",
+                "pct_inspection_units_opened_completion",
+            ]
+        ].copy()
+        inspected_pct_intervals = (
+            inspected_pct_runs.groupby("name")
+            .agg(
+                plant_lower=("pct_plant_units_inspected_completion", lambda s: s.quantile(0.025)),
+                plant_upper=("pct_plant_units_inspected_completion", lambda s: s.quantile(0.975)),
+                sample_lower=("pct_sample_units_inspected_completion", lambda s: s.quantile(0.025)),
+                sample_upper=("pct_sample_units_inspected_completion", lambda s: s.quantile(0.975)),
+                inspection_lower=("pct_inspection_units_opened_completion", lambda s: s.quantile(0.025)),
+                inspection_upper=("pct_inspection_units_opened_completion", lambda s: s.quantile(0.975)),
+                replications=("pct_plant_units_inspected_completion", "size"),
+            )
+            .reset_index()
+        )
+        inspected_pct_df = inspected_pct_df.merge(inspected_pct_intervals, on="name", how="left")
+        inspected_pct_df["Plant units 95% interval"] = inspected_pct_df.apply(
+            lambda row: f"{row['plant_lower']:.2f}% - {row['plant_upper']:.2f}%"
+            if pd.notna(row.get("plant_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+        inspected_pct_df["Sample units 95% interval"] = inspected_pct_df.apply(
+            lambda row: f"{row['sample_lower']:.2f}% - {row['sample_upper']:.2f}%"
+            if pd.notna(row.get("sample_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+        inspected_pct_df["Inspection units 95% interval"] = inspected_pct_df.apply(
+            lambda row: f"{row['inspection_lower']:.2f}% - {row['inspection_upper']:.2f}%"
+            if pd.notna(row.get("inspection_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+    render_labeled_help(
+        "Percent of units inspected",
+        f"Shows the mean percentage of plant, sample, and inspection units inspected for each scenario. When at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available, 95% intervals are computed across replications within the same scenario.",
+    )
+    inspected_pct_display_cols = [
+        "name",
+        "Plant units inspected %",
+        "Plant units 95% interval",
+        "Sample units inspected %",
+        "Sample units 95% interval",
+        "Inspection units opened %",
+        "Inspection units 95% interval",
+    ]
+    inspected_pct_display = inspected_pct_df[
+        [col for col in inspected_pct_display_cols if col in inspected_pct_df.columns]
+    ].rename(columns={"name": "Scenario"}).copy()
+    inspected_pct_mean_cols = [
+        col
+        for col in [
+            "Plant units inspected %",
+            "Sample units inspected %",
+            "Inspection units opened %",
+        ]
+        if col in inspected_pct_display.columns
+    ]
+    for col in inspected_pct_mean_cols:
+        inspected_pct_display[col] = inspected_pct_display[col].map(lambda value: f"{value:.2f}%")
+    st.dataframe(
+        _styled_summary_table(
+            inspected_pct_display,
+            mean_columns=inspected_pct_mean_cols,
+            interval_columns=[
+                "Plant units 95% interval",
+                "Sample units 95% interval",
+                "Inspection units 95% interval",
+            ],
+        ),
+        use_container_width=True,
+        height=min(420, 70 + 38 * max(len(inspected_pct_display), 1)),
+    )
 
 # Contamination totals by level (plant, sample, inspection)
 required_cols = [
