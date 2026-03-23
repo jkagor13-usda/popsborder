@@ -39,6 +39,7 @@ engine_options = state["engine_options"]
 run_error = state.get("run_error")
 paths = state["paths"]
 TMP_DIR = Path("tmp")
+MIN_REPLICATIONS_FOR_INTERVAL = 5
 
 
 def _latest_output_run_dir(experiment_dir: Optional[Path]) -> Optional[Path]:
@@ -193,7 +194,7 @@ with kpi_cols[2]:
 if "total_slipped_units" in results_df.columns and "name" in results_df.columns:
     render_labeled_help(
         "Slippage by scenario",
-        "Bars show the mean number of contaminated plant units missed for each scenario across simulation replications. When available, error bars show the 95% interval across replications within that same scenario.",
+        f"Bars show the mean number of contaminated plant units missed for each scenario across simulation replications. When at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available, error bars show the 95% interval across replications within that same scenario.",
     )
     slip_df = results_df[["name", "total_slipped_units"]]
     slip_chart = (
@@ -220,7 +221,7 @@ if "total_slipped_units" in results_df.columns and "name" in results_df.columns:
             )
             .reset_index()
         )
-        slip_interval_df = slip_interval_df[slip_interval_df["n"] > 1]
+        slip_interval_df = slip_interval_df[slip_interval_df["n"] >= MIN_REPLICATIONS_FOR_INTERVAL]
         if not slip_interval_df.empty:
             slip_error_bars = (
                 alt.Chart(slip_interval_df)
@@ -239,7 +240,15 @@ if "total_slipped_units" in results_df.columns and "name" in results_df.columns:
             slip_chart = slip_chart + slip_error_bars
     st.altair_chart(slip_chart, use_container_width=True)
     if all_runs_df is not None and not all_runs_df.empty and "replication" in all_runs_df.columns:
-        st.caption("Bars show scenario means. Error bars show 95% intervals across replications within the same scenario when multiple simulation replications are available.")
+        rep_counts = all_runs_df.groupby("name").size()
+        if (rep_counts < MIN_REPLICATIONS_FOR_INTERVAL).any():
+            st.warning(
+                f"*Uncertainty bounds are hidden for scenarios with fewer than {MIN_REPLICATIONS_FOR_INTERVAL} replications."
+            )
+        else:
+            st.caption(
+                f"Bars show scenario means. Error bars show 95% intervals across replications within the same scenario when at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available."
+            )
 
 # Inspected quantities by level
 if all(
@@ -256,7 +265,7 @@ if all(
         (
             "Shows the mean number of inspection units opened, sample units inspected, "
             "and plant units inspected for each scenario. When available, 95% intervals "
-            "are computed across replications within the same scenario."
+            f"are computed across replications within the same scenario using at least {MIN_REPLICATIONS_FOR_INTERVAL} replications."
         ),
     )
     inspected_df = results_df[
@@ -305,19 +314,19 @@ if all(
         inspected_df = inspected_df.merge(inspected_intervals, on="name", how="left")
         inspected_df["Plants 95% interval"] = inspected_df.apply(
             lambda row: f"{row['plant_lower']:.1f} - {row['plant_upper']:.1f}"
-            if pd.notna(row.get("plant_lower")) and row.get("replications", 0) > 1
+            if pd.notna(row.get("plant_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
             else "n/a",
             axis=1,
         )
         inspected_df["Sample units 95% interval"] = inspected_df.apply(
             lambda row: f"{row['sample_lower']:.1f} - {row['sample_upper']:.1f}"
-            if pd.notna(row.get("sample_lower")) and row.get("replications", 0) > 1
+            if pd.notna(row.get("sample_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
             else "n/a",
             axis=1,
         )
         inspected_df["Inspection units 95% interval"] = inspected_df.apply(
             lambda row: f"{row['inspection_lower']:.1f} - {row['inspection_upper']:.1f}"
-            if pd.notna(row.get("inspection_lower")) and row.get("replications", 0) > 1
+            if pd.notna(row.get("inspection_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
             else "n/a",
             axis=1,
         )
@@ -366,7 +375,7 @@ required_cols = [
 if all(col in results_df.columns for col in required_cols):
     render_labeled_help(
         "Contamination totals by level",
-        "For each scenario, bars show the mean contaminated and not-contaminated counts across simulation replications at the plant, sample unit, and inspection unit levels. Error bars show 95% intervals across replications within the same scenario when available.",
+        f"For each scenario, bars show the mean contaminated and not-contaminated counts across simulation replications at the plant, sample unit, and inspection unit levels. Error bars show 95% intervals across replications within the same scenario when at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available.",
     )
 
     def level_chart(level_label, contam_col, total_col):
@@ -400,7 +409,7 @@ if all(col in results_df.columns for col in required_cols):
                     )
                     .reset_index()
                 )
-                interval_df = interval_df[interval_df["n"] > 1]
+                interval_df = interval_df[interval_df["n"] >= MIN_REPLICATIONS_FOR_INTERVAL]
 
         charts = []
         for metric_name, metric_title, metric_color in [
@@ -455,7 +464,15 @@ if all(col in results_df.columns for col in required_cols):
         use_container_width=True,
     )
     if all_runs_df is not None and not all_runs_df.empty and "replication" in all_runs_df.columns:
-        st.caption("Bars show scenario means. Error bars show 95% intervals across replications within the same scenario when multiple simulation replications are available.")
+        rep_counts = all_runs_df.groupby("name").size()
+        if (rep_counts < MIN_REPLICATIONS_FOR_INTERVAL).any():
+            st.warning(
+                f"*Uncertainty bounds are hidden for scenarios with fewer than {MIN_REPLICATIONS_FOR_INTERVAL} replications."
+            )
+        else:
+            st.caption(
+                f"Bars show scenario means. Error bars show 95% intervals across replications within the same scenario when at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available."
+            )
 
     pct_df = results_df[
         [
@@ -535,26 +552,26 @@ if all(col in results_df.columns for col in required_cols):
         pct_df = pct_df.merge(pct_intervals, on="name", how="left")
         pct_df["Plant 95% interval"] = pct_df.apply(
             lambda row: f"{row['plant_lower']:.2f}% - {row['plant_upper']:.2f}%"
-            if pd.notna(row.get("plant_lower")) and row.get("replications", 0) > 1
+            if pd.notna(row.get("plant_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
             else "n/a",
             axis=1,
         )
         pct_df["Sample unit 95% interval"] = pct_df.apply(
             lambda row: f"{row['sample_lower']:.2f}% - {row['sample_upper']:.2f}%"
-            if pd.notna(row.get("sample_lower")) and row.get("replications", 0) > 1
+            if pd.notna(row.get("sample_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
             else "n/a",
             axis=1,
         )
         pct_df["Inspection unit 95% interval"] = pct_df.apply(
             lambda row: f"{row['inspection_lower']:.2f}% - {row['inspection_upper']:.2f}%"
-            if pd.notna(row.get("inspection_lower")) and row.get("replications", 0) > 1
+            if pd.notna(row.get("inspection_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
             else "n/a",
             axis=1,
         )
 
     render_labeled_help(
         "Contamination percentages by level",
-        "Shows the mean percentage contaminated at the plant, sample unit, and inspection unit levels for each scenario. When available, 95% intervals are computed across replications within the same scenario.",
+        f"Shows the mean percentage contaminated at the plant, sample unit, and inspection unit levels for each scenario. When at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available, 95% intervals are computed across replications within the same scenario.",
     )
     pct_display_cols = [
         "name",
