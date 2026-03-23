@@ -1556,8 +1556,8 @@ if all(col in results_df.columns for col in required_cols):
 else:
     st.info("Contamination totals by level are unavailable in the current results.")
 
-render_section_header("Raw output")
-st.dataframe(state["results"], use_container_width=True)
+# st.header("Raw output")
+# st.dataframe(state["results"], use_container_width=True)
 
 st.divider()
 nav_cols = st.columns(3)
