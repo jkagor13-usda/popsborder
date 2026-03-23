@@ -209,6 +209,8 @@ with kpi_cols[2]:
         "Total number of consignments inspected across the displayed scenario results.",
     )
     
+st.header("Slippage Level")
+    
 # Slippage across scenarios (contaminated plant units that slipped)
 if "total_slipped_units" in results_df.columns and "name" in results_df.columns:
     render_labeled_help(
@@ -305,6 +307,8 @@ if "total_slipped_units" in results_df.columns and "name" in results_df.columns:
     )
 
 # Inspected quantities by level
+st.header("Inspection Workload Level")
+
 if all(
     col in results_df.columns
     for col in [
@@ -512,6 +516,8 @@ if all(
     )
 
 # Contamination totals by level (plant, sample, inspection)
+st.header("Contamination Level")
+
 required_cols = [
     "name",
     "total_contaminated_units",
