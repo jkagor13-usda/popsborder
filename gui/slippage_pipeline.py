@@ -479,11 +479,12 @@ def run_slippage_pipeline(
         *,
         num_sims: int,
         comp_table: Dict[str, Any],
+        seed_override: Optional[int] = None,
     ):
         return run_scenarios(
             config=cfg,
             scenario_table=[rec],
-            seed=seed,
+            seed=seed if seed_override is None else seed_override,
             num_simulations=num_sims,
             num_consignments=cons_count,
             compliance_table=comp_table,
@@ -508,9 +509,28 @@ def run_slippage_pipeline(
             comp_table = load_compliance_policy(rec_comp_path) if rec_comp_path else compliance_table
 
             # Aggregated run
-            scenario_results_raw.extend(
-                _run(cfg_local, rec, rec_num_consignments, num_sims=num_simulations, comp_table=comp_table)
-            )
+            last_exc: Optional[Exception] = None
+            for retry_idx in range(3):
+                try:
+                    scenario_results_raw.extend(
+                        _run(
+                            cfg_local,
+                            rec,
+                            rec_num_consignments,
+                            num_sims=num_simulations,
+                            comp_table=comp_table,
+                            seed_override=seed + retry_idx if seed is not None else None,
+                        )
+                    )
+                    last_exc = None
+                    break
+                except ValueError as exc:
+                    if "a <= 0" not in str(exc):
+                        raise
+                    last_exc = exc
+                    continue
+            if last_exc is not None:
+                raise last_exc
         return scenario_results_raw, consignment_counts
 
     # --- Run with one retry path for "Sample larger than population" ---

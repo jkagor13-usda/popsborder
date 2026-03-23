@@ -433,7 +433,7 @@ with st.sidebar:
         st.info("No experiments saved yet on Page 4.")
     st.divider()
     run_disabled = not experiment_sets  # only disable when no experiments
-    if st.button("Run pipeline", use_container_width=True, disabled=run_disabled):
+    if st.button("Run experiment", use_container_width=True, disabled=run_disabled):
         # Defer execution to main pane to show spinner there
         state["run_request_experiment"] = selected_experiment.parent if selected_experiment else None
         st.session_state["_trigger_run_pipeline"] = True
@@ -1176,12 +1176,16 @@ if all(
         )
     action_pct_display = action_pct_df[
         [
-            "name",
-            "Level",
-            "Intercepted %",
-            "Intercepted 95% interval",
-            "Slipped %",
-            "Slipped 95% interval",
+            col
+            for col in [
+                "name",
+                "Level",
+                "Intercepted %",
+                "Intercepted 95% interval",
+                "Slipped %",
+                "Slipped 95% interval",
+            ]
+            if col in action_pct_df.columns
         ]
     ].rename(columns={"name": "Scenario"}).copy()
     action_pct_display = action_pct_display[
