@@ -611,9 +611,6 @@ with manual_tab:
 with saved_tab:
     st.subheader("Saved consignments")
     saved_files = sorted(CONSIGNMENT_ROOT.glob("*.csv"))
-    refresh = st.button("Refresh saved consignments", type="secondary")
-    if refresh:
-        st.rerun()
     if not saved_files:
         st.info("No consignment files saved yet in tmp/consignments.")
     else:

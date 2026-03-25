@@ -145,9 +145,58 @@ render_page_intro(
     "Ingest the compliance lookup table, configure low/medium/high types, and review RBS parameters."
 )
 
-tabs = st.tabs(["Upload table", "Create policy manually", "Saved RBS compliance policy"])
+tabs = st.tabs(["Saved RBS compliance policy", "Upload table", "Create policy manually"])
 
 with tabs[0]:
+    st.subheader("Saved RBS compliance policy")
+    saved_files = sorted(COMPLIANCE_ROOT.glob("*.pkl"))
+    if not saved_files:
+        st.info("No RBS compliance policies saved yet in tmp/compliance.")
+    else:
+        sel = st.selectbox("Select a saved RBS compliance policy", saved_files, format_func=lambda p: p.name)
+        st.caption(f"Location: {sel}")
+        try:
+            with open(sel, "rb") as handle:
+                policy = pickle.load(handle)
+            rbs_variables = policy.get("rbs_variables", [])
+            st.caption(f"RBS variables: {', '.join(rbs_variables) if rbs_variables else 'none'}")
+            preview_rows = policy.get("_policy_preview")
+            if preview_rows:
+                policy_df = pd.DataFrame(preview_rows)
+                compliance_col = _first_matching_column(policy_df, ["Compliance"])
+                detection_col = _first_matching_column(policy_df, ["Detection Level"])
+                confidence_col = _first_matching_column(policy_df, ["Confidence Levels", "Confidence Level"])
+                styled_policy = policy_df.style
+                if compliance_col:
+                    styled_policy = styled_policy.applymap(_compliance_cell_style, subset=[compliance_col])
+                if detection_col:
+                    styled_policy = styled_policy.applymap(
+                        lambda v: _numeric_heat_style(v, "31, 119, 180"),
+                        subset=[detection_col],
+                    )
+                if confidence_col:
+                    styled_policy = styled_policy.applymap(
+                        lambda v: _numeric_heat_style(v, "76, 149, 108"),
+                        subset=[confidence_col],
+                    )
+                st.dataframe(styled_policy, use_container_width=True, height=360)
+            else:
+                policy_rows = []
+                for key, value in policy.items():
+                    if key in {"rbs_variables", "_policy_preview"}:
+                        continue
+                    if isinstance(key, tuple):
+                        row = {rbs_variables[idx]: key[idx] for idx in range(min(len(rbs_variables), len(key)))}
+                        row["Detection Level"] = value[0] if isinstance(value, tuple) and len(value) > 0 else ""
+                        row["Confidence Level"] = value[1] if isinstance(value, tuple) and len(value) > 1 else ""
+                        policy_rows.append(row)
+                policy_df = pd.DataFrame(policy_rows)
+                if not policy_df.empty:
+                    st.dataframe(policy_df, use_container_width=True, height=320)
+        except Exception as exc:  # pylint: disable=broad-except
+            st.info(f"Unable to preview this policy file: {exc}")
+
+with tabs[1]:
     
     render_labeled_help(
         "Compliance level upload",
@@ -246,7 +295,7 @@ with tabs[0]:
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Failed to save compliance table: {exc}")
 
-with tabs[1]:
+with tabs[2]:
     st.subheader("Manual Creation of RBS Compliance Policy ")
 
     rbs_path = state["paths"].rbs_data
@@ -341,54 +390,6 @@ with tabs[1]:
         set_paths(compliance_lookup=policy_path)
         st.success(f"Manual RBS compliance policy saved to {policy_path}")
 
-with tabs[2]:
-    st.subheader("Saved RBS compliance policy")
-    saved_files = sorted(COMPLIANCE_ROOT.glob("*.pkl"))
-    if not saved_files:
-        st.info("No RBS compliance policies saved yet in tmp/compliance.")
-    else:
-        sel = st.selectbox("Select a saved RBS compliance policy", saved_files, format_func=lambda p: p.name)
-        st.caption(f"Location: {sel}")
-        try:
-            with open(sel, "rb") as handle:
-                policy = pickle.load(handle)
-            rbs_variables = policy.get("rbs_variables", [])
-            st.caption(f"RBS variables: {', '.join(rbs_variables) if rbs_variables else 'none'}")
-            preview_rows = policy.get("_policy_preview")
-            if preview_rows:
-                policy_df = pd.DataFrame(preview_rows)
-                compliance_col = _first_matching_column(policy_df, ["Compliance"])
-                detection_col = _first_matching_column(policy_df, ["Detection Level"])
-                confidence_col = _first_matching_column(policy_df, ["Confidence Levels", "Confidence Level"])
-                styled_policy = policy_df.style
-                if compliance_col:
-                    styled_policy = styled_policy.applymap(_compliance_cell_style, subset=[compliance_col])
-                if detection_col:
-                    styled_policy = styled_policy.applymap(
-                        lambda v: _numeric_heat_style(v, "31, 119, 180"),
-                        subset=[detection_col],
-                    )
-                if confidence_col:
-                    styled_policy = styled_policy.applymap(
-                        lambda v: _numeric_heat_style(v, "76, 149, 108"),
-                        subset=[confidence_col],
-                    )
-                st.dataframe(styled_policy, use_container_width=True, height=360)
-            else:
-                policy_rows = []
-                for key, value in policy.items():
-                    if key in {"rbs_variables", "_policy_preview"}:
-                        continue
-                    if isinstance(key, tuple):
-                        row = {rbs_variables[idx]: key[idx] for idx in range(min(len(rbs_variables), len(key)))}
-                        row["Detection Level"] = value[0] if isinstance(value, tuple) and len(value) > 0 else ""
-                        row["Confidence Level"] = value[1] if isinstance(value, tuple) and len(value) > 1 else ""
-                        policy_rows.append(row)
-                policy_df = pd.DataFrame(policy_rows)
-                if not policy_df.empty:
-                    st.dataframe(policy_df, use_container_width=True, height=320)
-        except Exception as exc:  # pylint: disable=broad-except
-            st.info(f"Unable to preview this policy file: {exc}")
 
 st.divider()
 nav_cols = st.columns(3)
