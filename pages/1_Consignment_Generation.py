@@ -653,10 +653,19 @@ with saved_tab:
                     plot_subcols[2].markdown("**Top material types**")
                     plot_subcols[2].bar_chart(full_df["PROPAGATIVE_MATERIAL_TYPE"].value_counts().head(10).rename("Count"))
             with plots_two_col[1]:
-                if "TOTAL_PLANT_QUANTITY" in full_df.columns and "TOTAL_SAMPLING_UNITS" in full_df.columns:
-                    st.markdown("**Quantity vs sampling units for inspection unit (frequency)**")
-                    quantities = full_df["TOTAL_PLANT_QUANTITY"].dropna().to_numpy()
-                    sampling_units = full_df["TOTAL_SAMPLING_UNITS"].dropna().to_numpy()
+                quantity_col = None
+                sampling_units_col = None
+                if "QUANTITY" in full_df.columns and "SAMPLING_UNITS_FOR_INSPECTION_UNIT" in full_df.columns:
+                    quantity_col = "QUANTITY"
+                    sampling_units_col = "SAMPLING_UNITS_FOR_INSPECTION_UNIT"
+                elif "TOTAL_PLANT_QUANTITY" in full_df.columns and "TOTAL_SAMPLING_UNITS" in full_df.columns:
+                    quantity_col = "TOTAL_PLANT_QUANTITY"
+                    sampling_units_col = "TOTAL_SAMPLING_UNITS"
+
+                if quantity_col and sampling_units_col:
+                    st.markdown("**Plant units vs sample units**")
+                    quantities = full_df[quantity_col].dropna().to_numpy()
+                    sampling_units = full_df[sampling_units_col].dropna().to_numpy()
                     if quantities.size > 0 and sampling_units.size == quantities.size and sampling_units.size > 0:
                         q_min, q_max = float(quantities.min()), float(quantities.max())
                         s_min, s_max = float(sampling_units.min()), float(sampling_units.max())
@@ -679,16 +688,27 @@ with saved_tab:
                                 x=alt.X(
                                     "plant_bin_start:Q",
                                     bin=alt.Bin(binned=True, step=float(q_bins[1] - q_bins[0])),
-                                    title="Quantity (bin start)",
+                                    title="Plant units",
                                 ),
                                 x2="plant_bin_end:Q",
                                 y=alt.Y(
                                     "sample_bin_start:Q",
                                     bin=alt.Bin(binned=True, step=float(s_bins[1] - s_bins[0])),
-                                    title="Sampling units for inspection unit (bin start)",
+                                    title="Sample units",
                                 ),
                                 y2="sample_bin_end:Q",
-                                color=alt.Color("frequency:Q", title="Frequency", scale=alt.Scale(scheme="blues")),
+                                color=alt.Color(
+                                    "frequency:Q",
+                                    title="Number of inspection units",
+                                    scale=alt.Scale(
+                                        domain=[
+                                            0,
+                                            1,
+                                            float(heat_df["frequency"].max()) if not heat_df.empty else 1.0,
+                                        ],
+                                        range=["#d9d9d9", "#deebf7", "#08519c"],
+                                    ),
+                                ),
                             )
                         )
                         st.altair_chart(chart, use_container_width=True)
