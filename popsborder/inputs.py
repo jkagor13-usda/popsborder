@@ -55,7 +55,10 @@ import types
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 import csv
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List, Set
+import warnings
+import chardet
+import pandas as pd
 
 
 def text_to_value(arg):
@@ -720,17 +723,499 @@ def load_compliance_lookup_csv(filepath: Path):
 
     return comp_table
 
-def load_input_consignment_data(file_path):
+def detect_encoding(filepath: Path) -> str:
     """
-    Load custom csv data to generate consignment. 
+    Detect the encoding of a file.
+
+    Args:
+        filepath: Path to file
+
+    Returns:
+        Detected encoding string
     """
-    from collections import defaultdict
+    with open(filepath, 'rb') as f:
+        raw_data = f.read(10000)  # Read first 10KB
+        result = chardet.detect(raw_data)
+        return result['encoding']
 
-    # Create dictionary where each inspection number maps to a list of rows
-    inspection_dict = defaultdict(list)
 
-    for _, row in inspection_dict.iterrows():
-        inspection_dict[row["INSPECTION_NUMBER"]].append(row.to_dict())
+def load_compliance_mapping_csv(filepath: Path) -> Dict[str, Tuple[str, str]]:
+    """
+    Load the compliance mapping table.
 
-    # Convert back to normal dict if needed
-    inspection_dict = dict(inspection_dict)
+    Expected columns: Compliance | Detection Level | Confidence Levels
+
+    Args:
+        filepath: Path to compliance mapping CSV file
+
+    Returns:
+        Dictionary mapping Compliance value to (Detection Level, Confidence Levels)
+
+    Raises:
+        ValueError: If required columns are missing or file is empty
+        FileNotFoundError: If filepath doesn't exist
+    """
+    if not filepath.exists():
+        raise FileNotFoundError(f"Compliance mapping file not found: {filepath}")
+
+    # Auto-detect encoding if not provided
+    try:
+        encoding = detect_encoding(filepath)
+        print(f"Auto-detected encoding for {filepath.name}: {encoding}")
+    except Exception as e:
+        warnings.warn(f"Could not detect encoding, trying common encodings: {e}")
+        encoding = 'utf-8'
+
+    # Try multiple encodings
+    encodings_to_try = [
+        encoding,
+        'utf-8-sig',
+        'utf-8',
+        'latin-1',
+        'iso-8859-1',
+        'cp1252',
+        'windows-1252'
+    ]
+
+    last_error = None
+    for enc in encodings_to_try:
+        try:
+            return _load_compliance_mapping_with_encoding(filepath, enc)
+        except UnicodeDecodeError as e:
+            last_error = e
+            continue
+        except Exception as e:
+            # If it's not an encoding error, raise it
+            raise
+
+    # If all encodings failed
+    raise UnicodeDecodeError(
+        'utf-8', b'', 0, 1,
+        f"Failed to decode file with any encoding. Last error: {last_error}"
+    )
+
+
+def _load_compliance_mapping_with_encoding_old(filepath: Path, encoding: str) -> Dict[str, Tuple[str, str]]:
+    """Internal helper to load compliance mapping with specific encoding."""
+    mapping = {}
+
+    with open(filepath, newline="", encoding=encoding, errors='replace') as f:
+        reader = csv.reader(f)
+
+        # Read and validate headers
+        try:
+            headers = [h.strip() for h in next(reader)]
+        except StopIteration:
+            raise ValueError("Compliance mapping CSV file is empty.")
+
+        if not headers or all(h == "" for h in headers):
+            raise ValueError("Compliance mapping CSV is missing a header row.")
+
+        # Validate required columns
+        required = {"Compliance", "Detection Level", "Confidence Levels"}
+        missing = required - set(headers)
+        if missing:
+            raise ValueError(
+                f"Compliance mapping CSV missing required column(s): {', '.join(sorted(missing))}"
+            )
+
+        # Get column indices
+        comp_idx = headers.index("Compliance")
+        det_level_idx = headers.index("Detection Level")
+        conf_levels_idx = headers.index("Confidence Levels")
+
+        # Process data rows
+        duplicate_keys = []
+        for row_num, row in enumerate(reader, start=2):
+            if not row or all(cell.strip() == "" for cell in row):
+                continue  # Skip empty rows
+
+            if len(row) <= max(comp_idx, det_level_idx, conf_levels_idx):
+                warnings.warn(f"Row {row_num} has insufficient columns, skipping.")
+                continue
+
+            compliance = row[comp_idx].strip()
+            detection_level = row[det_level_idx].strip()
+            confidence_levels = row[conf_levels_idx].strip()
+
+            if not compliance:
+                warnings.warn(f"Row {row_num} has empty Compliance value, skipping.")
+                continue
+
+            # Check for duplicates
+            if compliance in mapping:
+                duplicate_keys.append((row_num, compliance))
+
+            mapping[compliance] = (detection_level, confidence_levels)
+
+        if duplicate_keys:
+            warnings.warn(
+                f"Found {len(duplicate_keys)} duplicate Compliance value(s) in mapping. "
+                f"Last occurrence will be used. First duplicate at row {duplicate_keys[0][0]}: '{duplicate_keys[0][1]}'"
+            )
+
+    return mapping
+
+
+def _load_compliance_mapping_with_encoding(filepath: Path, encoding: str) -> Dict[str, Tuple[str, str]]:
+    """Internal helper to load compliance mapping with specific encoding."""
+    mapping = {}
+
+    with open(filepath, newline="", encoding=encoding, errors='replace') as f:
+        reader = csv.reader(f)
+
+        # Read and validate headers
+        try:
+            headers = [h.strip() for h in next(reader)]
+        except StopIteration:
+            raise ValueError("Compliance mapping CSV file is empty.")
+
+        if not headers or all(h == "" for h in headers):
+            raise ValueError("Compliance mapping CSV is missing a header row.")
+
+        # Validate required columns
+        required = {"Compliance", "Detection Level", "Confidence Levels"}
+        missing = required - set(headers)
+        if missing:
+            raise ValueError(
+                f"Compliance mapping CSV missing required column(s): {', '.join(sorted(missing))}"
+            )
+
+        # Get column indices
+        comp_idx = headers.index("Compliance")
+        det_level_idx = headers.index("Detection Level")
+        conf_levels_idx = headers.index("Confidence Levels")
+
+        # Process data rows - track all occurrences
+        compliance_occurrences = {}  # compliance -> list of (row_num, full_row_data)
+
+        for row_num, row in enumerate(reader, start=2):
+            if not row or all(cell.strip() == "" for cell in row):
+                continue  # Skip empty rows
+
+            if len(row) <= max(comp_idx, det_level_idx, conf_levels_idx):
+                warnings.warn(f"Row {row_num} has insufficient columns, skipping.")
+                continue
+
+            # Build row map with all columns
+            row_map = {
+                h: (row[i].strip() if i < len(row) else "")
+                for i, h in enumerate(headers)
+            }
+
+            compliance = row_map["Compliance"]
+            detection_level = row_map["Detection Level"]
+            confidence_levels = row_map["Confidence Levels"]
+
+            if not compliance:
+                warnings.warn(f"Row {row_num} has empty Compliance value, skipping.")
+                continue
+
+            # Track all occurrences of this compliance value with full row data
+            if compliance not in compliance_occurrences:
+                compliance_occurrences[compliance] = []
+            compliance_occurrences[compliance].append((row_num, row_map))
+
+            mapping[compliance] = (detection_level, confidence_levels)
+
+        # Find duplicates (compliance values that appear more than once)
+        duplicates = {k: v for k, v in compliance_occurrences.items() if len(v) > 1}
+
+        # Enhanced duplicate warning with table format showing all occurrences
+        if duplicates:
+            total_duplicate_rows = sum(len(occurrences) for occurrences in duplicates.values())
+            first_dup_compliance = next(iter(duplicates.keys()))
+            first_dup_row = duplicates[first_dup_compliance][0][0]
+
+            # Build the warning message
+            dup_lines = [
+                f"Found {len(duplicates)} duplicate Compliance value(s) in mapping "
+                f"({total_duplicate_rows} total rows affected). "
+                f"Last occurrence will be used. First duplicate at row {first_dup_row}: '{first_dup_compliance}'",
+                ""  # Blank line for readability
+            ]
+
+            # Determine max duplicates to show in detail
+            max_keys_to_show = 3
+            keys_shown = 0
+
+            for compliance, occurrences in list(duplicates.items())[:max_keys_to_show]:
+                keys_shown += 1
+
+                # Show header for this duplicate group
+                dup_lines.append(f"\nDuplicate #{keys_shown} - Compliance: '{compliance}'")
+                dup_lines.append(f"  Found {len(occurrences)} occurrence(s):")
+
+                # Table header with ALL columns
+                header = "  Row | " + " | ".join(headers)
+                dup_lines.append(header)
+                dup_lines.append("  " + "-" * (len(header) - 2))
+
+                # Show all occurrences of this duplicate
+                for row_num, row_data in occurrences:
+                    # Build row display with all columns in order
+                    row_values = [row_data.get(h, "") for h in headers]
+                    row_display = f"  {row_num:4d} | " + " | ".join(str(v) for v in row_values)
+                    dup_lines.append(row_display)
+
+            # Summary if there are more duplicates
+            if len(duplicates) > max_keys_to_show:
+                remaining = len(duplicates) - max_keys_to_show
+                dup_lines.append(f"\n... and {remaining} more duplicate Compliance value(s) not shown")
+
+            warnings.warn("\n".join(dup_lines))
+
+    return mapping
+
+
+
+def load_compliance_table_csv(
+        filepath: Path,
+        use_parquet: bool = True
+) -> Dict:
+    """
+    Load compliance table with automatic format detection.
+
+    Args:
+        filepath: Path to compliance file (.csv or .parquet)
+        use_parquet: If True and .parquet exists, use it instead
+    """
+    # Check for parquet version
+    parquet_path = filepath.with_suffix('.parquet')
+    if use_parquet and parquet_path.exists():
+        df = pd.read_parquet(parquet_path)
+        print(f"Loaded {len(df):,} rows from parquet")
+    else:
+        # Fall back to CSV
+        if not filepath.exists():
+            raise FileNotFoundError(f"Compliance table file not found: {filepath}")
+
+        # Auto-detect encoding if not provided
+        try:
+            encoding = detect_encoding(filepath)
+            print(f"Auto-detected encoding for {filepath.name}: {encoding}")
+        except Exception as e:
+            warnings.warn(f"Could not detect encoding, trying common encodings: {e}")
+            encoding = 'utf-8'
+
+        # Try multiple encodings
+        encodings_to_try = [
+            encoding,
+            'utf-8-sig',
+            'utf-8',
+            'latin-1',
+            'iso-8859-1',
+            'cp1252',
+            'windows-1252'
+        ]
+
+        last_error = None
+        for enc in encodings_to_try:
+            try:
+                return _load_compliance_table_with_encoding(filepath, enc)
+            except UnicodeDecodeError as e:
+                last_error = e
+                continue
+            except Exception as e:
+                raise
+
+        raise UnicodeDecodeError(
+            'utf-8', b'', 0, 1,
+            f"Failed to decode file with any encoding. Last error: {last_error}"
+        )
+
+    rbs_variables = [col for col in df.columns if col != 'Compliance']
+
+    # Convert to numpy for faster iteration
+    keys_array = df[rbs_variables].values
+    compliance_array = df['Compliance'].values
+
+    compliance_dict = {
+        'rbs_variables': rbs_variables,
+        '_compliance_values': set(compliance_array)
+    }
+
+    # Build dictionary using numpy arrays (faster)
+    for i in range(len(keys_array)):
+        key = tuple(keys_array[i])
+        compliance_dict[key] = compliance_array[i]
+
+    return compliance_dict
+
+
+def _load_compliance_table_with_encoding(filepath: Path, encoding: str) -> Dict:
+    """Internal helper to load compliance table with specific encoding."""
+    compliance_table = {}
+
+    with open(filepath, newline="", encoding=encoding, errors='replace') as f:
+        reader = csv.reader(f)
+
+        # Read and validate headers
+        try:
+            headers = [h.strip() for h in next(reader)]
+        except StopIteration:
+            raise ValueError("Compliance table CSV file is empty.")
+
+        if not headers or all(h == "" for h in headers):
+            raise ValueError("Compliance table CSV is missing a header row.")
+
+        # Validate required column
+        if "Compliance" not in headers:
+            raise ValueError("Compliance table CSV missing required column: 'Compliance'")
+
+        # Identify key columns (everything before 'Compliance')
+        comp_idx = headers.index("Compliance")
+        key_cols = headers[:comp_idx]
+
+        if not key_cols:
+            raise ValueError("No key columns found before 'Compliance' column.")
+
+        compliance_table['rbs_variables'] = list(key_cols)
+
+        # Process data rows - track all occurrences
+        key_occurrences = {}  # key -> list of (row_num, full_row_data)
+        compliance_values = set()
+
+        for row_num, row in enumerate(reader, start=2):
+            if not row or all(cell.strip() == "" for cell in row):
+                continue  # Skip empty rows
+
+            # Build row map with proper padding
+            row_map = {
+                h: (row[i].strip() if i < len(row) else "")
+                for i, h in enumerate(headers)
+            }
+
+            # Create key tuple from key columns
+            key = tuple(row_map[col] for col in key_cols)
+            compliance = row_map["Compliance"]
+
+            # Track compliance values
+            if compliance:
+                compliance_values.add(compliance)
+
+            # Track all occurrences of this key with full row data
+            if key not in key_occurrences:
+                key_occurrences[key] = []
+            key_occurrences[key].append((row_num, row_map))
+
+            compliance_table[key] = compliance
+
+        # Find duplicates (keys that appear more than once)
+        duplicates = {k: v for k, v in key_occurrences.items() if len(v) > 1}
+
+        # Enhanced duplicate warning with table format showing all occurrences
+        if duplicates:
+            total_duplicate_rows = sum(len(occurrences) for occurrences in duplicates.values())
+            first_dup_key = next(iter(duplicates.keys()))
+            first_dup_row = duplicates[first_dup_key][0][0]
+
+            # Build the warning message
+            dup_lines = [
+                f"Found {len(duplicates)} duplicate key(s) in compliance table "
+                f"({total_duplicate_rows} total rows affected). "
+                f"Last occurrence will be used. First duplicate at row {first_dup_row}",
+                ""  # Blank line for readability
+            ]
+
+            # Determine max duplicates to show in detail
+            max_keys_to_show = 3
+            keys_shown = 0
+
+            for dup_key, occurrences in list(duplicates.items())[:max_keys_to_show]:
+                keys_shown += 1
+
+                # Show header for this duplicate group
+                dup_lines.append(f"\nDuplicate #{keys_shown} - Key: {dup_key}")
+                dup_lines.append(f"  Found {len(occurrences)} occurrence(s):")
+
+                # Table header with ALL columns
+                header = "  Row | " + " | ".join(headers)
+                dup_lines.append(header)
+                dup_lines.append("  " + "-" * (len(header) - 2))
+
+                # Show all occurrences of this duplicate
+                for row_num, row_data in occurrences:
+                    # Build row display with all columns in order
+                    row_values = [row_data.get(h, "") for h in headers]
+                    row_display = f"  {row_num:4d} | " + " | ".join(str(v) for v in row_values)
+                    dup_lines.append(row_display)
+
+            # Summary if there are more duplicates
+            if len(duplicates) > max_keys_to_show:
+                remaining = len(duplicates) - max_keys_to_show
+                dup_lines.append(f"\n... and {remaining} more duplicate key(s) not shown")
+
+            warnings.warn("\n".join(dup_lines))
+
+        # Store compliance values for validation
+        compliance_table['_compliance_values'] = compliance_values
+
+    return compliance_table
+
+
+def build_compliance_lookup_table(
+        compliance_table_filepath: Path,
+        mapping_filepath: Path,
+        validate_completeness: bool = True
+) -> Dict:
+    """
+    Build complete compliance lookup table by joining compliance table and mapping.
+
+    Args:
+        compliance_table_filepath: Path to compliance table CSV (key columns + Compliance)
+        mapping_filepath: Path to compliance mapping CSV (Compliance -> Detection/Confidence)
+        validate_completeness: If True, warns about missing mappings
+
+    Returns:
+        Dictionary with:
+        - 'rbs_variables': List of key column names
+        - tuple keys: N-tuples mapping to (Detection Level, Confidence Levels)
+
+    Raises:
+        ValueError: If validation fails
+    """
+    # Load both tables
+    compliance_table = load_compliance_table_csv(filepath=compliance_table_filepath)
+    mapping = load_compliance_mapping_csv(filepath=mapping_filepath)
+
+    # Build final lookup table
+    comp_table = {
+        'rbs_variables': compliance_table['rbs_variables']
+    }
+
+    # Track unmapped compliance values
+    unmapped = set()
+
+    # Join the tables
+    for key, compliance in compliance_table.items():
+        if key in ('rbs_variables', '_compliance_values'):
+            continue
+
+        if compliance in mapping:
+            comp_table[key] = mapping[compliance]
+        else:
+            unmapped.add(compliance)
+            comp_table[key] = ("UNKNOWN", "UNKNOWN")
+
+    # Validation
+    if validate_completeness:
+        compliance_in_rbs = compliance_table.get('_compliance_values', set())
+        compliance_in_mapping = set(mapping.keys())
+
+        # Check for unmapped compliance values
+        if unmapped:
+            warnings.warn(
+                f"Found {len(unmapped)} Compliance value(s) in compliance table "
+                f"without mapping: {sorted(unmapped)}"
+            )
+
+        # Check for unused mappings
+        unused = compliance_in_mapping - compliance_in_rbs
+        if unused:
+            warnings.warn(
+                f"Found {len(unused)} Compliance value(s) in mapping table "
+                f"not used in compliance table: {sorted(unused)}"
+            )
+
+    return comp_table

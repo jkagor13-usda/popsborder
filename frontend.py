@@ -2,23 +2,32 @@
 
 import streamlit as st
 
+from pathlib import Path
+
+from gui.env_check import build_update_commands, get_package_mismatches
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
+from gui.page_styles import apply_shared_page_styles, render_page_intro
+from gui.runtime_warnings import suppress_optional_dependency_warnings
 from gui.slippage_ui import init_slippage_state
+
+suppress_optional_dependency_warnings()
 
 
 st.set_page_config(page_title="Home", layout="wide")
 init_state()
 state = init_slippage_state()
 render_sidebar_navigation()
+apply_shared_page_styles()
 
-
-st.title("PoPS Border Risk Based Sampling (RBS) Inspection Simulation")
 st.warning(
     "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
     "Features may be incomplete and subject to change. Results have not been validated.**"
 )
-st.caption("Use this workspace to upload or generate consignments, fit contamination, and run inspection simulations.")
+st.title("PoPS Border Risk Based Sampling (RBS) Inspection Simulation")
+render_page_intro(
+    "Use this workspace to upload or generate consignments, fit contamination, and run inspection simulations."
+)
 
 
 
@@ -50,6 +59,42 @@ st.markdown(
 )
 
 st.divider()
+requirements_path = Path("requirements.txt")
+if requirements_path.exists():
+    mismatches = get_package_mismatches(requirements_path)
+    if mismatches:
+        st.markdown(
+            f"<div style='color:#b00020; font-weight:600;'>{len(mismatches)} mismatches detected.</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            "<div style='color:#2e7d32; font-weight:600;'>All package versions matched.</div>",
+            unsafe_allow_html=True,
+        )
+    expander_label = "Package version check"
+    with st.expander(expander_label, expanded=False):
+        if mismatches:
+            st.markdown(
+                "<div style='color:#b00020; font-weight:600;'>Package version mismatches detected.</div>",
+                unsafe_allow_html=True,
+            )
+            for item in mismatches:
+                st.markdown(
+                    f"<div style='color:#b00020;'>- <code>{item.package}</code>: "
+                    f"<span style='color:#111;'>required <code>{item.required}</code>, installed "
+                    f"<code>{item.installed or 'not installed'}</code></span></div>",
+                    unsafe_allow_html=True,
+                )
+            update_commands = build_update_commands(requirements_path, mismatches)
+            st.caption("Run these commands in your virtual environment to update the mismatched packages:")
+            st.code(update_commands, language="powershell")
+        else:
+            st.markdown(
+                "<div style='color:#2e7d32; font-weight:600;'>Installed package versions match requirements.txt.</div>",
+                unsafe_allow_html=True,
+            )
+
 st.subheader("Disclaimer")
 st.warning(
     "This Information is for Authorized use only. Your ability to access this information is granted with the "

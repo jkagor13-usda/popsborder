@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import copy
 import json
+import pickle
 import subprocess
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+from .runtime_warnings import suppress_optional_dependency_warnings
+
+suppress_optional_dependency_warnings()
+
 import pandas as pd
 
 from popsborder.generator import SyntheticConsignmentDataGenerator, save_to_csv
@@ -22,7 +28,7 @@ from popsborder.inputs import (
 from popsborder.outputs import save_scenario_result_to_pandas
 from popsborder.scenarios import run_scenarios
 from slippage_model_utils.clarke_model_support_functions import gen_clarke_model_inputs
-from slippage_model_utils.clarke_r_script_wrapper import run_clarke_bb_group_model
+from slippage_model_utils.r_script_wrapper import run_clarke_bb_group_model
 
 
 # Default config columns to persist into results
@@ -56,6 +62,8 @@ RESULT_COLUMNS = [
     "pct_sample_units_inspected_detection",
     "avg_plant_units_inspected_completion",
     "avg_plant_units_inspected_detection",
+    "pct_plant_units_inspected_completion",
+    "pct_plant_units_inspected_detection",
     "total_missed_contaminants",
     "total_intercepted_contaminants",
     "total_slipped_units",
@@ -64,6 +72,8 @@ RESULT_COLUMNS = [
     "total_contaminated_units",
     "total_contaminated_sample_units",
     "total_contaminated_inspection_units",
+    "total_intercepted_inspection_units",
+    "total_slipped_inspection_units",
 ]
 
 @dataclass
@@ -129,6 +139,8 @@ class PipelineResult:
     pis_data: pd.DataFrame
     rbs_data: pd.DataFrame
     num_consignments: int
+    output_dir: Path
+    output_files: List[Path]
 
 
 def create_default_paths(base_dir: Path = DEFAULT_DATA_DIR) -> SlippagePaths:
@@ -151,16 +163,44 @@ def load_scenario_dataframe(path: Path, *, dtype: str = "object"):
     scenarios = load_scenario_table(path)
     return scenarios
 
+
+def load_compliance_policy(path: Path) -> Dict[str, Any]:
+    """Load either a CSV compliance table or a pickled compliance policy."""
+    policy_path = Path(path)
+    if policy_path.suffix.lower() == ".pkl":
+        with open(policy_path, "rb") as handle:
+            return pickle.load(handle)
+    return load_compliance_lookup_csv(policy_path)
+
 def generate_synthetic_data(
     seed_path: Path,
     output_path: Path,
     options: SyntheticOptions,
+    producer_grouping_path: Optional[Path] = None,
 ) -> pd.DataFrame:
     """Generate synthetic consignment data and persist it."""
-    if seed_path is None or not Path(seed_path).exists():
+    if seed_path is None:
+        raise FileNotFoundError("Seed data path was not provided.")
+    seed_path = Path(seed_path).resolve()
+    output_path = Path(output_path).resolve()
+    if not seed_path.exists():
         raise FileNotFoundError(f"Seed data not found at {seed_path}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    generator = SyntheticConsignmentDataGenerator(seed_path)
+    config = None
+    config_path = Path(DEFAULT_DATA_DIR / CONFIG_FILENAME).resolve()
+    if config_path.exists():
+        config = load_configuration(config_path)
+    producer_grouping = None
+    if producer_grouping_path is not None:
+        producer_grouping_path = Path(producer_grouping_path).resolve()
+        if not producer_grouping_path.exists():
+            raise FileNotFoundError(f"Producer grouping file not found at {producer_grouping_path}")
+        producer_grouping = pd.read_csv(producer_grouping_path)
+    generator = SyntheticConsignmentDataGenerator(
+        config=config,
+        producer_group_mapping=producer_grouping,
+        input_data_file=seed_path,
+    )
     synth_data = generator.generate_from_input_data(
         n_consignments=options.n_samples,
         sampling_method=options.sampling_method,
@@ -221,73 +261,67 @@ def fit_contamination_distribution(
             "Ensure both files reference the same consignments."
         )
     try:
-        inputs = gen_clarke_model_inputs(pis_df, rbs_df)
-        print(inputs)
+        inputs_by_quantity = gen_clarke_model_inputs(pis_df)
     except StopIteration as exc:
         raise ValueError(
             "Fitting failed: no compatible scenarios found between PIS and RBS data. "
             "Verify that shared INSPECTION_NUMBER rows contain sampling/plant quantities."
         ) from exc
 
-    if not inputs.freq or sum(inputs.freq) <= 0:
+    if not inputs_by_quantity:
         raise ValueError("Fitting failed: no frequency counts available after aligning PIS and RBS data.")
 
-    # Use Clarke inputs, but if any are invalid fall back to averages from RBS.
-    b_val, B_val, Nbar_val = inputs.b, inputs.B, inputs.Nbar
-
-    def _fallback_mean(df: pd.DataFrame, col: str, default: float = 1.0) -> float:
-        if col in df.columns and df[col].notna().any():
-            return float(pd.to_numeric(df[col], errors="coerce").dropna().mean())
-        return default
-
-    fb_b = _fallback_mean(rbs_df, "TOTAL_SAMPLING_UNITS", 1.0)
-    fb_nbar = _fallback_mean(rbs_df, "TOTAL_PLANT_QUANTITY", 1.0)
-    fb_B = max(1, len(shared_ids))
-
-    if not (np.isfinite(b_val) and b_val > 0):
-        b_val = fb_b
-    if not (np.isfinite(Nbar_val) and Nbar_val > 0):
-        Nbar_val = fb_nbar
-    if not (np.isfinite(B_val) and B_val > 0):
-        B_val = fb_B
-
-    if not (np.isfinite(b_val) and np.isfinite(B_val) and np.isfinite(Nbar_val) and b_val > 0 and B_val > 0 and Nbar_val > 0):
-        raise ValueError(
-            "Fitting failed: computed b/B/Nbar are invalid (NaN or <=0) even after fallback. "
-            "Check RBS calculator columns (TOTAL_SAMPLING_UNITS, TOTAL_PLANT_QUANTITY) and PIS/RBS alignment."
-        )
-    # Always force theta to infinity when invoking the Clarke model
     theta_val = float("inf")
+    results_by_quantity: Dict[str, Any] = {}
+    weighted_alpha = 0.0
+    weighted_beta = 0.0
+    total_weight = 0.0
 
-    # Stabilize start values (R can fail when both are zero)
-    start_vals = [float(v) for v in (inputs.start_val or [])]
-    if not start_vals or all(abs(v) < 1e-9 for v in start_vals):
-        start_vals = [0.1, 0.1]
+    for quantity_range, inputs in inputs_by_quantity.items():
+        if not inputs.freq or sum(inputs.freq) <= 0:
+            continue
 
-    try:
-        result = run_clarke_bb_group_model(
-            inputs.ty,
-            int(round(b_val)),
-            int(round(B_val)),
-            int(round(Nbar_val)),
-            inputs.freq,
-            theta_val,
-            inputs.R,
-            start_vals,
-            inputs.se,
-        )
-    except subprocess.CalledProcessError as exc:
-        stderr_preview = (exc.stderr or "")[:500].replace("\n", " | ")
-        stdout_preview = (exc.output or "")[:500].replace("\n", " | ")
-        raise ValueError(
-            f"Fitting failed in R (returncode {exc.returncode}). "
-            f"stdout: {stdout_preview} stderr: {stderr_preview}"
-        ) from exc
-    alpha_val = float(result.get("alpha", 0) or 0)
-    beta_val = float(result.get("beta", 0) or 0)
-    alpha_val = max(alpha_val, 1e-3)
-    beta_val = max(beta_val, 1e-3)
-    fit = ClarkeFit(alpha=alpha_val, beta=beta_val, theta=theta_val, raw_result=result)
+        start_vals = [float(v) for v in (inputs.start_val or [])]
+        if not start_vals or all(abs(v) < 1e-9 for v in start_vals):
+            start_vals = [0.1, 0.1]
+
+        try:
+            result = run_clarke_bb_group_model(
+                inputs.ty,
+                int(round(inputs.b)),
+                int(round(inputs.B)),
+                int(round(inputs.Nbar)),
+                inputs.freq,
+                theta_val,
+                inputs.R,
+                start_vals,
+                inputs.se,
+            )
+        except subprocess.CalledProcessError as exc:
+            stderr_preview = (exc.stderr or "")[:500].replace("\n", " | ")
+            stdout_preview = (exc.output or "")[:500].replace("\n", " | ")
+            raise ValueError(
+                f"Fitting failed in R (returncode {exc.returncode}). "
+                f"stdout: {stdout_preview} stderr: {stderr_preview}"
+            ) from exc
+
+        alpha_val = max(float(result.get("alpha", 0) or 0), 1e-3)
+        beta_val = max(float(result.get("beta", 0) or 0), 1e-3)
+        weight = float(sum(inputs.freq))
+        weighted_alpha += alpha_val * weight
+        weighted_beta += beta_val * weight
+        total_weight += weight
+        results_by_quantity[str(quantity_range)] = result
+
+    if total_weight <= 0:
+        raise ValueError("Fitting failed: no usable Clarke model results were produced.")
+
+    fit = ClarkeFit(
+        alpha=weighted_alpha / total_weight,
+        beta=weighted_beta / total_weight,
+        theta=theta_val,
+        raw_result=results_by_quantity,
+    )
     return fit, pis_df, rbs_df
 
 
@@ -419,7 +453,7 @@ def run_slippage_pipeline(
             f"Compliance table not found for experiment {experiment_dir}. Expected {COMPLIANCE_FILENAME}."
         )
 
-    compliance_table = load_compliance_lookup_csv(comp_lookup_path)
+    compliance_table = load_compliance_policy(comp_lookup_path)
 
     # Ensure base config points to base consignment/compliance (scenario overrides still apply later)
     config = copy.deepcopy(config)
@@ -434,6 +468,10 @@ def run_slippage_pipeline(
     counts = [_infer_num_consignments(p) for p in unique_cons_files] if unique_cons_files else []
     num_consignments_default = min(counts) if counts else 1
 
+    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = experiment_dir / f"output_{run_timestamp}"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     def _run(
         cfg: Dict[str, Any],
         rec: Dict[str, Any],
@@ -441,22 +479,25 @@ def run_slippage_pipeline(
         *,
         num_sims: int,
         comp_table: Dict[str, Any],
+        seed_override: Optional[int] = None,
     ):
         return run_scenarios(
             config=cfg,
             scenario_table=[rec],
-            seed=seed,
+            seed=seed if seed_override is None else seed_override,
             num_simulations=num_sims,
             num_consignments=cons_count,
             compliance_table=comp_table,
             detailed=True,
+            output_root=output_dir,
         )
 
     # --- Core executor (supports a single retry config) ---
-    def _execute_all(base_cfg: Dict[str, Any]) -> Tuple[List[Tuple[Any, Dict, Dict]], List[int], List[Tuple[int, Any, Dict, Dict]]]:
+    skipped_scenarios: List[str] = []
+
+    def _execute_all(base_cfg: Dict[str, Any]) -> Tuple[List[Tuple[Any, Dict, Dict]], List[int]]:
         scenario_results_raw: List[Tuple[Any, Dict, Dict]] = []
         consignment_counts: List[int] = []
-        run_rows: List[Tuple[int, Any, Dict, Dict]] = []
 
         for rec0 in scenarios:
             rec = _normalize_inspection(_apply_contam_defaults(rec0, base_cfg))
@@ -467,30 +508,37 @@ def run_slippage_pipeline(
             consignment_counts.append(rec_num_consignments)
 
             cfg_local = _build_cfg_for_scenario(base_cfg, rec_cons_path, rec_comp_path)
-            comp_table = load_compliance_lookup_csv(rec_comp_path) if rec_comp_path else compliance_table
+            comp_table = load_compliance_policy(rec_comp_path) if rec_comp_path else compliance_table
 
             # Aggregated run
-            scenario_results_raw.extend(
-                _run(cfg_local, rec, rec_num_consignments, num_sims=num_simulations, comp_table=comp_table)
-            )
-
-            # Per-replication runs
-            if num_simulations > 1:
-                for rep in range(num_simulations):
-                    results = _run(
-                        copy.deepcopy(cfg_local),
-                        rec,
-                        rec_num_consignments,
-                        num_sims=1,
-                        comp_table=comp_table,
+            last_exc: Optional[Exception] = None
+            for retry_idx in range(10):
+                try:
+                    scenario_results_raw.extend(
+                        _run(
+                            cfg_local,
+                            rec,
+                            rec_num_consignments,
+                            num_sims=num_simulations,
+                            comp_table=comp_table,
+                            seed_override=seed + retry_idx if seed is not None else None,
+                        )
                     )
-                    run_rows.extend((rep, *tup) for tup in results)
-
-        return scenario_results_raw, consignment_counts, run_rows
+                    last_exc = None
+                    break
+                except ValueError as exc:
+                    if "a <= 0" not in str(exc):
+                        raise
+                    last_exc = exc
+                    continue
+            if last_exc is not None:
+                skipped_scenarios.append(str(rec.get("name", f"scenario_{len(skipped_scenarios) + 1}")))
+                continue
+        return scenario_results_raw, consignment_counts
 
     # --- Run with one retry path for "Sample larger than population" ---
     try:
-        scenario_results_raw, consignment_counts, run_rows = _execute_all(config)
+        scenario_results_raw, consignment_counts = _execute_all(config)
     except ValueError as exc:
         if "Sample larger than population" not in str(exc):
             raise
@@ -501,7 +549,7 @@ def run_slippage_pipeline(
         cfg_retry["inspection"]["proportion"]["value"] = min(float(current_prop), 0.001)
         cfg_retry["inspection"]["min_inspection_units"] = 0
 
-        scenario_results_raw, consignment_counts, run_rows = _execute_all(cfg_retry)
+        scenario_results_raw, consignment_counts = _execute_all(cfg_retry)
     except ZeroDivisionError as exc:
         raise ValueError(
             "Division by zero during scenario run. Check inspection proportion, sampling units, and config values."
@@ -513,10 +561,15 @@ def run_slippage_pipeline(
         ) from exc
 
     # --- Convert results and write outputs ---
-    scenario_results = [(result, cfg) for _details, result, cfg in scenario_results_raw]
+    if not scenario_results_raw:
+        if skipped_scenarios:
+            raise ValueError(
+                "All scenarios were skipped after repeated 'a <= 0' contamination errors: "
+                + ", ".join(skipped_scenarios)
+            )
+        raise ValueError("No scenario results were generated.")
 
-    output_dir = experiment_dir / "output"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    scenario_results = [(result, cfg) for _details, result, cfg in scenario_results_raw]
 
     results_df = save_scenario_result_to_pandas(
         scenario_results,
@@ -524,21 +577,32 @@ def run_slippage_pipeline(
         result_columns=RESULT_COLUMNS,
     )
 
-    results_df.to_csv(output_dir / "pis_contamination_scenario_results.csv", index=False)
+    results_output_path = output_dir / "pis_contamination_scenario_results.csv"
+    results_df.to_csv(results_output_path, index=False)
+    if skipped_scenarios:
+        skipped_path = output_dir / "skipped_scenarios.txt"
+        skipped_path.write_text(
+            "Skipped after repeated 'a <= 0' errors:\n" + "\n".join(skipped_scenarios),
+            encoding="utf-8",
+        )
 
     # Per-replication output
-    if run_rows:
-        runs_records = []
-        for rep_idx, _details, result, cfg in run_rows:
-            record = {"replication": rep_idx}
-            try:
-                record.update(vars(result))
-            except Exception:
-                pass
-            if isinstance(cfg, dict) and "name" in cfg:
-                record.setdefault("name", cfg.get("name"))
-            runs_records.append(record)
-        pd.DataFrame(runs_records).to_csv(output_dir / "all_runs.csv", index=False)
+    output_files: List[Path] = [results_output_path]
+    if skipped_scenarios:
+        output_files.append(skipped_path)
+    runs_records: List[Dict[str, Any]] = []
+    for _details, result, cfg in scenario_results_raw:
+        rep_df = getattr(result, "replication_outputs", None)
+        if rep_df is None or getattr(rep_df, "empty", True):
+            continue
+        rep_records = rep_df.copy()
+        if isinstance(cfg, dict) and "name" in cfg:
+            rep_records["name"] = cfg.get("name")
+        runs_records.extend(rep_records.to_dict(orient="records"))
+    if runs_records:
+        all_runs_output_path = output_dir / "all_runs.csv"
+        pd.DataFrame(runs_records).to_csv(all_runs_output_path, index=False)
+        output_files.append(all_runs_output_path)
 
     fit = ClarkeFit(alpha=0.0, beta=0.0, theta=float("inf"), raw_result={"source": "scenario_table"})
     total_cons = sum(consignment_counts) if consignment_counts else num_consignments_default
@@ -551,6 +615,8 @@ def run_slippage_pipeline(
         pis_data=pd.DataFrame(),
         rbs_data=pd.DataFrame(),
         num_consignments=total_cons,
+        output_dir=output_dir,
+        output_files=output_files,
     )
 
 

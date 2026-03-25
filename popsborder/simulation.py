@@ -56,6 +56,7 @@ Modifications:
 
 import random
 import types
+from collections import Counter
 
 import numpy as np
 import pandas as pd
@@ -65,7 +66,7 @@ import sys
 
 from . import consignments
 from .consignments import get_consignment_generator
-from .contamination import get_contaminant_function
+from .contamination import get_contaminant_function, synchronize_contamination_arrays_from_plants
 from .inspections import (
     consignment_contamination_rate,
     get_sample_function,
@@ -78,10 +79,9 @@ from .outputs import (
     PrintReporter,
     SuccessRates,
     pretty_consignment,
-    SimData,
+    PISSimData,
 )
 from .skipping import get_inspection_needed_function
-from .inputs import load_input_consignment_data
 
 def random_seed(seed):
     """Set seed for all generators used"""
@@ -92,12 +92,12 @@ def random_seed(seed):
 def simulation(
     config,
     num_consignments,
-    seed,
-    compliance_table=None,
+    rng=None,
     output_f280_file=None,
     verbose=False,
     pretty=None,
     detailed=False,
+    output_dir_rep=None,
 ):
     """Simulate consignments, their contamination, and their inspection
 
@@ -105,13 +105,15 @@ def simulation(
     :param num_consignments: Number of consignments to generate
     :param f280_file: Filename for output F280 records
     :param verbose: If True, prints messages about each consignment
+    :param rng : numpy.random.Generator or None
+        Random number generator for this simulation.
     """
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements
 
-    if seed is not None:
-        random_seed(seed)
+    if rng is None:
+        rng = np.random.default_rng()
 
-    simData = SimData()
+    pis_sim_data = PISSimData(output_dir_rep=output_dir_rep, config=config)
 
     # allow for an empty disposition code specification
     disposition_codes = config.get("disposition_codes", {})
@@ -137,6 +139,8 @@ def simulation(
     total_contaminated_units_all = 0
     total_contaminated_sample_units_all = 0
     total_contaminated_inspection_units_all = 0
+    total_intercepted_inspection_units = 0
+    total_slipped_inspection_units = 0
     true_contamination_rate = 0
     intercepted_contamination_rate = []
     missed_contamination_rate = []
@@ -145,25 +149,33 @@ def simulation(
     if detailed:
         sample_unit_details = []
         inspected_sample_unit_details = []
+        inspection_unit_detection_records = []
 
     consignment_generator = get_consignment_generator(config)
     add_contaminant = get_contaminant_function(config)
     is_inspection_needed = get_inspection_needed_function(config)
-    sample = get_sample_function(config, compliance_table)
+    sample = get_sample_function(config)
     tolerance_level = config["inspection"]["tolerance_level"]
 
 
     # Dictionary to capture additional metrics per consignment
     rbs_additional_metrics = {}
 
+    prop = 0
+    increment = 0.1
     for i in range(num_consignments):
-        print(f'\nSimulating Consignment {i+1} out of {num_consignments} total consignments')
+        if i == int(prop*num_consignments):
+            percent_complete = int(prop*100)
+            print(f'   {percent_complete}% complete ({i+1} out of {num_consignments} consignments)')
+            prop += increment
+        #print(f'\nSimulating Consignment {i+1} out of {num_consignments} total consignments')
         try:
             consignment = consignment_generator.generate_consignment()
-            print(f"   Generated consignment with {consignment.num_inspection_units} inspection units and {consignment.num_sample_units} sample units")
-            print("   Starting contamination...")
+            #print(f"   Generated consignment with {consignment.num_inspection_units} inspection units and {consignment.num_sample_units} sample units")
+            #print("   Starting contamination...")
             add_contaminant(consignment)
-            print("   Finished contamination.")
+            synchronize_contamination_arrays_from_plants(consignment)
+            #print("   Finished contamination.")
             total_contaminated_units = 0
             total_contaminated_inspection_units = 0
             total_contaminated_sample_units = 0
@@ -174,7 +186,7 @@ def simulation(
                 indicator = 0
                 sample_unit_counter = 0
                 sample_units_contaminated = {}
-                for samp_unit in inspect_unit.sample_unit_objects:
+                for samp_unit in inspect_unit.included_unit_objects:
                     if sum(samp_unit.plants)> 0:
                         plants_contaminated = []
                         for plant_unit in range(len(samp_unit.plants)):
@@ -190,28 +202,19 @@ def simulation(
                     total_contaminated_inspection_units += 1
                 inspection_unit_counter+=1
 
-            print(f'\n**** CONSIGNMENT {i+1} CONTAMINATED.  SUMMARY INFO BELOW ****')
-            print(f'   Number of Contaminated Plants: {total_contaminated_units}')
-            print(f'   Proportion of Contaminated Plants (total # of plants = {len(consignment.plants)}): {total_contaminated_units/len(consignment.plants)}')
-            print(f'\n   Number of Contaminated Sample Units: {total_contaminated_sample_units}')
-            print(f'   Proportion of Contaminated Sample Units (total # sample units= {len(consignment.sample_units)}): {total_contaminated_sample_units/len(consignment.sample_units)}')
-            print(f'\n   Number of Contaminated Inspection Units: {total_contaminated_inspection_units}')
-            print(f'   Proportion of Contaminated Inspection Units (total # inspection units = {len(consignment.inspection_units)}): {total_contaminated_inspection_units/len(consignment.inspection_units)}')
-
-            if os.environ.get("SLIPPAGE_DEBUG_CONTAM_SUMMARY"):
-                print(
-                    f"[contam summary] consignment {i+1}: "
-                    f"plants={total_contaminated_units}, "
-                    f"sample_units={total_contaminated_sample_units}, "
-                    f"inspection_units={total_contaminated_inspection_units}"
-                )
-                sys.stdout.flush()
+            # print(f'\n**** CONSIGNMENT {i+1} CONTAMINATED.  SUMMARY INFO BELOW ****')
+            # print(f'   Number of Contaminated Plants: {total_contaminated_units}')
+            # print(f'   Proportion of Contaminated Plants (total # of plants = {len(consignment.plants)}): {total_contaminated_units/len(consignment.plants)}')
+            # print(f'\n   Number of Contaminated Sample Units: {total_contaminated_sample_units}')
+            # print(f'   Proportion of Contaminated Sample Units (total # sample units= {len(consignment.sample_units)}): {total_contaminated_sample_units/len(consignment.sample_units)}')
+            # print(f'\n   Number of Contaminated Inspection Units: {total_contaminated_inspection_units}')
+            # print(f'   Proportion of Contaminated Inspection Units (total # inspection units = {len(consignment.inspection_units)}): {total_contaminated_inspection_units/len(consignment.inspection_units)}')
 
 
-            #simData.add_consignment(consignment)
+            pis_sim_data.add_consignment(consignment)
             if detailed:
                 for inspection_unit in consignment.inspection_units:
-                    sample_unit_details.append(inspection_unit.sample_units)
+                    sample_unit_details.append(inspection_unit.included_units)
             if pretty:
                 pretty_config = config.get("pretty", {})
                 print(pretty_consignment(consignment, style=pretty, config=pretty_config))
@@ -220,12 +223,12 @@ def simulation(
                 consignment, consignment.date
             )
             if must_inspect:
-                print(f'\n\n==== INSPECTION OF CONSIGNMENT {i + 1} NOW BEING EXECUTED ====')
+                #print(f'\n\n==== INSPECTION OF CONSIGNMENT {i + 1} NOW BEING EXECUTED ====')
                 n_units_to_inspect = sample(consignment)
-                print(f"   Requested sample units to inspect (total): {n_units_to_inspect}")
+                #print(f"   Requested sample units to inspect (total): {n_units_to_inspect}")
                 ret = inspect(config, consignment, n_units_to_inspect, detailed)
-                print(f"   Completed inspection. Sample units inspected: {ret.sample_units_inspected_completion}")
-                #simData.add_to_synthetic_data(ret, consignment, n_units_to_inspect)
+                pis_sim_data.add_to_pis_synthetic_data(ret, consignment, n_units_to_inspect)
+                #print(f"   Completed inspection. Sample units inspected: {ret.sample_units_inspected_completion}")
                 consignment_checked_ok = ret.consignment_checked_ok
                 num_inspections += 1
                 total_num_inspection_units += consignment.num_inspection_units
@@ -252,7 +255,61 @@ def simulation(
                 if consignment.num_plants is not None:
                     total_num_plants += consignment.num_plants
 
-            print(f'\n==== INSPECTION OF CONSIGNMENT {i + 1} COMPLETED ====')
+            for inspection_unit in consignment.inspection_units:
+                is_infected = bool(getattr(inspection_unit, "is_infected", bool(inspection_unit)))
+                is_detected = bool(getattr(inspection_unit, "is_detected", False))
+                if is_infected:
+                    if is_detected:
+                        total_intercepted_inspection_units += 1
+                    else:
+                        total_slipped_inspection_units += 1
+
+            if detailed:
+                sample_unit_to_inspection = getattr(consignment, "sample_unit_to_inspection_unit", {}) or {}
+                inspected_sample_unit_indexes = (
+                    ret.inspected_sample_unit_indexes if must_inspect else []
+                )
+                inspected_counts_by_inspection_unit = Counter()
+                for sample_unit_index in inspected_sample_unit_indexes:
+                    inspection_unit_index = sample_unit_to_inspection.get(
+                        sample_unit_index,
+                        consignment.get_inspection_unit_and_sample_unit_index(sample_unit_index)[0],
+                    )
+                    inspected_counts_by_inspection_unit[inspection_unit_index] += 1
+
+                for inspection_unit_index, inspection_unit in enumerate(consignment.inspection_units):
+                    sample_unit_objects = getattr(inspection_unit, "included_unit_objects", [])
+                    num_plants_in_inspection_unit = sum(len(su.plants) for su in sample_unit_objects)
+                    infected_plants_in_inspection_unit = sum(
+                        int(np.count_nonzero(su.plants)) for su in sample_unit_objects
+                    )
+                    risk_unit_id = None
+                    risk_unit_ids = getattr(inspection_unit, "risk_unit_ids", None)
+                    if risk_unit_ids:
+                        risk_unit_id = risk_unit_ids[0]
+
+                    is_infected = bool(getattr(inspection_unit, "is_infected", bool(inspection_unit)))
+                    is_detected = bool(getattr(inspection_unit, "is_detected", False))
+                    inspection_unit_detection_records.append(
+                        {
+                            "consignment_index": i + 1,
+                            "inspection_number": getattr(consignment, "inspection_number", None),
+                            "inspection_unit_id": getattr(inspection_unit, "inspection_print_id", None),
+                            "risk_unit_id": risk_unit_id,
+                            "num_sample_units": getattr(inspection_unit, "num_sample_units", len(sample_unit_objects)),
+                            "num_plants": num_plants_in_inspection_unit,
+                            "infected_plants": infected_plants_in_inspection_unit,
+                            "is_infected": is_infected,
+                            "is_detected": is_detected,
+                            "missed": bool(is_infected and not is_detected),
+                            "was_inspected": bool(
+                                must_inspect and inspected_counts_by_inspection_unit[inspection_unit_index] > 0
+                            ),
+                            "inspected_sample_units": int(inspected_counts_by_inspection_unit[inspection_unit_index]),
+                        }
+                    )
+
+            #print(f'\n==== INSPECTION OF CONSIGNMENT {i + 1} COMPLETED ====')
 
             form280.fill(
                 consignment.date,
@@ -293,7 +350,8 @@ def simulation(
             pass
 
     # Write out simulated data
-    #simData.write_synthetic_data_to_csv()
+    pis_sim_data.finalize_dataframes()
+    pis_sim_data.write_synthetic_data_to_csv()
 
     num_contaminated = num_consignments - success_rates.ok
     if num_contaminated:
@@ -383,9 +441,17 @@ def simulation(
         ),
         avg_plant_units_inspected_completion=total_plant_units_inspected_completion / num_consignments,
         avg_plant_units_inspected_detection=total_plant_units_inspected_detection / num_consignments,
+        pct_plant_units_inspected_completion=(
+            (total_plant_units_inspected_completion / total_num_plants) * 100
+        ),
+        pct_plant_units_inspected_detection=(
+            (total_plant_units_inspected_detection / total_num_plants) * 100
+        ),
         total_contaminated_units=total_contaminated_units_all,
         total_contaminated_sample_units=total_contaminated_sample_units_all,
         total_contaminated_inspection_units=total_contaminated_inspection_units_all,
+        total_intercepted_inspection_units=total_intercepted_inspection_units,
+        total_slipped_inspection_units=total_slipped_inspection_units,
         pct_contaminant_unreported_if_detection=pct_contaminant_unreported_if_detection,
         true_contamination_rate=true_contamination_rate / num_consignments,
         max_missed_contamination_rate=max_missed_contamination_rate,
@@ -402,7 +468,11 @@ def simulation(
         avg_slipped_sample_units_per_consignment = avg_slipped_sample_units_per_consignment
     )
     if detailed:
-        simulation_results.details = [sample_unit_details, inspected_sample_unit_details]
+        simulation_results.details = [
+            sample_unit_details,
+            inspected_sample_unit_details,
+            inspection_unit_detection_records,
+        ]
 
     return simulation_results
 
@@ -411,12 +481,12 @@ def run_simulation(
     config,
     num_simulations,
     num_consignments,
-    compliance_table=None,
-    seed=None,
+    rng=None,
     output_f280_file=None,
     verbose=False,
     pretty=None,
     detailed=False,
+    output_dir=None,
 ):
     """Run the simulation function specified number of times
 
@@ -424,7 +494,15 @@ def run_simulation(
 
     Returns averages computed from the individual simulation runs otherwise
     it relies on :func:`simulation` function to do the hard work.
+
+    rng : numpy.random.Generator or None
+        Random number generator. If None, creates a new unseeded one.
     """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    # Spawn independent RNGs for each simulation run
+    simulation_rngs = rng.spawn(num_simulations)
     # pylint: disable=too-many-branches,too-many-statements
 
     totals = types.SimpleNamespace(
@@ -446,6 +524,8 @@ def run_simulation(
         pct_sample_units_inspected_detection=0,
         avg_plant_units_inspected_completion=0,
         avg_plant_units_inspected_detection=0,
+        pct_plant_units_inspected_completion=0,
+        pct_plant_units_inspected_detection=0,
         pct_contaminant_unreported_if_detection=0,
         true_contamination_rate=0,
         max_missed_contamination_rate=0,
@@ -472,6 +552,8 @@ def run_simulation(
         total_contaminated_units=0,
         total_contaminated_sample_units=0,
         total_contaminated_inspection_units=0,
+        total_intercepted_inspection_units=0,
+        total_slipped_inspection_units=0,
     )
 
     ##############################
@@ -484,15 +566,20 @@ def run_simulation(
         print(f'\n\n======================================================================')
         print(f'======= RUNNING REPLICATION {i + 1} OUT OF {num_simulations} =========')
         print(f'======================================================================')
+
+        # Define output replication directory for the simulated data
+        output_dir_rep = output_dir / f"rep_{i}"
+        output_dir_rep.mkdir(parents=True, exist_ok=True)
+
         result = simulation(
             config=config,
             num_consignments=num_consignments,
-            seed=seed + i if seed is not None else None,
-            compliance_table=compliance_table,
+            rng=simulation_rngs[i],
             output_f280_file=output_f280_file,
             verbose=verbose,
             pretty=pretty,
             detailed=detailed,
+            output_dir_rep=output_dir_rep,
         )
 
         ##############################
@@ -519,6 +606,8 @@ def run_simulation(
         totals.avg_sample_units_inspected_detection += result.avg_sample_units_inspected_detection
         totals.pct_sample_units_inspected_completion += result.pct_sample_units_inspected_completion
         totals.pct_sample_units_inspected_detection += result.pct_sample_units_inspected_detection
+        totals.pct_plant_units_inspected_completion += result.pct_plant_units_inspected_completion
+        totals.pct_plant_units_inspected_detection += result.pct_plant_units_inspected_detection
         totals.pct_contaminant_unreported_if_detection += (
             result.pct_contaminant_unreported_if_detection
         )
@@ -547,19 +636,42 @@ def run_simulation(
         totals.total_contaminated_units += result.total_contaminated_units
         totals.total_contaminated_sample_units += result.total_contaminated_sample_units
         totals.total_contaminated_inspection_units += result.total_contaminated_inspection_units
+        totals.total_intercepted_inspection_units += result.total_intercepted_inspection_units
+        totals.total_slipped_inspection_units += result.total_slipped_inspection_units
         totals.avg_plant_units_inspected_completion += result.avg_plant_units_inspected_completion
         totals.avg_plant_units_inspected_detection += result.avg_plant_units_inspected_detection
 
         sim_rep_outputs[f'Rep_{i}'] = {}
+        sim_rep_outputs[f'Rep_{i}']['replication'] = i
+        sim_rep_outputs[f'Rep_{i}']['intercepted'] = result.intercepted
+        sim_rep_outputs[f'Rep_{i}']['false_neg'] = result.false_neg
+        sim_rep_outputs[f'Rep_{i}']['missing'] = result.missing
+        sim_rep_outputs[f'Rep_{i}']['missed_within_tolerance'] = result.missed_within_tolerance
+        sim_rep_outputs[f'Rep_{i}']['num_inspections'] = result.num_inspections
         sim_rep_outputs[f'Rep_{i}']['total_slipped_units'] = result.total_slipped_units
         sim_rep_outputs[f'Rep_{i}']['total_unit_slippage_rate'] = (result.total_slipped_units/result.total_num_plants)
         sim_rep_outputs[f'Rep_{i}']['total_slipped_sample_units'] = result.total_slipped_sample_units
         sim_rep_outputs[f'Rep_{i}']['avg_slipped_units_per_consignment'] = result.avg_slipped_units_per_consignment
         sim_rep_outputs[f'Rep_{i}']['avg_slipped_sample_units_per_consignment'] = result.avg_slipped_sample_units_per_consignment
+        sim_rep_outputs[f'Rep_{i}']['total_contaminated_units'] = result.total_contaminated_units
+        sim_rep_outputs[f'Rep_{i}']['total_contaminated_sample_units'] = result.total_contaminated_sample_units
+        sim_rep_outputs[f'Rep_{i}']['total_contaminated_inspection_units'] = result.total_contaminated_inspection_units
+        sim_rep_outputs[f'Rep_{i}']['total_intercepted_inspection_units'] = result.total_intercepted_inspection_units
+        sim_rep_outputs[f'Rep_{i}']['total_slipped_inspection_units'] = result.total_slipped_inspection_units
+        sim_rep_outputs[f'Rep_{i}']['num_plants'] = result.total_num_plants
+        sim_rep_outputs[f'Rep_{i}']['num_sample_units'] = result.total_num_sample_units
+        sim_rep_outputs[f'Rep_{i}']['num_inspection_units'] = result.total_num_inspection_units
+        sim_rep_outputs[f'Rep_{i}']['avg_plant_units_inspected_completion'] = result.avg_plant_units_inspected_completion
+        sim_rep_outputs[f'Rep_{i}']['avg_sample_units_inspected_completion'] = result.avg_sample_units_inspected_completion
+        sim_rep_outputs[f'Rep_{i}']['avg_inspection_units_opened_completion'] = result.avg_inspection_units_opened_completion
+        sim_rep_outputs[f'Rep_{i}']['pct_plant_units_inspected_completion'] = result.pct_plant_units_inspected_completion
+        sim_rep_outputs[f'Rep_{i}']['pct_sample_units_inspected_completion'] = result.pct_sample_units_inspected_completion
+        sim_rep_outputs[f'Rep_{i}']['pct_inspection_units_opened_completion'] = result.pct_inspection_units_opened_completion
 
 
     # Convert the sim replication metric storage to a dataframe for analysis
     df_rep_outputs = pd.DataFrame.from_dict(sim_rep_outputs, orient='index')
+    totals.replication_outputs = df_rep_outputs.reset_index(drop=True)
 
     # make these relative (reusing the variables)
     totals.missing /= float(num_simulations)
@@ -577,6 +689,8 @@ def run_simulation(
     totals.avg_sample_units_inspected_detection /= float(num_simulations)
     totals.pct_sample_units_inspected_completion /= float(num_simulations)
     totals.pct_sample_units_inspected_detection /= float(num_simulations)
+    totals.pct_plant_units_inspected_completion /= float(num_simulations)
+    totals.pct_plant_units_inspected_detection /= float(num_simulations)
     totals.pct_contaminant_unreported_if_detection /= float(num_simulations)
     totals.true_contamination_rate /= float(num_simulations)
     if totals.num_plants:
@@ -610,6 +724,8 @@ def run_simulation(
     totals.total_contaminated_units /= float(num_simulations)
     totals.total_contaminated_sample_units /= float(num_simulations)
     totals.total_contaminated_inspection_units /= float(num_simulations)
+    totals.total_intercepted_inspection_units /= float(num_simulations)
+    totals.total_slipped_inspection_units /= float(num_simulations)
     totals.avg_plant_units_inspected_completion /= float(num_simulations)
     totals.avg_plant_units_inspected_detection /= float(num_simulations)
 
@@ -631,3 +747,5 @@ def run_simulation(
         return details, totals
     else:
         return totals
+
+

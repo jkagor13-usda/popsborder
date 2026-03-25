@@ -39,11 +39,21 @@ Modifications:
 
 from .inputs import update_config
 from .simulation import run_simulation
+from datetime import datetime
+from pathlib import Path
+import numpy as np
 
+from slippage_model_utils.r_script_wrapper import find_repo_root
 
 def run_scenarios(
-    config, scenario_table, seed, num_simulations, num_consignments, compliance_table=None, 
-    detailed=False
+    config,
+    scenario_table,
+    seed,
+    num_simulations,
+    num_consignments,
+    compliance_table=None,
+    detailed=False,
+    output_root=None,
 ):
     """Run scenarios based on the configuration and list of scenarios
 
@@ -69,17 +79,37 @@ def run_scenarios(
         result and configuration for that scenario.
     """
     results = []
+
+    # Create master RNG once at the top level
+    master_rng = np.random.default_rng(seed)
+
+    # Define output directory for the simulated data
+    if output_root is None:
+        run_ts = datetime.now().strftime("%m_%d_%Y_%H_%M_%S")
+        run_dir = find_repo_root() / "output" / f"pops_border_scenario_data_{run_ts}"
+    else:
+        run_dir = Path(output_root)
+    run_dir = Path(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
     for record in scenario_table:
         scenario_name = record["name"]
         print(f"Running scenario: {scenario_name}")
         scenario_config = update_config(config, record)
+
+        # Create the output scenario directory
+        output_dir = run_dir / str(scenario_name)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Spawn independent RNG for this scenario
+        scenario_rng = master_rng.spawn(1)[0]
+
         result = run_simulation(
             config=scenario_config,
             num_simulations=num_simulations,
             num_consignments=num_consignments,
-            compliance_table = compliance_table,
-            seed=seed,
+            rng=scenario_rng,
             detailed=detailed,
+            output_dir=output_dir,
         )
         if detailed:
             # The result is tuple of details ([0]) and simulation totals ([1]).

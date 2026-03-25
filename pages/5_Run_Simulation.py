@@ -1,13 +1,26 @@
 # © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
 from pathlib import Path
+from typing import Optional
+
+from gui.runtime_warnings import suppress_optional_dependency_warnings
+
+suppress_optional_dependency_warnings()
 
 import pandas as pd
 import altair as alt
+import numpy as np
 import streamlit as st
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
+from gui.page_styles import (
+    apply_shared_page_styles,
+    render_labeled_help,
+    render_metric_card,
+    render_page_intro,
+    render_section_header,
+)
 from gui.slippage_ui import get_slippage_state, run_pipeline, set_engine_options
 from gui.slippage_pipeline import create_default_paths
 
@@ -21,19 +34,375 @@ init_state()
 
 state = get_slippage_state()
 render_sidebar_navigation()
+apply_shared_page_styles()
 engine_options = state["engine_options"]
 run_error = state.get("run_error")
 paths = state["paths"]
 TMP_DIR = Path("tmp")
+MIN_REPLICATIONS_FOR_INTERVAL = 5
 
 
-st.title("Page 5 - Run Simulation")
+def _latest_output_run_dir(experiment_dir: Optional[Path]) -> Optional[Path]:
+    if experiment_dir is None or not experiment_dir.exists():
+        return None
+    candidates = [p for p in experiment_dir.glob("output_*") if p.is_dir()]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: path.stat().st_mtime)
+
+
+def _load_all_runs_df(output_dir: Optional[Path]) -> Optional[pd.DataFrame]:
+    if output_dir is None:
+        return None
+    all_runs_path = output_dir / "all_runs.csv"
+    if not all_runs_path.exists():
+        return None
+    try:
+        return pd.read_csv(all_runs_path)
+    except Exception:  # pylint: disable=broad-except
+        return None
+
+
+def _load_inspection_action_runs_df(output_dir: Optional[Path]) -> Optional[pd.DataFrame]:
+    if output_dir is None or not output_dir.exists():
+        return None
+    records = []
+    for csv_path in output_dir.glob("*/*/synthetic_commodity_line_results_data.csv"):
+        try:
+            scenario_name = csv_path.parent.parent.name
+            rep_name = csv_path.parent.name
+            replication = int(rep_name.replace("rep_", ""))
+            df = pd.read_csv(csv_path)
+        except Exception:  # pylint: disable=broad-except
+            continue
+        required_cols = {"is_infected", "is_detected"}
+        if not required_cols.issubset(df.columns):
+            continue
+        infected = df["is_infected"].fillna(False).astype(bool)
+        detected = df["is_detected"].fillna(False).astype(bool)
+        inspected = df.get("was_inspected", pd.Series(False, index=df.index)).fillna(False).astype(bool)
+        consignment_clean_inspected = 0
+        consignment_clean_not_inspected = 0
+        consignment_intercepted = 0
+        consignment_slipped = 0
+        if "inspection_number" in df.columns:
+            consignment_df = (
+                pd.DataFrame(
+                    {
+                        "inspection_number": df["inspection_number"],
+                        "is_infected": infected,
+                        "is_detected": detected,
+                        "was_inspected": inspected,
+                    }
+                )
+                .groupby("inspection_number", dropna=False)
+                .agg(
+                    is_infected=("is_infected", "any"),
+                    is_detected=("is_detected", "any"),
+                    was_inspected=("was_inspected", "any"),
+                )
+                .reset_index()
+            )
+            consignment_clean_inspected = int((~consignment_df["is_infected"] & consignment_df["was_inspected"]).sum())
+            consignment_clean_not_inspected = int((~consignment_df["is_infected"] & ~consignment_df["was_inspected"]).sum())
+            consignment_intercepted = int((consignment_df["is_infected"] & consignment_df["is_detected"]).sum())
+            consignment_slipped = int((consignment_df["is_infected"] & ~consignment_df["is_detected"]).sum())
+        records.append(
+            {
+                "name": scenario_name,
+                "replication": replication,
+                "total_intercepted_inspection_units": int((infected & detected).sum()),
+                "total_slipped_inspection_units": int((infected & ~detected).sum()),
+                "inspection_clean_inspected": int((~infected & inspected).sum()),
+                "inspection_clean_not_inspected": int((~infected & ~inspected).sum()),
+                "consignment_clean_inspected": consignment_clean_inspected,
+                "consignment_clean_not_inspected": consignment_clean_not_inspected,
+                "consignment_intercepted": consignment_intercepted,
+                "consignment_slipped": consignment_slipped,
+            }
+        )
+    if not records:
+        return None
+    return pd.DataFrame(records)
+
+
+def _styled_summary_table(df: pd.DataFrame, mean_columns: list[str], interval_columns: list[str]):
+    label_columns = [col for col in ["Scenario", "Level"] if col in df.columns]
+    return (
+        df.style
+        .set_properties(
+            subset=label_columns,
+            **{"font-weight": "600", "color": "#1f3b63", "min-width": "120px"},
+        )
+        .set_properties(
+            subset=[col for col in mean_columns if col in df.columns],
+            **{"background-color": "#eaf3fb", "font-weight": "600", "color": "#16324f"},
+        )
+        .set_properties(
+            subset=[col for col in interval_columns if col in df.columns],
+            **{"background-color": "#f5f9fd", "color": "#355070"},
+        )
+    )
+
+
+def _safe_float(value) -> float:
+    try:
+        if pd.isna(value):
+            return 0.0
+        return float(value)
+    except Exception:  # pylint: disable=broad-except
+        return 0.0
+
+
+def _render_consignments_visual(
+    action_results_source: pd.DataFrame,
+    total_consignments,
+    inspection_action_runs_df: Optional[pd.DataFrame] = None,
+    statistic_label: str = "Mean",
+    record_agg: str = "mean",
+) -> None:
+    render_labeled_help(
+        "Simulation summary",
+        f"Shows the {statistic_label.lower()} percentage of clean inspected, clean not inspected, intercepted, and slipped items across consignment, inspection, sample, and plant levels for each scenario.",
+    )
+    record_level_summary = None
+    if inspection_action_runs_df is not None and not inspection_action_runs_df.empty:
+        record_level_summary = (
+            inspection_action_runs_df.groupby("name")
+            .agg(
+                consignment_clean_inspected=("consignment_clean_inspected", record_agg),
+                consignment_clean_not_inspected=("consignment_clean_not_inspected", record_agg),
+                consignment_intercepted=("consignment_intercepted", record_agg),
+                consignment_slipped=("consignment_slipped", record_agg),
+                inspection_clean_inspected=("inspection_clean_inspected", record_agg),
+                inspection_clean_not_inspected=("inspection_clean_not_inspected", record_agg),
+                total_intercepted_inspection_units=("total_intercepted_inspection_units", record_agg),
+                total_slipped_inspection_units=("total_slipped_inspection_units", record_agg),
+            )
+            .reset_index()
+        )
+    action_visual_rows = []
+    has_inspection_level = {
+        "total_intercepted_inspection_units",
+        "total_slipped_inspection_units",
+    }.issubset(action_results_source.columns)
+    has_sample_level = {
+        "total_contaminated_sample_units",
+        "total_slipped_sample_units",
+        "avg_sample_units_inspected_completion",
+        "num_sample_units",
+    }.issubset(action_results_source.columns)
+    for _, selected_row in action_results_source.iterrows():
+        record_row = None
+        if record_level_summary is not None:
+            record_matches = record_level_summary[record_level_summary["name"] == selected_row["name"]]
+            if not record_matches.empty:
+                record_row = record_matches.iloc[0]
+
+        consignment_clean_inspected = (
+            _safe_float(record_row["consignment_clean_inspected"])
+            if record_row is not None
+            else max(
+                _safe_float(selected_row["num_inspections"]) - _safe_float(selected_row["intercepted"]) - _safe_float(selected_row["false_neg"]),
+                0.0,
+            )
+        )
+        consignment_clean_not_inspected = (
+            _safe_float(record_row["consignment_clean_not_inspected"])
+            if record_row is not None
+            else (max(_safe_float(total_consignments) - _safe_float(selected_row["num_inspections"]), 0.0) if total_consignments is not None else 0.0)
+        )
+        consignment_intercepted = (
+            _safe_float(record_row["consignment_intercepted"])
+            if record_row is not None
+            else _safe_float(selected_row["intercepted"])
+        )
+        consignment_slipped = (
+            _safe_float(record_row["consignment_slipped"])
+            if record_row is not None
+            else _safe_float(selected_row["false_neg"])
+        )
+        action_visual_rows.append(
+            {
+                "Scenario": selected_row["name"],
+                "Level": "Consignment",
+                "Clean inspected": consignment_clean_inspected,
+                "Clean not inspected": consignment_clean_not_inspected,
+                "Intercepted": consignment_intercepted,
+                "Slipped": consignment_slipped,
+            }
+        )
+        if has_inspection_level:
+            inspection_clean_inspected = (
+                _safe_float(record_row["inspection_clean_inspected"])
+                if record_row is not None
+                else max(
+                    _safe_float(selected_row["avg_inspection_units_opened_completion"])
+                    - _safe_float(selected_row.get("total_intercepted_inspection_units", 0.0)),
+                    0.0,
+                )
+            )
+            inspection_clean_not_inspected = (
+                _safe_float(record_row["inspection_clean_not_inspected"])
+                if record_row is not None
+                else max(
+                    _safe_float(selected_row["num_inspection_units"])
+                    - _safe_float(selected_row.get("total_slipped_inspection_units", 0.0))
+                    - _safe_float(selected_row.get("total_intercepted_inspection_units", 0.0))
+                    - inspection_clean_inspected,
+                    0.0,
+                )
+            )
+            action_visual_rows.append(
+                {
+                    "Scenario": selected_row["name"],
+                    "Level": "Inspection",
+                    "Clean inspected": inspection_clean_inspected,
+                    "Clean not inspected": inspection_clean_not_inspected,
+                    "Intercepted": (
+                        _safe_float(record_row["total_intercepted_inspection_units"])
+                        if record_row is not None
+                        else _safe_float(selected_row.get("total_intercepted_inspection_units", 0.0))
+                    ),
+                    "Slipped": (
+                        _safe_float(record_row["total_slipped_inspection_units"])
+                        if record_row is not None
+                        else _safe_float(selected_row.get("total_slipped_inspection_units", 0.0))
+                    ),
+                }
+            )
+        if has_sample_level:
+            sample_clean_inspected = max(
+                _safe_float(selected_row["avg_sample_units_inspected_completion"])
+                - max(
+                    _safe_float(selected_row["total_contaminated_sample_units"])
+                    - _safe_float(selected_row.get("total_slipped_sample_units", 0.0)),
+                    0.0,
+                ),
+                0.0,
+            )
+            sample_clean_not_inspected = max(
+                _safe_float(selected_row["num_sample_units"])
+                - _safe_float(selected_row["total_contaminated_sample_units"])
+                - sample_clean_inspected,
+                0.0,
+            )
+            action_visual_rows.append(
+                {
+                    "Scenario": selected_row["name"],
+                    "Level": "Sample",
+                    "Clean inspected": sample_clean_inspected,
+                    "Clean not inspected": sample_clean_not_inspected,
+                    "Intercepted": max(
+                        _safe_float(selected_row["total_contaminated_sample_units"])
+                        - _safe_float(selected_row.get("total_slipped_sample_units", 0.0)),
+                        0.0,
+                    ),
+                    "Slipped": _safe_float(selected_row.get("total_slipped_sample_units", 0.0)),
+                }
+            )
+        action_visual_rows.append(
+            {
+                "Scenario": selected_row["name"],
+                "Level": "Plant",
+                "Clean inspected": max(
+                    _safe_float(selected_row["avg_plant_units_inspected_completion"])
+                    - max(
+                        _safe_float(selected_row["total_contaminated_units"]) - _safe_float(selected_row["total_slipped_units"]),
+                        0.0,
+                    ),
+                    0.0,
+                ),
+                "Clean not inspected": max(
+                    _safe_float(selected_row["num_plants"])
+                    - _safe_float(selected_row["total_contaminated_units"])
+                    - max(
+                        _safe_float(selected_row["avg_plant_units_inspected_completion"])
+                        - max(
+                            _safe_float(selected_row["total_contaminated_units"]) - _safe_float(selected_row["total_slipped_units"]),
+                            0.0,
+                        ),
+                        0.0,
+                    ),
+                    0.0,
+                ),
+                "Intercepted": max(
+                    _safe_float(selected_row["total_contaminated_units"]) - _safe_float(selected_row["total_slipped_units"]),
+                    0.0,
+                ),
+                "Slipped": _safe_float(selected_row["total_slipped_units"]),
+            }
+        )
+    if not action_visual_rows:
+        return
+    action_mix_chart_df = pd.DataFrame(action_visual_rows)
+    level_order = ["Consignment", "Inspection", "Sample", "Plant"]
+    available_levels = [level for level in level_order if level in set(action_mix_chart_df["Level"])]
+    for scenario_name in action_mix_chart_df["Scenario"].dropna().unique().tolist():
+        scenario_chart_df = action_mix_chart_df[action_mix_chart_df["Scenario"] == scenario_name].copy()
+        scenario_chart_df = scenario_chart_df[scenario_chart_df["Level"].isin(available_levels)]
+        scenario_chart_df = scenario_chart_df.melt(
+            id_vars=["Scenario", "Level"],
+            value_vars=["Clean inspected", "Clean not inspected", "Intercepted", "Slipped"],
+            var_name="Status",
+            value_name="Count",
+        )
+        totals_by_level = scenario_chart_df.groupby("Level")["Count"].transform("sum")
+        scenario_chart_df["Percent"] = np.where(
+            totals_by_level > 0,
+            (scenario_chart_df["Count"] / totals_by_level) * 100.0,
+            0.0,
+        )
+        scenario_chart_df["Status order"] = scenario_chart_df["Status"].map(
+            {
+                "Slipped": 0,
+                "Intercepted": 1,
+                "Clean inspected": 2,
+                "Clean not inspected": 3,
+            }
+        )
+        st.caption(scenario_name)
+        action_mix_chart = (
+            alt.Chart(scenario_chart_df)
+            .mark_bar()
+            .encode(
+                y=alt.Y("Level:N", sort=available_levels, title=None),
+                x=alt.X(
+                    "Percent:Q",
+                    stack="zero",
+                    title="Percent of level",
+                    scale=alt.Scale(domain=[0, 100]),
+                ),
+                color=alt.Color(
+                    "Status:N",
+                    scale=alt.Scale(
+                        domain=["Slipped", "Intercepted", "Clean inspected", "Clean not inspected"],
+                        range=["#de2d26", "#2b8cbe", "#d9e2ec", "#9fb3c8"],
+                    ),
+                    legend=alt.Legend(title=None, orient="bottom"),
+                ),
+                order=alt.Order("Status order:Q", sort="ascending"),
+                tooltip=[
+                    "Scenario",
+                    "Level",
+                    "Status",
+                    alt.Tooltip("Percent:Q", title="Percent of level", format=".1f"),
+                    alt.Tooltip("Count:Q", title="Mean count", format=".1f"),
+                ],
+            )
+            .properties(height=220)
+        )
+        st.altair_chart(action_mix_chart, use_container_width=True)
+
+
 st.warning(
     "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
     "Features may be incomplete and subject to change. Results have not been validated.**"
 )
-st.caption("Execute the slippage pipeline and compare policies based on slippage metrics.")
+st.title("Page 5 - Run Simulation")
+render_page_intro("Execute the slippage pipeline and compare policies based on slippage metrics.")
 
+selected_experiment = None
 with st.sidebar:
     st.subheader("Execution options")
     simulations = st.number_input(
@@ -64,7 +433,7 @@ with st.sidebar:
         st.info("No experiments saved yet on Page 4.")
     st.divider()
     run_disabled = not experiment_sets  # only disable when no experiments
-    if st.button("Run pipeline", use_container_width=True, disabled=run_disabled):
+    if st.button("Run experiment", use_container_width=True, disabled=run_disabled):
         # Defer execution to main pane to show spinner there
         state["run_request_experiment"] = selected_experiment.parent if selected_experiment else None
         st.session_state["_trigger_run_pipeline"] = True
@@ -112,44 +481,258 @@ if results_df is None or results_df.empty:
     st.info("Run the pipeline to generate scenario results.")
     st.stop()
 
-# Persist results into the selected experiment folder for convenience
-try:
-    scenario_table = state["paths"].scenario_table if hasattr(state["paths"], "scenario_table") else None
-    if scenario_table:
-        exp_dir = Path(scenario_table).parent
-        out_dir = exp_dir / "output"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / "pis_contamination_scenario_results.csv"
-        results_df.to_csv(out_path, index=False)
-        st.caption(f"Results saved to {out_path}")
-except Exception as exc:  # pylint: disable=broad-except
-    st.warning(f"Could not save results to experiment folder: {exc}")
+saved_output_files = state.get("run_output_files") or []
+selected_experiment_dir = selected_experiment.parent if selected_experiment else None
+latest_output_dir = _latest_output_run_dir(selected_experiment_dir)
+all_runs_df = _load_all_runs_df(latest_output_dir)
+inspection_action_runs_df = _load_inspection_action_runs_df(latest_output_dir)
+saved_output_dir = state.get("run_output_dir")
+if latest_output_dir is not None:
+    saved_output_dir = str(latest_output_dir)
+    latest_output_files = sorted(p for p in latest_output_dir.glob("*.csv") if p.is_file())
+    if latest_output_files:
+        saved_output_files = [str(path) for path in latest_output_files]
+if saved_output_dir:
+    output_dir_path = Path(saved_output_dir)
+    output_file_names = ", ".join(Path(path).name for path in saved_output_files) if saved_output_files else "none"
+    st.caption(
+        f"Latest output: `{output_dir_path.name}` in `tmp/experiments/{output_dir_path.parent.parent.name}`. "
+        f"Files: {output_file_names}."
+    )
 
-st.markdown("### Overall summary")
+render_labeled_help(
+    "Overall summary",
+    "Summarizes how many scenarios were run, the total inspections performed, and the mean slipped plant units aggregated across the scenario results.",
+)
 summary = results_df.copy()
 
 kpi_cols = st.columns(3)
-kpi_cols[0].metric("Scenarios", len(summary))
-kpi_cols[1].metric("Total inspections", f"{int(summary['num_inspections'].sum()):,}")
-slipped_total = int(summary["total_slipped_units"].sum()) if "total_slipped_units" in summary.columns else 0
-kpi_cols[2].metric("Slipped plant units", f"{slipped_total:,}")
+replications_per_scenario = 0
+if all_runs_df is not None and "replication" in all_runs_df.columns:
+    replications_per_scenario = int(all_runs_df.groupby("name")["replication"].nunique().min())
+elif state.get("engine_options", {}).get("num_simulations") is not None:
+    replications_per_scenario = int(state["engine_options"]["num_simulations"])
+with kpi_cols[0]:
+    render_metric_card("Scenarios", f"{len(summary):,}", "Number of scenarios included in the current results.")
+with kpi_cols[1]:
+    render_metric_card(
+        "Replications per scenario",
+        f"{replications_per_scenario:,}",
+        "Number of simulation replications used for each scenario in the current results.",
+    )
+with kpi_cols[2]:
+    render_metric_card(
+        "Total consignments simulated",
+        f"{int(summary['num_inspections'].sum()):,}",
+        "Total number of consignments inspected across the displayed scenario results.",
+    )
 
+simulation_summary_source = results_df.copy()
+if inspection_action_runs_df is not None and not {
+    "total_intercepted_inspection_units",
+    "total_slipped_inspection_units",
+}.issubset(simulation_summary_source.columns):
+    inspection_summary_df = (
+        inspection_action_runs_df.groupby("name")
+        .agg(
+            total_intercepted_inspection_units=("total_intercepted_inspection_units", "mean"),
+            total_slipped_inspection_units=("total_slipped_inspection_units", "mean"),
+        )
+        .reset_index()
+    )
+    simulation_summary_source = simulation_summary_source.merge(inspection_summary_df, on="name", how="left")
+if all_runs_df is not None and "total_slipped_sample_units" in all_runs_df.columns and "total_slipped_sample_units" not in simulation_summary_source.columns:
+    sample_summary_df = (
+        all_runs_df.groupby("name")
+        .agg(total_slipped_sample_units=("total_slipped_sample_units", "mean"))
+        .reset_index()
+    )
+    simulation_summary_source = simulation_summary_source.merge(sample_summary_df, on="name", how="left")
+
+simulation_summary_record_runs = inspection_action_runs_df.copy() if inspection_action_runs_df is not None else None
+simulation_summary_runs_source = all_runs_df.copy() if all_runs_df is not None else None
+if simulation_summary_runs_source is not None and simulation_summary_record_runs is not None and not {
+    "total_intercepted_inspection_units",
+    "total_slipped_inspection_units",
+}.issubset(simulation_summary_runs_source.columns):
+    simulation_summary_runs_source = simulation_summary_runs_source.merge(
+        simulation_summary_record_runs[
+            [
+                "name",
+                "replication",
+                "total_intercepted_inspection_units",
+                "total_slipped_inspection_units",
+            ]
+        ],
+        on=["name", "replication"],
+        how="left",
+    )
+
+
+st.header("Simulation Replication Explorer")
+simulation_summary_view = "Mean"
+simulation_summary_record_agg = "mean"
+if simulation_summary_runs_source is not None and not simulation_summary_runs_source.empty and "replication" in simulation_summary_runs_source.columns:
+    available_replications = sorted(
+        int(replication)
+        for replication in simulation_summary_runs_source["replication"].dropna().unique().tolist()
+    )
+    summary_view_options = ["Mean", "Median"] + [f"Replication {replication + 1}" for replication in available_replications]
+    simulation_summary_view = st.selectbox(
+        "Simulation summary view",
+        options=summary_view_options,
+        key="simulation_summary_view",
+        help="Choose whether the simulation summary shows the mean, median, or a single replication.",
+    )
+    if simulation_summary_view == "Mean":
+        numeric_cols = simulation_summary_runs_source.select_dtypes(include=[np.number]).columns.tolist()
+        simulation_summary_source = (
+            simulation_summary_runs_source.groupby("name")[numeric_cols].mean().reset_index()
+        )
+        simulation_summary_record_agg = "mean"
+    elif simulation_summary_view == "Median":
+        numeric_cols = simulation_summary_runs_source.select_dtypes(include=[np.number]).columns.tolist()
+        simulation_summary_source = (
+            simulation_summary_runs_source.groupby("name")[numeric_cols].median().reset_index()
+        )
+        simulation_summary_record_agg = "median"
+    else:
+        selected_replication = int(simulation_summary_view.replace("Replication ", "")) - 1
+        simulation_summary_source = simulation_summary_runs_source[
+            simulation_summary_runs_source["replication"] == selected_replication
+        ].copy()
+        if simulation_summary_record_runs is not None:
+            simulation_summary_record_runs = simulation_summary_record_runs[
+                simulation_summary_record_runs["replication"] == selected_replication
+            ].copy()
+        simulation_summary_record_agg = "mean"
+
+if all(
+    col in simulation_summary_source.columns
+    for col in [
+        "name",
+        "intercepted",
+        "false_neg",
+        "num_inspections",
+        "num_plants",
+        "num_sample_units",
+        "num_inspection_units",
+        "avg_inspection_units_opened_completion",
+        "avg_sample_units_inspected_completion",
+        "avg_plant_units_inspected_completion",
+        "total_contaminated_units",
+        "total_slipped_units",
+        "total_contaminated_sample_units",
+    ]
+):
+    _render_consignments_visual(
+        simulation_summary_source,
+        state.get("num_consignments"),
+        simulation_summary_record_runs,
+        statistic_label=simulation_summary_view,
+        record_agg=simulation_summary_record_agg,
+    )
+
+st.header("Slippage Level")
+    
 # Slippage across scenarios (contaminated plant units that slipped)
 if "total_slipped_units" in results_df.columns and "name" in results_df.columns:
-    st.markdown("### Slippage by scenario (contaminated plant units missed)")
+    render_labeled_help(
+        "Slippage by scenario",
+        f"Bars show the mean number of contaminated plant units missed for each scenario across simulation replications. When at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available, error bars show the 95% interval across replications within that same scenario.",
+    )
     slip_df = results_df[["name", "total_slipped_units"]]
     slip_chart = (
         alt.Chart(slip_df)
-        .mark_bar()
+        .mark_bar(color="#1f77b4")
         .encode(
             y=alt.Y("name:N", title="Scenario"),
             x=alt.X("total_slipped_units:Q", title="Slipped plant units"),
-            tooltip=["name", "total_slipped_units"],
+            tooltip=[
+                "name",
+                alt.Tooltip("total_slipped_units:Q", title="Slipped plant units", format=".2f"),
+            ],
         )
     )
+    if all_runs_df is not None and {"name", "total_slipped_units"}.issubset(all_runs_df.columns):
+        slip_interval_df = (
+            all_runs_df[["name", "total_slipped_units"]]
+            .dropna()
+            .groupby("name")["total_slipped_units"]
+            .agg(
+                lower=lambda s: s.quantile(0.025),
+                upper=lambda s: s.quantile(0.975),
+                n="size",
+            )
+            .reset_index()
+        )
+        slip_interval_df = slip_interval_df[slip_interval_df["n"] >= MIN_REPLICATIONS_FOR_INTERVAL]
+        if not slip_interval_df.empty:
+            slip_error_bars = (
+                alt.Chart(slip_interval_df)
+                .mark_errorbar(color="#08306b", ticks=True)
+                .encode(
+                    y=alt.Y("name:N", title="Scenario"),
+                    x=alt.X("lower:Q"),
+                    x2=alt.X2("upper:Q"),
+                    tooltip=[
+                        "name",
+                        alt.Tooltip("lower:Q", title="95% interval lower", format=".2f"),
+                        alt.Tooltip("upper:Q", title="95% interval upper", format=".2f"),
+                    ],
+                )
+            )
+            slip_chart = slip_chart + slip_error_bars
     st.altair_chart(slip_chart, use_container_width=True)
+    if all_runs_df is not None and not all_runs_df.empty and "replication" in all_runs_df.columns:
+        rep_counts = all_runs_df.groupby("name").size()
+        if (rep_counts < MIN_REPLICATIONS_FOR_INTERVAL).any():
+            st.warning(
+                f"*Uncertainty bounds are hidden for scenarios with fewer than {MIN_REPLICATIONS_FOR_INTERVAL} replications."
+            )
+        else:
+            st.caption(
+                f"Bars show scenario means. Error bars show 95% intervals across replications within the same scenario when at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available."
+            )
+    slip_summary_df = results_df[["name", "total_slipped_units"]].rename(
+        columns={"name": "Scenario", "total_slipped_units": "Mean slipped plant units"}
+    )
+    if all_runs_df is not None and {"name", "total_slipped_units"}.issubset(all_runs_df.columns):
+        slip_table_intervals = (
+            all_runs_df[["name", "total_slipped_units"]]
+            .dropna()
+            .groupby("name")["total_slipped_units"]
+            .agg(
+                lower=lambda s: s.quantile(0.025),
+                upper=lambda s: s.quantile(0.975),
+                replications="size",
+            )
+            .reset_index()
+        )
+        slip_summary_df = slip_summary_df.merge(slip_table_intervals, left_on="Scenario", right_on="name", how="left")
+        slip_summary_df["95% interval"] = slip_summary_df.apply(
+            lambda row: f"{row['lower']:.2f} - {row['upper']:.2f}"
+            if pd.notna(row.get("lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+        if "name" in slip_summary_df.columns:
+            slip_summary_df = slip_summary_df.drop(columns=["name"])
+    if "Mean slipped plant units" in slip_summary_df.columns:
+        slip_summary_df["Mean slipped plant units"] = slip_summary_df["Mean slipped plant units"].map(lambda value: f"{value:,.2f}")
+    st.dataframe(
+        _styled_summary_table(
+            slip_summary_df,
+            mean_columns=["Mean slipped plant units"],
+            interval_columns=["95% interval"],
+        ),
+        use_container_width=True,
+        height=min(420, 70 + 38 * max(len(slip_summary_df), 1)),
+    )
 
 # Inspected quantities by level
+st.header("Inspection Workload Level")
+
 if all(
     col in results_df.columns
     for col in [
@@ -159,7 +742,14 @@ if all(
         "avg_inspection_units_opened_completion",
     ]
 ):
-    st.markdown("### Inspected quantities (completion) by scenario")
+    render_labeled_help(
+        "Number of units inspected",
+        (
+            "Shows the mean number of inspection units opened, sample units inspected, "
+            "and plant units inspected for each scenario. When available, 95% intervals "
+            f"are computed across replications within the same scenario using at least {MIN_REPLICATIONS_FOR_INTERVAL} replications."
+        ),
+    )
     inspected_df = results_df[
         [
             "name",
@@ -167,21 +757,474 @@ if all(
             "avg_sample_units_inspected_completion",
             "avg_inspection_units_opened_completion",
         ]
-    ]
-    inspected_long = inspected_df.rename(
+    ].rename(
         columns={
-            "avg_plant_units_inspected_completion": "Plants inspected (avg)",
-            "avg_sample_units_inspected_completion": "Sample units inspected (avg)",
-            "avg_inspection_units_opened_completion": "Inspection units opened (avg)",
+            "avg_plant_units_inspected_completion": "Plants inspected",
+            "avg_sample_units_inspected_completion": "Sample units inspected",
+            "avg_inspection_units_opened_completion": "Inspection units opened",
         }
-    ).melt(id_vars="name", var_name="level", value_name="count")
-
-    st.dataframe(
-        inspected_long.pivot(index="name", columns="level", values="count"),
-        use_container_width=True,
     )
 
+    if all_runs_df is not None and {
+        "name",
+        "avg_plant_units_inspected_completion",
+        "avg_sample_units_inspected_completion",
+        "avg_inspection_units_opened_completion",
+    }.issubset(all_runs_df.columns):
+        inspected_intervals = (
+            all_runs_df[
+                [
+                    "name",
+                    "avg_plant_units_inspected_completion",
+                    "avg_sample_units_inspected_completion",
+                    "avg_inspection_units_opened_completion",
+                ]
+            ]
+            .dropna()
+            .groupby("name")
+            .agg(
+                plant_lower=("avg_plant_units_inspected_completion", lambda s: s.quantile(0.025)),
+                plant_upper=("avg_plant_units_inspected_completion", lambda s: s.quantile(0.975)),
+                sample_lower=("avg_sample_units_inspected_completion", lambda s: s.quantile(0.025)),
+                sample_upper=("avg_sample_units_inspected_completion", lambda s: s.quantile(0.975)),
+                inspection_lower=("avg_inspection_units_opened_completion", lambda s: s.quantile(0.025)),
+                inspection_upper=("avg_inspection_units_opened_completion", lambda s: s.quantile(0.975)),
+                replications=("avg_plant_units_inspected_completion", "size"),
+            )
+            .reset_index()
+        )
+        inspected_df = inspected_df.merge(inspected_intervals, on="name", how="left")
+        inspected_df["Plants 95% interval"] = inspected_df.apply(
+            lambda row: f"{row['plant_lower']:.1f} - {row['plant_upper']:.1f}"
+            if pd.notna(row.get("plant_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+        inspected_df["Sample units 95% interval"] = inspected_df.apply(
+            lambda row: f"{row['sample_lower']:.1f} - {row['sample_upper']:.1f}"
+            if pd.notna(row.get("sample_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+        inspected_df["Inspection units 95% interval"] = inspected_df.apply(
+            lambda row: f"{row['inspection_lower']:.1f} - {row['inspection_upper']:.1f}"
+            if pd.notna(row.get("inspection_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+
+    display_cols = [
+        "name",
+        "Plants inspected",
+        "Plants 95% interval",
+        "Sample units inspected",
+        "Sample units 95% interval",
+        "Inspection units opened",
+        "Inspection units 95% interval",
+    ]
+    available_cols = [col for col in display_cols if col in inspected_df.columns]
+    display_df = inspected_df[available_cols].rename(columns={"name": "Scenario"}).copy()
+    numeric_cols = [
+        col for col in ["Plants inspected", "Sample units inspected", "Inspection units opened"]
+        if col in display_df.columns
+    ]
+    for col in numeric_cols:
+        display_df[col] = display_df[col].map(lambda value: f"{value:,.1f}")
+    styled_inspected = _styled_summary_table(
+        display_df,
+        mean_columns=["Plants inspected", "Sample units inspected", "Inspection units opened"],
+        interval_columns=["Plants 95% interval", "Sample units 95% interval", "Inspection units 95% interval"],
+    )
+    st.dataframe(styled_inspected, use_container_width=True, height=min(420, 70 + 38 * max(len(display_df), 1)))
+
+    inspected_pct_df = results_df[
+        [
+            "name",
+            "pct_plant_units_inspected_completion",
+            "pct_sample_units_inspected_completion",
+            "pct_inspection_units_opened_completion",
+        ]
+    ].copy()
+    inspected_pct_df = inspected_pct_df.rename(
+        columns={
+            "pct_plant_units_inspected_completion": "Plant units inspected %",
+            "pct_sample_units_inspected_completion": "Sample units inspected %",
+            "pct_inspection_units_opened_completion": "Inspection units opened %",
+        }
+    )
+    if all_runs_df is not None and {
+        "name",
+        "pct_plant_units_inspected_completion",
+        "pct_sample_units_inspected_completion",
+        "pct_inspection_units_opened_completion",
+    }.issubset(all_runs_df.columns):
+        inspected_pct_runs = all_runs_df[
+            [
+                "name",
+                "pct_plant_units_inspected_completion",
+                "pct_sample_units_inspected_completion",
+                "pct_inspection_units_opened_completion",
+            ]
+        ].copy()
+        inspected_pct_intervals = (
+            inspected_pct_runs.groupby("name")
+            .agg(
+                plant_lower=("pct_plant_units_inspected_completion", lambda s: s.quantile(0.025)),
+                plant_upper=("pct_plant_units_inspected_completion", lambda s: s.quantile(0.975)),
+                sample_lower=("pct_sample_units_inspected_completion", lambda s: s.quantile(0.025)),
+                sample_upper=("pct_sample_units_inspected_completion", lambda s: s.quantile(0.975)),
+                inspection_lower=("pct_inspection_units_opened_completion", lambda s: s.quantile(0.025)),
+                inspection_upper=("pct_inspection_units_opened_completion", lambda s: s.quantile(0.975)),
+                replications=("pct_plant_units_inspected_completion", "size"),
+            )
+            .reset_index()
+        )
+        inspected_pct_df = inspected_pct_df.merge(inspected_pct_intervals, on="name", how="left")
+        inspected_pct_df["Plant units 95% interval"] = inspected_pct_df.apply(
+            lambda row: f"{row['plant_lower']:.2f}% - {row['plant_upper']:.2f}%"
+            if pd.notna(row.get("plant_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+        inspected_pct_df["Sample units 95% interval"] = inspected_pct_df.apply(
+            lambda row: f"{row['sample_lower']:.2f}% - {row['sample_upper']:.2f}%"
+            if pd.notna(row.get("sample_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+        inspected_pct_df["Inspection units 95% interval"] = inspected_pct_df.apply(
+            lambda row: f"{row['inspection_lower']:.2f}% - {row['inspection_upper']:.2f}%"
+            if pd.notna(row.get("inspection_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+    render_labeled_help(
+        "Percent of units inspected",
+        f"Shows the mean percentage of plant, sample, and inspection units inspected for each scenario. When at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available, 95% intervals are computed across replications within the same scenario.",
+    )
+    inspected_pct_display_cols = [
+        "name",
+        "Plant units inspected %",
+        "Plant units 95% interval",
+        "Sample units inspected %",
+        "Sample units 95% interval",
+        "Inspection units opened %",
+        "Inspection units 95% interval",
+    ]
+    inspected_pct_display = inspected_pct_df[
+        [col for col in inspected_pct_display_cols if col in inspected_pct_df.columns]
+    ].rename(columns={"name": "Scenario"}).copy()
+    inspected_pct_mean_cols = [
+        col
+        for col in [
+            "Plant units inspected %",
+            "Sample units inspected %",
+            "Inspection units opened %",
+        ]
+        if col in inspected_pct_display.columns
+    ]
+    for col in inspected_pct_mean_cols:
+        inspected_pct_display[col] = inspected_pct_display[col].map(lambda value: f"{value:.2f}%")
+    st.dataframe(
+        _styled_summary_table(
+            inspected_pct_display,
+            mean_columns=inspected_pct_mean_cols,
+            interval_columns=[
+                "Plant units 95% interval",
+                "Sample units 95% interval",
+                "Inspection units 95% interval",
+            ],
+        ),
+        use_container_width=True,
+        height=min(420, 70 + 38 * max(len(inspected_pct_display), 1)),
+    )
+    if all_runs_df is not None and not all_runs_df.empty and "replication" in all_runs_df.columns:
+        rep_counts = all_runs_df.groupby("name").size()
+        if (rep_counts < MIN_REPLICATIONS_FOR_INTERVAL).any():
+            st.warning(
+                f"*Uncertainty bounds are hidden for scenarios with fewer than {MIN_REPLICATIONS_FOR_INTERVAL} replications."
+            )
+
+st.header("Action Level")
+
+if all(
+    col in results_df.columns
+    for col in [
+        "name",
+        "intercepted",
+        "false_neg",
+        "num_inspections",
+        "num_plants",
+        "num_sample_units",
+        "num_inspection_units",
+        "total_contaminated_units",
+        "total_slipped_units",
+        "total_contaminated_sample_units",
+    ]
+):
+    inspection_results_df = None
+    sample_results_df = None
+    if inspection_action_runs_df is not None and not {
+        "total_intercepted_inspection_units",
+        "total_slipped_inspection_units",
+    }.issubset(results_df.columns):
+        inspection_results_df = (
+            inspection_action_runs_df.groupby("name")
+            .agg(
+                total_intercepted_inspection_units=("total_intercepted_inspection_units", "mean"),
+                total_slipped_inspection_units=("total_slipped_inspection_units", "mean"),
+            )
+            .reset_index()
+        )
+    if all_runs_df is not None and "total_slipped_sample_units" in all_runs_df.columns and "total_slipped_sample_units" not in results_df.columns:
+        sample_results_df = (
+            all_runs_df.groupby("name")
+            .agg(total_slipped_sample_units=("total_slipped_sample_units", "mean"))
+            .reset_index()
+        )
+
+    def _action_level_rows(df):
+        rows = []
+        has_inspection_level = {
+            "total_intercepted_inspection_units",
+            "total_slipped_inspection_units",
+        }.issubset(df.columns)
+        has_sample_level = {
+            "total_contaminated_sample_units",
+            "total_slipped_sample_units",
+        }.issubset(df.columns)
+        for _, row in df.iterrows():
+            scenario = row["name"]
+            level_metrics = [
+                ("Consignment", float(row["intercepted"]), float(row["false_neg"])),
+                (
+                    "Plant",
+                    max(float(row["total_contaminated_units"]) - float(row["total_slipped_units"]), 0.0),
+                    float(row["total_slipped_units"]),
+                ),
+            ]
+            if has_sample_level:
+                level_metrics.insert(
+                    1 if not has_inspection_level else 2,
+                    (
+                        "Sample",
+                        max(
+                            float(row["total_contaminated_sample_units"]) - float(row["total_slipped_sample_units"]),
+                            0.0,
+                        ),
+                        float(row["total_slipped_sample_units"]),
+                    ),
+                )
+            if has_inspection_level:
+                level_metrics.insert(
+                    1,
+                    (
+                        "Inspection",
+                        float(row["total_intercepted_inspection_units"]),
+                        float(row["total_slipped_inspection_units"]),
+                    ),
+                )
+            for level_name, intercepted_count, slipped_count in level_metrics:
+                total_count = intercepted_count + slipped_count
+                rows.append(
+                    {
+                        "name": scenario,
+                        "Level": level_name,
+                        "Intercepted": intercepted_count,
+                        "Slipped": slipped_count,
+                        "Intercepted %": (intercepted_count / total_count) * 100.0 if total_count > 0 else np.nan,
+                        "Slipped %": (slipped_count / total_count) * 100.0 if total_count > 0 else np.nan,
+                    }
+                )
+        return pd.DataFrame(rows)
+
+    action_results_source = results_df.copy()
+    if inspection_results_df is not None:
+        action_results_source = action_results_source.merge(inspection_results_df, on="name", how="left")
+    if sample_results_df is not None:
+        action_results_source = action_results_source.merge(sample_results_df, on="name", how="left")
+
+    action_counts_base_df = _action_level_rows(action_results_source)
+    inspection_level_available = "Inspection" in set(action_counts_base_df["Level"])
+
+    render_labeled_help(
+        "Counts by action and level",
+        (
+            "Shows the mean intercepted and slipped counts for contaminated consignments, plant units, "
+            "sample units, and inspection units for each scenario. When available, "
+            f"95% intervals are computed across replications within the same scenario using at least {MIN_REPLICATIONS_FOR_INTERVAL} replications."
+        ),
+    )
+    action_counts_df = action_counts_base_df.copy()
+    action_runs_source = all_runs_df.copy() if all_runs_df is not None else None
+    if action_runs_source is not None and inspection_action_runs_df is not None and not {
+        "total_intercepted_inspection_units",
+        "total_slipped_inspection_units",
+    }.issubset(action_runs_source.columns):
+        action_runs_source = action_runs_source.merge(
+            inspection_action_runs_df,
+            on=["name", "replication"],
+            how="left",
+        )
+
+    if action_runs_source is not None and {
+        "name",
+        "intercepted",
+        "false_neg",
+        "total_contaminated_units",
+        "total_slipped_units",
+        "total_contaminated_sample_units",
+    }.issubset(action_runs_source.columns):
+        action_runs_df = _action_level_rows(action_runs_source)
+        action_count_intervals = (
+            action_runs_df[["name", "Level", "Intercepted", "Slipped"]]
+            .dropna()
+            .groupby(["name", "Level"])
+            .agg(
+                intercepted_lower=("Intercepted", lambda s: s.quantile(0.025)),
+                intercepted_upper=("Intercepted", lambda s: s.quantile(0.975)),
+                slipped_lower=("Slipped", lambda s: s.quantile(0.025)),
+                slipped_upper=("Slipped", lambda s: s.quantile(0.975)),
+                replications=("Intercepted", "size"),
+            )
+            .reset_index()
+        )
+        action_counts_df = action_counts_df.merge(action_count_intervals, on=["name", "Level"], how="left")
+        action_counts_df["Intercepted 95% interval"] = action_counts_df.apply(
+            lambda row: f"{row['intercepted_lower']:.1f} - {row['intercepted_upper']:.1f}"
+            if pd.notna(row.get("intercepted_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+        action_counts_df["Slipped 95% interval"] = action_counts_df.apply(
+            lambda row: f"{row['slipped_lower']:.1f} - {row['slipped_upper']:.1f}"
+            if pd.notna(row.get("slipped_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+    action_count_display = action_counts_df.rename(columns={"name": "Scenario"}).copy()
+    action_count_display = action_count_display[
+        [
+            col
+            for col in [
+                "Scenario",
+                "Level",
+                "Intercepted",
+                "Intercepted 95% interval",
+                "Slipped",
+                "Slipped 95% interval",
+            ]
+            if col in action_count_display.columns
+        ]
+    ]
+    for col in ["Intercepted", "Slipped"]:
+        if col in action_count_display.columns:
+            action_count_display[col] = action_count_display[col].map(lambda value: f"{value:,.1f}")
+    st.dataframe(
+        _styled_summary_table(
+            action_count_display,
+            mean_columns=["Intercepted", "Slipped"],
+            interval_columns=["Intercepted 95% interval", "Slipped 95% interval"],
+        ),
+        use_container_width=True,
+        height=min(420, 70 + 38 * max(len(action_count_display), 1)),
+    )
+    if not inspection_level_available:
+        st.info("Inspection-level action metrics are unavailable in the current output files.")
+
+    render_labeled_help(
+        "Percent by action and level",
+        (
+            "Shows the mean share of contaminated consignments, plant units, sample units, and inspection units "
+            "that were intercepted versus slipped for each scenario. Percentages are computed within each replication and then averaged "
+            f"across replications. When available, 95% intervals are computed across replications within the same scenario using at least {MIN_REPLICATIONS_FOR_INTERVAL} replications."
+        ),
+    )
+    action_pct_df = action_counts_base_df.copy()
+    if action_runs_source is not None and {
+        "name",
+        "intercepted",
+        "false_neg",
+        "total_contaminated_units",
+        "total_slipped_units",
+        "total_contaminated_sample_units",
+    }.issubset(action_runs_source.columns):
+        action_pct_runs = _action_level_rows(action_runs_source)
+        action_pct_intervals = (
+            action_pct_runs.groupby(["name", "Level"])
+            .agg(
+                intercepted_lower=("Intercepted %", lambda s: s.quantile(0.025)),
+                intercepted_upper=("Intercepted %", lambda s: s.quantile(0.975)),
+                slipped_lower=("Slipped %", lambda s: s.quantile(0.025)),
+                slipped_upper=("Slipped %", lambda s: s.quantile(0.975)),
+                replications=("Intercepted %", "size"),
+            )
+            .reset_index()
+        )
+        action_pct_df = action_pct_df.merge(action_pct_intervals, on=["name", "Level"], how="left")
+        action_pct_df["Intercepted 95% interval"] = action_pct_df.apply(
+            lambda row: f"{row['intercepted_lower']:.2f}% - {row['intercepted_upper']:.2f}%"
+            if pd.notna(row.get("intercepted_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+        action_pct_df["Slipped 95% interval"] = action_pct_df.apply(
+            lambda row: f"{row['slipped_lower']:.2f}% - {row['slipped_upper']:.2f}%"
+            if pd.notna(row.get("slipped_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+    action_pct_display = action_pct_df[
+        [
+            col
+            for col in [
+                "name",
+                "Level",
+                "Intercepted %",
+                "Intercepted 95% interval",
+                "Slipped %",
+                "Slipped 95% interval",
+            ]
+            if col in action_pct_df.columns
+        ]
+    ].rename(columns={"name": "Scenario"}).copy()
+    action_pct_display = action_pct_display[
+        [
+            col
+            for col in [
+                "Scenario",
+                "Level",
+                "Intercepted %",
+                "Intercepted 95% interval",
+                "Slipped %",
+                "Slipped 95% interval",
+            ]
+            if col in action_pct_display.columns
+        ]
+    ]
+    for col in ["Intercepted %", "Slipped %"]:
+        action_pct_display[col] = action_pct_display[col].map(
+            lambda value: f"{value:.2f}%" if pd.notna(value) else "n/a"
+        )
+    st.dataframe(
+        _styled_summary_table(
+            action_pct_display,
+            mean_columns=["Intercepted %", "Slipped %"],
+            interval_columns=["Intercepted 95% interval", "Slipped 95% interval"],
+        ),
+        use_container_width=True,
+        height=min(420, 70 + 38 * max(len(action_pct_display), 1)),
+    )
+    if all_runs_df is not None and not all_runs_df.empty and "replication" in all_runs_df.columns:
+        rep_counts = all_runs_df.groupby("name").size()
+        if (rep_counts < MIN_REPLICATIONS_FOR_INTERVAL).any():
+            st.warning(
+                f"*Uncertainty bounds are hidden for scenarios with fewer than {MIN_REPLICATIONS_FOR_INTERVAL} replications."
+            )
+
 # Contamination totals by level (plant, sample, inspection)
+st.header("Contamination Level")
+
 required_cols = [
     "name",
     "total_contaminated_units",
@@ -192,48 +1235,333 @@ required_cols = [
     "num_inspection_units",
 ]
 if all(col in results_df.columns for col in required_cols):
-    st.markdown("### Contamination totals by level")
+    render_labeled_help(
+        "Contamination totals by level",
+        f"For each scenario, bars show the mean contaminated and not-contaminated counts across simulation replications at the plant, sample unit, and inspection unit levels. Error bars show 95% intervals across replications within the same scenario when at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available.",
+    )
 
     def level_chart(level_label, contam_col, total_col):
         data = results_df[["name", contam_col, total_col]].copy()
         data = data.rename(columns={contam_col: "contaminated", total_col: "total"})
         data["not_contaminated"] = data["total"] - data["contaminated"]
-        data = data.melt(id_vars="name", value_vars=["contaminated", "not_contaminated"], var_name="metric", value_name="value")
-        return (
-            alt.Chart(data)
-            .mark_bar()
-            .encode(
+        data = data.melt(
+            id_vars="name",
+            value_vars=["contaminated", "not_contaminated"],
+            var_name="metric",
+            value_name="value",
+        )
+        interval_df = None
+        if all_runs_df is not None and contam_col in all_runs_df.columns and total_col in all_runs_df.columns:
+            interval_source = all_runs_df[["name", contam_col, total_col]].dropna()
+            if not interval_source.empty:
+                interval_source = interval_source.rename(columns={contam_col: "contaminated", total_col: "total"})
+                interval_source["not_contaminated"] = interval_source["total"] - interval_source["contaminated"]
+                interval_source = interval_source.melt(
+                    id_vars="name",
+                    value_vars=["contaminated", "not_contaminated"],
+                    var_name="metric",
+                    value_name="value",
+                )
+                interval_df = (
+                    interval_source.groupby(["name", "metric"])["value"]
+                    .agg(
+                        lower=lambda s: s.quantile(0.025),
+                        upper=lambda s: s.quantile(0.975),
+                        n="size",
+                    )
+                    .reset_index()
+                )
+                interval_df = interval_df[interval_df["n"] >= MIN_REPLICATIONS_FOR_INTERVAL]
+
+        charts = []
+        for metric_name, metric_title, metric_color in [
+            ("contaminated", "Contaminated", "#1f77b4"),
+            ("not_contaminated", "Not contaminated", "#9ecae1"),
+        ]:
+            metric_data = data[data["metric"] == metric_name]
+            base = alt.Chart(metric_data).encode(
                 y=alt.Y("name:N", title="Scenario"),
                 x=alt.X("value:Q", title="Count"),
-                color=alt.Color("metric:N", title="Metric"),
-                tooltip=["name", "metric", "value"],
+                tooltip=[
+                    "name",
+                    alt.Tooltip("value:Q", title="Count", format=".2f"),
+                ],
             )
-            .properties(title=level_label)
-        )
+            metric_chart = base.mark_bar(color=metric_color).properties(title=metric_title)
+            if interval_df is not None and not interval_df.empty:
+                metric_intervals = interval_df[interval_df["metric"] == metric_name]
+                if not metric_intervals.empty:
+                    error_bars = (
+                        alt.Chart(metric_intervals)
+                        .mark_errorbar(color="#08306b", ticks=True)
+                        .encode(
+                            y=alt.Y("name:N", title="Scenario"),
+                            x=alt.X("lower:Q"),
+                            x2=alt.X2("upper:Q"),
+                            tooltip=[
+                                "name",
+                                alt.Tooltip("lower:Q", title="95% interval lower", format=".2f"),
+                                alt.Tooltip("upper:Q", title="95% interval upper", format=".2f"),
+                            ],
+                        )
+                    )
+                    metric_chart = metric_chart + error_bars
+            charts.append(metric_chart)
+        return alt.hconcat(*charts).properties(title=level_label)
 
     st.altair_chart(
-        level_chart("Plant units", "total_contaminated_units", "num_plants"),
+        level_chart("PLANT UNITS", "total_contaminated_units", "num_plants"),
         use_container_width=True,
     )
     st.altair_chart(
         level_chart(
-            "Sample units", "total_contaminated_sample_units", "num_sample_units"
+            "SAMPLE UNITS", "total_contaminated_sample_units", "num_sample_units"
         ),
         use_container_width=True,
     )
     st.altair_chart(
         level_chart(
-            "Inspection units",
+            "INSPECTION UNITS", "total_contaminated_inspection_units", "num_inspection_units",
+        ),
+        use_container_width=True,
+    )
+    if all_runs_df is not None and not all_runs_df.empty and "replication" in all_runs_df.columns:
+        rep_counts = all_runs_df.groupby("name").size()
+        if (rep_counts < MIN_REPLICATIONS_FOR_INTERVAL).any():
+            st.warning(
+                f"*Uncertainty bounds are hidden for scenarios with fewer than {MIN_REPLICATIONS_FOR_INTERVAL} replications."
+            )
+        else:
+            st.caption(
+                f"Bars show scenario means. Error bars show 95% intervals across replications within the same scenario when at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available."
+            )
+    contam_summary_df = results_df[
+        [
+            "name",
+            "total_contaminated_units",
+            "total_contaminated_sample_units",
             "total_contaminated_inspection_units",
-            "num_inspection_units",
+        ]
+    ].rename(
+        columns={
+            "name": "Scenario",
+            "total_contaminated_units": "Plant contaminated mean",
+            "total_contaminated_sample_units": "Sample unit contaminated mean",
+            "total_contaminated_inspection_units": "Inspection unit contaminated mean",
+        }
+    )
+    if all_runs_df is not None and {
+        "name",
+        "total_contaminated_units",
+        "total_contaminated_sample_units",
+        "total_contaminated_inspection_units",
+    }.issubset(all_runs_df.columns):
+        contam_intervals = (
+            all_runs_df[
+                [
+                    "name",
+                    "total_contaminated_units",
+                    "total_contaminated_sample_units",
+                    "total_contaminated_inspection_units",
+                ]
+            ]
+            .dropna()
+            .groupby("name")
+            .agg(
+                plant_lower=("total_contaminated_units", lambda s: s.quantile(0.025)),
+                plant_upper=("total_contaminated_units", lambda s: s.quantile(0.975)),
+                sample_lower=("total_contaminated_sample_units", lambda s: s.quantile(0.025)),
+                sample_upper=("total_contaminated_sample_units", lambda s: s.quantile(0.975)),
+                inspection_lower=("total_contaminated_inspection_units", lambda s: s.quantile(0.025)),
+                inspection_upper=("total_contaminated_inspection_units", lambda s: s.quantile(0.975)),
+                replications=("total_contaminated_units", "size"),
+            )
+            .reset_index()
+        )
+        contam_summary_df = contam_summary_df.merge(contam_intervals, left_on="Scenario", right_on="name", how="left")
+        contam_summary_df["Plant 95% interval"] = contam_summary_df.apply(
+            lambda row: f"{row['plant_lower']:.2f} - {row['plant_upper']:.2f}"
+            if pd.notna(row.get("plant_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+        contam_summary_df["Sample unit 95% interval"] = contam_summary_df.apply(
+            lambda row: f"{row['sample_lower']:.2f} - {row['sample_upper']:.2f}"
+            if pd.notna(row.get("sample_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+        contam_summary_df["Inspection unit 95% interval"] = contam_summary_df.apply(
+            lambda row: f"{row['inspection_lower']:.2f} - {row['inspection_upper']:.2f}"
+            if pd.notna(row.get("inspection_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+        if "name" in contam_summary_df.columns:
+            contam_summary_df = contam_summary_df.drop(columns=["name"])
+    contam_mean_cols = [
+        "Plant contaminated mean",
+        "Sample unit contaminated mean",
+        "Inspection unit contaminated mean",
+    ]
+    for col in [col for col in contam_mean_cols if col in contam_summary_df.columns]:
+        contam_summary_df[col] = contam_summary_df[col].map(lambda value: f"{value:,.2f}")
+    contam_display_cols = [
+        "Scenario",
+        "Plant contaminated mean",
+        "Plant 95% interval",
+        "Sample unit contaminated mean",
+        "Sample unit 95% interval",
+        "Inspection unit contaminated mean",
+        "Inspection unit 95% interval",
+    ]
+    contam_summary_df = contam_summary_df[[col for col in contam_display_cols if col in contam_summary_df.columns]]
+    st.dataframe(
+        _styled_summary_table(
+            contam_summary_df,
+            mean_columns=contam_mean_cols,
+            interval_columns=["Plant 95% interval", "Sample unit 95% interval", "Inspection unit 95% interval"],
         ),
         use_container_width=True,
+        height=min(420, 70 + 38 * max(len(contam_summary_df), 1)),
     )
+
+    pct_df = results_df[
+        [
+            "name",
+            "total_contaminated_units",
+            "total_contaminated_sample_units",
+            "total_contaminated_inspection_units",
+            "num_plants",
+            "num_sample_units",
+            "num_inspection_units",
+        ]
+    ].copy()
+    pct_df["Plant contamination %"] = np.where(
+        pct_df["num_plants"] > 0,
+        (pct_df["total_contaminated_units"] / pct_df["num_plants"]) * 100.0,
+        np.nan,
+    )
+    pct_df["Sample unit contamination %"] = np.where(
+        pct_df["num_sample_units"] > 0,
+        (pct_df["total_contaminated_sample_units"] / pct_df["num_sample_units"]) * 100.0,
+        np.nan,
+    )
+    pct_df["Inspection unit contamination %"] = np.where(
+        pct_df["num_inspection_units"] > 0,
+        (pct_df["total_contaminated_inspection_units"] / pct_df["num_inspection_units"]) * 100.0,
+        np.nan,
+    )
+
+    if all_runs_df is not None and {
+        "name",
+        "total_contaminated_units",
+        "total_contaminated_sample_units",
+        "total_contaminated_inspection_units",
+        "num_plants",
+        "num_sample_units",
+        "num_inspection_units",
+    }.issubset(all_runs_df.columns):
+        pct_runs = all_runs_df[
+            [
+                "name",
+                "total_contaminated_units",
+                "total_contaminated_sample_units",
+                "total_contaminated_inspection_units",
+                "num_plants",
+                "num_sample_units",
+                "num_inspection_units",
+            ]
+        ].copy()
+        pct_runs["plant_pct"] = np.where(
+            pct_runs["num_plants"] > 0,
+            (pct_runs["total_contaminated_units"] / pct_runs["num_plants"]) * 100.0,
+            np.nan,
+        )
+        pct_runs["sample_pct"] = np.where(
+            pct_runs["num_sample_units"] > 0,
+            (pct_runs["total_contaminated_sample_units"] / pct_runs["num_sample_units"]) * 100.0,
+            np.nan,
+        )
+        pct_runs["inspection_pct"] = np.where(
+            pct_runs["num_inspection_units"] > 0,
+            (pct_runs["total_contaminated_inspection_units"] / pct_runs["num_inspection_units"]) * 100.0,
+            np.nan,
+        )
+        pct_intervals = (
+            pct_runs.groupby("name")
+            .agg(
+                plant_lower=("plant_pct", lambda s: s.quantile(0.025)),
+                plant_upper=("plant_pct", lambda s: s.quantile(0.975)),
+                sample_lower=("sample_pct", lambda s: s.quantile(0.025)),
+                sample_upper=("sample_pct", lambda s: s.quantile(0.975)),
+                inspection_lower=("inspection_pct", lambda s: s.quantile(0.025)),
+                inspection_upper=("inspection_pct", lambda s: s.quantile(0.975)),
+                replications=("plant_pct", "size"),
+            )
+            .reset_index()
+        )
+        pct_df = pct_df.merge(pct_intervals, on="name", how="left")
+        pct_df["Plant 95% interval"] = pct_df.apply(
+            lambda row: f"{row['plant_lower']:.2f}% - {row['plant_upper']:.2f}%"
+            if pd.notna(row.get("plant_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+        pct_df["Sample unit 95% interval"] = pct_df.apply(
+            lambda row: f"{row['sample_lower']:.2f}% - {row['sample_upper']:.2f}%"
+            if pd.notna(row.get("sample_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+        pct_df["Inspection unit 95% interval"] = pct_df.apply(
+            lambda row: f"{row['inspection_lower']:.2f}% - {row['inspection_upper']:.2f}%"
+            if pd.notna(row.get("inspection_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
+            else "n/a",
+            axis=1,
+        )
+
+    render_labeled_help(
+        "Contamination percentages by level",
+        f"Shows the mean percentage contaminated at the plant, sample unit, and inspection unit levels for each scenario. When at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available, 95% intervals are computed across replications within the same scenario.",
+    )
+    pct_display_cols = [
+        "name",
+        "Plant contamination %",
+        "Plant 95% interval",
+        "Sample unit contamination %",
+        "Sample unit 95% interval",
+        "Inspection unit contamination %",
+        "Inspection unit 95% interval",
+    ]
+    pct_available_cols = [col for col in pct_display_cols if col in pct_df.columns]
+    pct_display_df = pct_df[pct_available_cols].rename(columns={"name": "Scenario"}).copy()
+    pct_numeric_cols = [
+        col
+        for col in [
+            "Plant contamination %",
+            "Sample unit contamination %",
+            "Inspection unit contamination %",
+        ]
+        if col in pct_display_df.columns
+    ]
+    for col in pct_numeric_cols:
+        pct_display_df[col] = pct_display_df[col].map(lambda value: f"{value:.2f}%")
+    styled_pct = _styled_summary_table(
+        pct_display_df,
+        mean_columns=pct_numeric_cols,
+        interval_columns=[
+            "Plant 95% interval",
+            "Sample unit 95% interval",
+            "Inspection unit 95% interval",
+        ],
+    )
+    st.dataframe(styled_pct, use_container_width=True, height=min(420, 70 + 38 * max(len(pct_display_df), 1)))
 else:
     st.info("Contamination totals by level are unavailable in the current results.")
 
-st.markdown("### Raw Output")
-st.dataframe(state["results"], use_container_width=True)
+# st.header("Raw output")
+# st.dataframe(state["results"], use_container_width=True)
 
 st.divider()
 nav_cols = st.columns(3)

@@ -9,11 +9,21 @@ from typing import List, Optional
 
 import altair as alt
 import numpy as np
+from gui.runtime_warnings import suppress_optional_dependency_warnings
+
+suppress_optional_dependency_warnings()
+
 import pandas as pd
 import streamlit as st
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
+from gui.page_styles import (
+    apply_shared_page_styles,
+    render_labeled_help,
+    render_metric_card,
+    render_page_intro,
+)
 from gui.slippage_pipeline import SyntheticOptions, generate_synthetic_data
 from gui.slippage_ui import (
     get_slippage_state,
@@ -54,12 +64,24 @@ def _unique_path(path: Path) -> Path:
             return candidate
 
 
+def _is_tmp_consignment_path(path: Optional[Path]) -> bool:
+    if path is None:
+        return False
+    try:
+        resolved = Path(path).resolve()
+        consignment_root = CONSIGNMENT_ROOT.resolve()
+        return str(resolved).startswith(str(consignment_root))
+    except Exception:
+        return False
+
+
 def _save_rbs_to_tmp(
     current_rbs: Optional[Path],
     pending_manual_rbs: Optional[pd.DataFrame],
     pending_upload_rbs: Optional[pd.DataFrame] = None,
     *,
     base_name: Optional[str] = None,
+    producer_grouping_path: Optional[Path] = None,
 ) -> tuple[bool, str]:
     paths_map = _consignment_paths(base_name)
     base_name = base_name or st.session_state.get("consignment_base_name", "consignment") or "consignment"
@@ -85,7 +107,12 @@ def _save_rbs_to_tmp(
                 return False, "No RBS seed available for synthetic generation. Upload/select an RBS file first."
 
             options: SyntheticOptions = state.get("synthetic_options", SyntheticOptions())
-            synth_df = generate_synthetic_data(seed_path, dest_rbs, options)
+            synth_df = generate_synthetic_data(
+                seed_path,
+                dest_rbs,
+                options,
+                producer_grouping_path=producer_grouping_path,
+            )
             state["rbs_preview"] = synth_df.head(10)
             set_paths(rbs_data=dest_rbs, synthetic_seed=seed_path)
             return True, f"Generated and saved RBS file with base '{base_name}' to tmp/consignments."
@@ -201,10 +228,15 @@ init_state()
 
 state = get_slippage_state()
 render_sidebar_navigation()
+apply_shared_page_styles()
 paths = state["paths"]
 state.setdefault("consignment_source", "synthetic")
 state.setdefault("consignment_base_name", "consignment")
 state.setdefault("pending_rbs_upload", None)
+state.setdefault("use_custom_producer_grouping", True)
+default_producer_grouping = Path("data_input/producer_grouping.csv")
+if "producer_grouping_path" not in state:
+    state["producer_grouping_path"] = default_producer_grouping if default_producer_grouping.exists() else None
 # Normalize current RBS references for later save buttons
 _state_rbs = state.get("rbs_data")
 current_rbs = None
@@ -220,22 +252,24 @@ config_origins = config.get("consignment", {}).get("parameter_based", {}).get("o
 config_ports = config.get("consignment", {}).get("parameter_based", {}).get("ports", [])
 config_materials = config.get("consignment", {}).get("parameter_based", {}).get("flowers", [])
 
-st.title("Page 1 - Consignment Generation")
 st.warning(
     "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
     "Features may be incomplete and subject to change. Results have not been validated.**"
 )
-st.caption(
-    "Ingest curated RBS Calculator Data or define consignments from scratch. Both paths create the inputs needed for "
-    "contamination fitting and simulation."
-)
-st.info(
-    "Choose your workflow below: generate synthetic consignments or build them manually when no historical data "
-    "exists. PIS action uploads are handled on **Page 2 - Contamination Fit**; you can optionally attach an RBS calculator below."
+st.title("Page 1 - Consignment Generation")
+render_page_intro(
+    "Ingest curated consignment data or define consignments from scratch. "
+    "Use the <i>Generate consignments based on data</i> tab to upload data and create synthetic consignments. "
+    "Generated outputs are written to <i>tmp/consignments</i>."
 )
 
-ingest_tab, manual_tab, saved_tab = st.tabs(
-    ["RBS Calculator Data (ingest/generate)", "Define consignments manually", "Saved consignments"]
+ingest_tab, manual_tab, saved_tab, producer_grouping_tab = st.tabs(
+    [
+        "Generate consignments based on data",
+        "Define consignments manually",
+        "Saved consignments",
+        "Producer grouping",
+    ]
 )
 
 with ingest_tab:
@@ -243,8 +277,16 @@ with ingest_tab:
     pis_df: Optional[pd.DataFrame] = state.get("pis_data")
     rbs_df: Optional[pd.DataFrame] = state.get("pending_rbs_upload")
 
-    st.subheader("Upload RBS calculator")
-    rbs_upload = st.file_uploader("RBS calculator CSV", type=["csv"], key="rbs_upload_ingest")
+    render_labeled_help(
+        "Upload actual consignment data",
+        "Upload the RBS calculator CSV that will be saved directly or used as the seed input for synthetic consignment generation.",
+    )
+    rbs_upload = st.file_uploader(
+        "RBS calculator CSV",
+        type=["csv"],
+        key="rbs_upload_ingest",
+        label_visibility="collapsed",
+    )
     if rbs_upload is not None:
         rbs_df = pd.read_csv(rbs_upload)
         state["pending_rbs_upload"] = rbs_df
@@ -254,13 +296,33 @@ with ingest_tab:
         # Inline summary (mirrors Page 3 layout: table + stats together)
         metrics_top = st.columns(4)
         if "INSPECTION_NUMBER" in rbs_df.columns:
-            metrics_top[0].metric("Consignments", f"{rbs_df['INSPECTION_NUMBER'].nunique():,}")
+            with metrics_top[0]:
+                render_metric_card(
+                    "Consignments",
+                    f"{rbs_df['INSPECTION_NUMBER'].nunique():,}",
+                    "Number of unique consignments in the uploaded RBS data.",
+                )
         if "PATHWAY" in rbs_df.columns:
-            metrics_top[1].metric("Pathways", f"{rbs_df['PATHWAY'].nunique():,}")
+            with metrics_top[1]:
+                render_metric_card(
+                    "Pathways",
+                    f"{rbs_df['PATHWAY'].nunique():,}",
+                    "Number of unique shipment pathways represented in the uploaded data.",
+                )
         if "INSPECTION_LOCATION_NAME" in rbs_df.columns:
-            metrics_top[2].metric("Locations", f"{rbs_df['INSPECTION_LOCATION_NAME'].nunique():,}")
+            with metrics_top[2]:
+                render_metric_card(
+                    "Locations",
+                    f"{rbs_df['INSPECTION_LOCATION_NAME'].nunique():,}",
+                    "Number of unique inspection locations represented in the uploaded data.",
+                )
         if "COUNTRY_OF_ORIGIN_NAME" in rbs_df.columns:
-            metrics_top[3].metric("Countries", f"{rbs_df['COUNTRY_OF_ORIGIN_NAME'].nunique():,}")
+            with metrics_top[3]:
+                render_metric_card(
+                    "Countries",
+                    f"{rbs_df['COUNTRY_OF_ORIGIN_NAME'].nunique():,}",
+                    "Number of unique countries of origin represented in the uploaded data.",
+                )
 
         totals_cards = st.columns(2)
         if "TOTAL_PLANT_QUANTITY" in rbs_df.columns:
@@ -271,13 +333,18 @@ with ingest_tab:
     else:
         st.info("Upload RBS calculator data here.")
 
-    source_choice = st.selectbox(
+    render_labeled_help(
+        "Consignment source for downstream analysis",
+        "Choose whether downstream pages should use synthetic consignments generated from uploaded data or use historical consignment data directly.",
+    )
+    source_choice = st.radio(
         "Consignment source for downstream analysis",
         [
             "Generate synthetic consignments from data",
             "Use historical consignments",
         ],
         index=0 if state["consignment_source"] == "synthetic" else 1,
+        label_visibility="collapsed",
     )
     state["consignment_source"] = "synthetic" if source_choice.startswith("Generate") else "historical"
 
@@ -287,32 +354,73 @@ with ingest_tab:
     if st.session_state.get("consignment_base_name") in ("Generated", "Historical", "Generated_Historical"):
         st.session_state["consignment_base_name"] = default_base
     current_base = st.session_state.get("consignment_base_name", default_base) or default_base
+    render_labeled_help(
+        "Consignment input file base name",
+        "Base name used when saving consignment CSV files into tmp/consignments for downstream pages.",
+    )
     st.text_input(
         "Consignment input file base name",
         value=current_base,
         key="consignment_base_name",
         help="Used to name RBS files in tmp/consignments (e.g., <name>.csv).",
+        label_visibility="collapsed",
     )
     state["consignment_base_name"] = st.session_state.get("consignment_base_name", current_base) or default_base
 
     if state["consignment_source"] == "synthetic":
-        st.markdown("### Synthetic consignment generation")
+        render_labeled_help(
+            "Synthetic consignment generation",
+            "Generate new synthetic consignments from the uploaded consignment dataset and save them for downstream analysis.",
+        )
         gen_cols = st.columns(2)
-        n_samples = gen_cols[0].number_input("Number of consignments to generate", min_value=1, max_value=10000, value=20, step=10)
+        gen_cols[0].markdown("Number of consignments to generate")
+        n_samples = gen_cols[0].number_input(
+            "Number of consignments to generate",
+            min_value=1,
+            max_value=10000,
+            value=20,
+            step=10,
+            label_visibility="collapsed",
+        )
         method_dict = {
             "multinomial sequential": "sequential",
             "gaussian mixture": "gmm",
         }
+        gen_cols[1].markdown("Sampling method")
         method_selection = gen_cols[1].selectbox(
             "Sampling method",
             options=list(method_dict),
             index=0,
+            label_visibility="collapsed",
         )
         method = method_dict[method_selection]
-        if st.button("Generate synthetic consignments", type="primary", use_container_width=True):
+        state["use_custom_producer_grouping"] = st.checkbox(
+            "Use producer grouping CSV during synthetic generation",
+            value=bool(state.get("use_custom_producer_grouping", True)),
+            key="use_custom_producer_grouping",
+            help="When enabled, synthetic generation will load producer grouping from the selected CSV on the Producer grouping tab.",
+        )
+        has_tmp_saved_consignments = any(CONSIGNMENT_ROOT.glob("*.csv"))
+        has_synthetic_seed = (
+            (state.get("pending_rbs_upload") is not None and not state.get("pending_rbs_upload").empty)
+            or has_tmp_saved_consignments
+        )
+        if st.button(
+            "Generate synthetic consignments",
+            type="primary",
+            disabled=not has_synthetic_seed,
+        ):
             set_synthetic_options(SyntheticOptions(n_samples=int(n_samples), sampling_method=method))
             set_paths(synthetic_seed=_consignment_paths()["uploaded_rbs"])
-            ok, msg = _save_rbs_to_tmp(current_rbs, pending_manual_rbs, state.get("pending_rbs_upload"))
+            producer_grouping_path = None
+            if state.get("use_custom_producer_grouping"):
+                producer_grouping_path = state.get("producer_grouping_path")
+            ok, msg = _save_rbs_to_tmp(
+                current_rbs,
+                pending_manual_rbs,
+                state.get("pending_rbs_upload"),
+                producer_grouping_path=producer_grouping_path,
+            )
             if ok:
                 if state["paths"].rbs_data:
                     current_rbs = Path(state["paths"].rbs_data)
@@ -324,7 +432,16 @@ with ingest_tab:
             (pis_df is None or pis_df.empty) or (rbs_df is None or rbs_df.empty)
         ):
             st.warning("Upload both PIS action and RBS data on **Page 2 - Contamination Fit** to rely on historical consignments.")
-        if st.button("Save uploaded consignments", type="primary", key="save_consignment_ingest", use_container_width=True):
+        can_save_uploaded_consignments = (
+            (state.get("pending_rbs_upload") is not None and not state.get("pending_rbs_upload").empty)
+            or any(CONSIGNMENT_ROOT.glob("*.csv"))
+        )
+        if st.button(
+            "Save uploaded consignments",
+            type="primary",
+            key="save_consignment_ingest",
+            disabled=not can_save_uploaded_consignments,
+        ):
             ok, msg = _save_historical_rbs(current_rbs, state.get("pending_rbs_upload"), base_name=current_base)
             if ok:
                 if state["paths"].rbs_data:
@@ -483,7 +600,7 @@ with manual_tab:
         key="consignment_base_name_manual",
         help="Used to name RBS files in tmp/consignments (e.g., <name>.csv).",
     ) or "Manual"
-    if st.button("Save manual consignments", type="primary", key="save_consignment_manual", use_container_width=True):
+    if st.button("Save manual consignments", type="primary", key="save_consignment_manual"):
         ok, msg = _save_manual_rbs(pending_manual_rbs, base_name=manual_base)
         if ok:
             st.success(msg)
@@ -581,6 +698,38 @@ with saved_tab:
                     st.info("Need both TOTAL_PLANT_QUANTITY and TOTAL_SAMPLING_UNITS to render the heat map.")
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Unable to preview file: {exc}")
+
+with producer_grouping_tab:
+    st.subheader("Producer grouping")
+    st.caption("Optional producer grouping used during synthetic consignment generation on Page 1.")
+
+    if default_producer_grouping.exists():
+        st.caption(f"Default file available: {default_producer_grouping}")
+    else:
+        st.info("No default producer grouping file found in data_input.")
+
+    producer_grouping_upload = st.file_uploader(
+        "Upload custom producer grouping CSV",
+        type=["csv"],
+        key="producer_grouping_upload",
+        help="Expected columns include PRODUCER_NAME and grouping.",
+    )
+    if producer_grouping_upload is not None:
+        producer_grouping_path = TMP_DIR / "producer_grouping.csv"
+        producer_grouping_df = pd.read_csv(producer_grouping_upload)
+        producer_grouping_df.to_csv(producer_grouping_path, index=False)
+        state["producer_grouping_path"] = producer_grouping_path
+        st.success(f"Saved custom producer grouping to {producer_grouping_path}")
+
+    if state.get("producer_grouping_path"):
+        current_grouping_path = Path(state["producer_grouping_path"])
+        st.caption(f"Current producer grouping: {current_grouping_path}")
+        try:
+            producer_grouping_df = pd.read_csv(current_grouping_path)
+            st.dataframe(producer_grouping_df.head(50), use_container_width=True, height=320)
+            st.metric("Rows", f"{len(producer_grouping_df):,}")
+        except Exception as exc:  # pylint: disable=broad-except
+            st.warning(f"Unable to preview producer grouping file: {exc}")
 
 pending_manual_rbs = state.get("pending_manual_rbs")
 

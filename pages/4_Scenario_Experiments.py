@@ -7,11 +7,16 @@ import re
 import shutil
 from pathlib import Path
 
+from gui.runtime_warnings import suppress_optional_dependency_warnings
+
+suppress_optional_dependency_warnings()
+
 import pandas as pd
 import streamlit as st
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
+from gui.page_styles import apply_shared_page_styles, render_page_intro
 from gui.slippage_ui import get_slippage_state
 
 # --- Constants / setup --------------------------------------------------------
@@ -36,6 +41,17 @@ st.set_page_config(
 init_state()
 state = get_slippage_state()
 render_sidebar_navigation()
+apply_shared_page_styles()
+
+st.warning(
+    "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
+    "Features may be incomplete and subject to change. Results have not been validated.**"
+)
+st.title("Page 4 - Scenario Experiments")
+render_page_intro(
+    "Build, review, and save experiment-ready scenario tables. "
+    "Scenario bundles are written to <i>tmp/experiments</i> for execution on Page 5."
+)
 
 # --- Helpers ------------------------------------------------------------------
 def _slugify(name: str) -> str:
@@ -156,17 +172,6 @@ def _normalize_rows(rows_df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# --- Page header --------------------------------------------------------------
-st.title("Page 4 - Experiment Builder")
-st.warning(
-    "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
-    "Features may be incomplete and subject to change. Results have not been validated.**"
-)
-st.caption(
-    "Assemble scenarios using outputs from Pages 1-3: pick consignments (RBS), contamination parameter set, "
-    "and compliance table. Saved experiment packages are written to tmp/experiments."
-)
-
 tabs = st.tabs(["Upload custom scenario", "Build experiments", "Saved experiments"])
 
 # --- Tab 1: Upload custom scenario -------------------------------------------
@@ -183,7 +188,7 @@ with tabs[0]:
         except Exception:  # pylint: disable=broad-except
             st.info("Unable to preview upload.")
 
-    if uploaded and st.button("Save custom scenario table", type="primary"):
+    if st.button("Save custom scenario table", type="primary", disabled=uploaded is None):
         try:
             uploaded.seek(0)
             df = pd.read_csv(uploaded)
@@ -205,7 +210,7 @@ with tabs[1]:
     col_left, col_right = st.columns([2, 1])
 
     consignment_files = _list_files(TMP_DIR / "consignments", "*.csv")
-    compliance_files = _list_files(TMP_DIR / "compliance", "*.csv")
+    compliance_files = _list_files(TMP_DIR / "compliance", "*.pkl")
     param_sets = _load_param_sets()
     param_keys = list(param_sets.keys())
 
@@ -233,7 +238,7 @@ with tabs[1]:
 
         compliance_choice = (
             st.selectbox(
-                "Compliance table",
+                "RBS compliance policy",
                 compliance_files,
                 format_func=lambda p: p.name,
             )
@@ -252,7 +257,7 @@ with tabs[1]:
                 f"{', '.join(param_keys) if param_keys else 'none'}"
             )
             st.write(
-                f"**Inspection Process ({len(compliance_files)}):** "
+                f"**RBS Compliance Policies ({len(compliance_files)}):** "
                 f"{', '.join(p.name for p in compliance_files) if compliance_files else 'none'}"
             )
 

@@ -7,6 +7,12 @@ Modifications:
 - 10/3/2025: Modifications described below (Gary Lin and Joseph Agor)
     New Functions Added
     ----------------
+    - construct_risk_units():
+        * Takes in data and a config file to reassign inspection units to risk units
+    - relabel_risk_units():
+        * Relabel RISK_UNIT IDs based on unique combinations of grouping variables.
+    - load_compliance_lookup():
+        * Loads compliance lookup dictionary from pickle file.
     - sample_rbs():
         * Implements risk-based sampling methodology using compliance-based detection levels
         * Retrieves country/propagative material specific compliance parameters from lookup table
@@ -29,6 +35,13 @@ Modifications:
     - normalize_rbs_variables_against_consignment():
         * Maps free-form field names in rbs_variables to actual attributes on a Consignment
           instance, using case-insensitive aliasing
+
+    - fuzzy_match_attribute():
+        * Attempts fuzzy matching using substring/word matching.
+
+    - normalize_rbs_variables_using_risk_unit_config():
+        * Map free-form field names in rbs_variables to actual RiskUnit attributes defined
+          in RiskUnitConfig, using case-insensitive aliasing.
     ----------------
 
     Following Functions Modified
@@ -117,12 +130,215 @@ import random
 import types
 
 import numpy as np
+import pandas as pd
 
-from .inputs import get_validated_effectiveness, load_compliance_lookup_csv
+from .inputs import get_validated_effectiveness
 
-from slippage_model_utils.references import country_of_origin_names, pm_type_names
+from slippage_model_utils.references import (
+    country_of_origin_names,
+    pm_type_names,
+    possible_pis_stations,
+    get_domain_specific_aliases
+)
 import re
 from collections import defaultdict
+from difflib import get_close_matches
+from slippage_model_utils.references import find_column_name
+from slippage_model_utils.r_script_wrapper import find_repo_root
+import warnings
+
+from typing import List, Dict, Tuple, Set, Any
+from slippage_model_utils.UnitAttributes import RiskUnitConfig
+import pickle
+
+import pickle
+import time
+from pathlib import Path
+from typing import Dict, Optional
+from slippage_model_utils.paths import DefaultPaths
+
+
+def load_compliance_lookup(
+        filename: str
+) -> Dict:
+    """
+    Load compliance lookup dictionary from pickle file.
+
+    Args:
+        filename: Name of pickle file (e.g., 'compliance_lookup_final.pkl')
+
+    Returns:
+        Compliance lookup dictionary
+
+    Raises:
+        FileNotFoundError: If pickle file doesn't exist
+    """
+    # Initialize paths if not provided
+    default_paths = DefaultPaths()
+
+    candidate_path = Path(filename)
+    if candidate_path.exists():
+        full_path = candidate_path
+    else:
+        full_path = default_paths.compliance_dir() / filename
+
+    # Check if file exists
+    if not full_path.exists():
+        raise FileNotFoundError(
+            f"Compliance lookup file not found: {full_path}\n"
+            f"Expected location: {default_paths.compliance_dir()}\n"
+            f"Please ensure the pickle file is in the correct directory."
+        )
+
+    # Load pickle
+    with open(full_path, 'rb') as f:
+        compliance_table_dict = pickle.load(f)
+
+    return compliance_table_dict
+
+
+def relabel_risk_units(group, risk_unit_grouping_variables):
+    """
+    Relabel RISK_UNIT IDs based on unique combinations of grouping variables.
+
+    Parameters:
+    -----------
+    group : pd.DataFrame
+        DataFrame with RISK_UNIT column
+    risk_unit_grouping_variables : list
+        List of column names to group by for creating unique IDs
+
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame with relabeled RISK_UNIT column
+    """
+    # Extract the base number (before underscore)
+    first_risk_unit = group['RISK_UNIT'].iloc[0]
+    base_number = first_risk_unit.split('_')[0]
+    inspection_num = str(group['INSPECTION_NUMBER'].iloc[0])
+
+    # Create unique combinations of grouping variables
+    # Use factorize to assign sequential IDs to unique combinations
+    group_combinations = group[risk_unit_grouping_variables].apply(
+        lambda row: '_'.join(row.astype(str)), axis=1
+    )
+
+    # Get unique IDs for each combination (1-indexed)
+    _, unique_ids = pd.factorize(group_combinations)
+    unique_id_map = {combo: idx + 1 for idx, combo in enumerate(unique_ids)}
+
+    # Map each row to its new ID
+    new_ids = group_combinations.map(unique_id_map)
+
+    # Create new RISK_UNIT values
+    group['RISK_UNIT'] = inspection_num + '_' + 'risk_unit' + '_' + new_ids.astype(str)
+
+    return group
+
+
+def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
+    """Takes in data and a config file to reassign inspection units to risk units
+
+    :param config: Configuration to be used
+    :param data: Dataframe that has as rows inspection units/commodity lines
+    """
+
+    unit = config["inspection"]["unit"]
+
+    # Get the PIS Station for the consignment and the corresponding Risk Unit Group variables
+    rbs_calculator_grouping_variables_stations = list(config["inspection"]["rbs_calculator_grouping_variables"].keys())
+
+    def process_inspection_group(group):
+        """Process each unique inspection number"""
+        # Get the inspection number from the group name
+        inspection_number = group.name
+        # Add the INSPECTION_NUMBER column back to the result
+        group = group.copy()  # Make a copy to avoid SettingWithCopyWarning
+        group['INSPECTION_NUMBER'] = inspection_number
+
+        port_name = list(group['INSPECTION_LOCATION_NAME'])[0]
+
+        match = get_close_matches(port_name, rbs_calculator_grouping_variables_stations, n=1, cutoff=0.6)
+        pis_station = match[0] if match else None
+
+        if pis_station is None:
+            if ('default' in config["inspection"]["rbs_calculator_grouping_variables"].keys()
+                    and len(config["inspection"]["rbs_calculator_grouping_variables"]['default'])>0):
+                default_list = config["inspection"]["rbs_calculator_grouping_variables"]['default']
+                # print(f'\nWARNING\nPIS Station ---{port_name}--- for the consignment not found in config.\n'
+                #       f'Using defaults found in config for risk unit grouping variables...'
+                #       f'{default_list}')
+                warnings.warn(
+                    f"PIS Station ---{port_name}--- for the consignment not found in config. "
+                    f"Using defaults found in config for risk unit grouping variables: {default_list}",
+                    UserWarning,
+                    stacklevel=2
+                )
+                risk_unit_grouping_variables = [
+                    x.lower().replace(' ', '_').replace('-', '_').replace('.', '_')
+                    for x in config["inspection"]["rbs_calculator_grouping_variables"]['default']
+                ]
+            else:
+                default_list = ['origin','material_type']
+                # print(f'\nWARNING\nPIS Station ---{port_name}--- for the consignment not found in config.\n'
+                #       f'Also, no defaults found in config so risk unit group variables being defaulted to...{default_list}')
+                warnings.warn(
+                    f"PIS Station ---{port_name}--- for the consignment not found in config."
+                    f"Also, no defaults found in config so risk unit group variables being defaulted to...{default_list}",
+                    UserWarning,
+                    stacklevel=2
+                )
+                risk_unit_grouping_variables = ['origin','material_type']
+        else:
+            if len(config["inspection"]["rbs_calculator_grouping_variables"][pis_station]) == 0:
+                default_list = ['origin', 'material_type']
+                # print(f'\nWARNING\n  PIS Station ---{port_name}--- found in config. \n'
+                #       f'However, no grouping variables found in the config, so default risk unit grouping variables being used (Origin and PM Type).')
+                warnings.warn(
+                    f"PIS Station ---{port_name}--- for the consignment not found in config."
+                    f"However, no grouping variables found in the config, so risk unit group variables being defaulted to...{default_list}",
+                    UserWarning,
+                    stacklevel=2
+                )
+                risk_unit_grouping_variables = ['origin','material_type']
+            else:
+                risk_unit_grouping_variables = [
+                    x.lower().replace(' ', '_').replace('-', '_').replace('.', '_')
+                    for x in config["inspection"]["rbs_calculator_grouping_variables"][pis_station]
+                ]
+
+        # Print out risk unit variables being used
+        count = 0
+        for var in risk_unit_grouping_variables:
+            matching_column_name = find_column_name(var,list(group.columns))
+            if matching_column_name is not None:
+                risk_unit_grouping_variables[count] = matching_column_name
+            else:
+                raise ValueError(f'Variable {var} not a valid column for risk unit construction. ')
+            #print(f'  Variable {count + 1}: {var}')
+            count += 1
+
+        # Relabel risk units based on grouping variables
+        group = relabel_risk_units(group, risk_unit_grouping_variables)
+
+
+
+
+        return group
+
+    # Apply processing
+    data_updated = data.groupby('INSPECTION_NUMBER', group_keys=False).apply(
+        process_inspection_group,
+        include_groups=False
+    )
+    return data_updated
+
+
+
+
+
+
 
 
 def inspect_first(consignment):
@@ -280,7 +496,7 @@ def sample_n(config, consignment):
     return n_units_to_inspect
 
 
-def sample_rbs(config, consignment, compliance_table_dict):
+def sample_rbs(config, consignment):
     """Set sample size to sample units from consignment using hypergeometric/detection 
     level strategy based on compliance levels. Return number of units to inspect.
 
@@ -289,25 +505,50 @@ def sample_rbs(config, consignment, compliance_table_dict):
     """
 
     unit = config["inspection"]["unit"]
-    num_sample_units = consignment.num_sample_units
-    num_inspection_units = consignment.num_inspection_units
     debug_print = config.get("debug", {}).get("print_compliance_levels", False)
+
+    # Get filename from config
+    compliance_table_lookup_filename = config["inspection"]["compliance_table"]['file_name']
+
+    # Load compliance lookup
+    compliance_table_dict = load_compliance_lookup(filename=compliance_table_lookup_filename)
+
+
     detection_confidence_levels = get_detection_and_confidence(
         consignment, compliance_table_dict, print_compliance_levels=debug_print
     )
     n_units_to_inspect = {}
     if unit in ["sample_unit", "sample_units", "item", "items"]:
+        risk_units = consignment.risk_units if consignment.risk_units else []
+        if risk_units:
+            risk_unit_by_id = {risk_unit.id: risk_unit for risk_unit in risk_units}
+            for risk_unit_id, levels in detection_confidence_levels.items():
+                detection_level, confidence_level = levels[0], levels[1]
+                risk_unit = risk_unit_by_id.get(risk_unit_id)
+                if risk_unit is None:
+                    continue
+                population_n = risk_unit.n_for_hypergeom
+                if population_n <= 0:
+                    continue
+
+                n_for_risk = compute_hypergeometric(
+                    detection_level, confidence_level, population_n
+                )
+                n_for_risk = max(0, min(n_for_risk, population_n))
+                n_units_to_inspect[risk_unit_id] = n_for_risk
+        else:
+            # Fallback for legacy consignments without risk_units.
+            for inspect_number in range(consignment.num_inspection_units):
+                detection_level, confidence_level = detection_confidence_levels[inspect_number]
+                population_n = consignment.inspection_units[inspect_number].num_sample_units
+                n_units_to_inspect[inspect_number] = compute_hypergeometric(
+                    detection_level, confidence_level, population_n
+                )
+    elif unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
+        num_sample_units = consignment.num_sample_units
         for inspect_number in detection_confidence_levels.keys():
             detection_level, confidence_level = detection_confidence_levels[inspect_number][0], \
                 detection_confidence_levels[inspect_number][1]
-            num_sample_units = consignment.inspection_units[inspect_number].num_sample_units
-            n_units_to_inspect[inspect_number] = compute_hypergeometric(
-                detection_level, confidence_level, num_sample_units
-            )
-    elif unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
-        for inspect_number in detection_confidence_levels.keys():
-            detection_level, confidence_level = detection_confidence_levels[inspect_number][0], \
-            detection_confidence_levels[inspect_number][1]
             n_units_to_inspect[inspect_number] = compute_hypergeometric(
                 detection_level, confidence_level, num_sample_units
             )
@@ -472,18 +713,53 @@ def select_random_indexes_rbs(unit, consignment, n_units_to_inspect):
     
     indexes_to_inspect = []
     if unit in ["sample_unit", "sample_units", "item", "items"]:
-        current_idx = 0
         inspection_unit_counter = 0
-        inspection_units_to_inspect = {}
-        for inspection_unit in consignment.inspection_units:
-            indexes_to_inspect_temp = random.sample(
-                list(range(len(inspection_unit.sample_unit_objects))), n_units_to_inspect[inspection_unit_counter]
-            )
-            inspection_units_to_inspect[inspection_unit_counter] = indexes_to_inspect_temp
-            indexes_to_inspect_temp = [x+ current_idx for x in indexes_to_inspect_temp]
-            current_idx += len(inspection_unit.sample_unit_objects)
-            indexes_to_inspect = indexes_to_inspect + indexes_to_inspect_temp
-            inspection_unit_counter += 1
+        inspection_units_to_inspect = {
+            idx: [] for idx in range(consignment.num_inspection_units)
+        }
+
+        # Build lookup from sample_unit_id to local index inside each inspection unit.
+        sample_unit_local_index = {}
+        for iu_idx, inspection_unit in enumerate(consignment.inspection_units):
+            for local_idx, sample_unit_obj in enumerate(inspection_unit.included_unit_objects):
+                sample_unit_id = getattr(sample_unit_obj, "id", None)
+                if sample_unit_id is not None:
+                    sample_unit_local_index[sample_unit_id] = (iu_idx, local_idx)
+
+        risk_pool_map = getattr(consignment, "risk_unit_to_sample_units", {}) or {}
+        if risk_pool_map:
+            selected_sample_unit_ids = []
+            for risk_unit_id, requested in n_units_to_inspect.items():
+                sample_pool = list(risk_pool_map.get(risk_unit_id, []))
+                if not sample_pool:
+                    continue
+                requested = max(0, min(requested, len(sample_pool)))
+                if requested == 0:
+                    continue
+                selected_sample_unit_ids.extend(random.sample(sample_pool, requested))
+
+            # Deduplicate to avoid double-inspection if sample units appear in multiple risk groups.
+            for sample_unit_id in sorted(set(selected_sample_unit_ids)):
+                indexes_to_inspect.append(sample_unit_id)
+                iu_and_local = sample_unit_local_index.get(sample_unit_id)
+                if iu_and_local is not None:
+                    iu_idx, local_idx = iu_and_local
+                    inspection_units_to_inspect[iu_idx].append(local_idx)
+        else:
+            # Legacy fallback: keyed per inspection unit.
+            current_idx = 0
+            for inspection_unit in consignment.inspection_units:
+                population = len(inspection_unit.included_unit_objects)
+                requested = n_units_to_inspect.get(inspection_unit_counter, 0)
+                requested = max(0, min(requested, population))
+                indexes_to_inspect_temp = random.sample(
+                    list(range(population)), requested
+                )
+                inspection_units_to_inspect[inspection_unit_counter] = indexes_to_inspect_temp
+                indexes_to_inspect_temp = [x + current_idx for x in indexes_to_inspect_temp]
+                current_idx += population
+                indexes_to_inspect = indexes_to_inspect + indexes_to_inspect_temp
+                inspection_unit_counter += 1
     else:
         raise RuntimeError(f"Inspection process unit specified in config is: {unit}.  "
                            f"For Sampling Strategy = RBS, only supports that parameter being = sampling_units")
@@ -594,10 +870,30 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     # pylint: disable=too-many-branches,too-many-nested-blocks
 
     
+    # Detection is inspection-outcome state, so reset for each inspect() call.
+    for inspection_unit in consignment.inspection_units:
+        if hasattr(inspection_unit, "reset_detection"):
+            inspection_unit.reset_detection()
+        elif hasattr(inspection_unit, "is_detected"):
+            inspection_unit.is_detected = False
+
     unit = config["inspection"]["unit"]
     selection_strategy = config["inspection"]["selection_strategy"]
     sample_strategy = config["inspection"]["sample_strategy"]
     sample_units_per_inspection_unit = consignment.sample_units_per_inspection_unit
+    sample_unit_to_inspection = getattr(consignment, "sample_unit_to_inspection_unit", {}) or {}
+    sample_unit_local_index = {}
+    running_sample_index = 0
+    for iu_idx, inspection_unit in enumerate(consignment.inspection_units):
+        su_objects = getattr(inspection_unit, "included_unit_objects", [])
+        if su_objects:
+            for local_idx, sample_unit_obj in enumerate(su_objects):
+                su_id = getattr(sample_unit_obj, "id", None)
+                if su_id is not None:
+                    sample_unit_local_index[su_id] = local_idx
+                else:
+                    sample_unit_local_index[running_sample_index] = local_idx
+                    running_sample_index += 1
 
     if sample_strategy == "rbs":
         indexes_to_inspect, inspection_units_to_inspect = select_units_to_inspect(
@@ -614,7 +910,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     # sample_units to detection and completion
     ret = types.SimpleNamespace(
         inspected_sample_unit_indexes=[],
-        insepcted_box_indexes=[],
+        inspected_box_indexes=[],
         inspected_box_result=[],
         inspection_units_opened_completion=0,
         inspection_units_opened_detection=0,
@@ -630,15 +926,13 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
 
     if sample_strategy == "rbs":
 
-        """
-        TODO: Investigate min guard and impact on oversampling
-        """
         if unit in ["sample_unit", "sample_units", "item", "items"]:
             detected = False
             if selection_strategy == "cluster":
                 raise RuntimeError(f"Selection strategy = '{selection_strategy}' is not supported for"
                                    f" sampling_strategy = {sample_strategy}")
-            else:  # All other sample_unit selection strategies inspected the same way
+            else:  
+                # All other sample_unit selection strategies inspected the same way
                 # Empty lists to hold opened inspection_units indexes, will be duplicates bc inspection_unit index
                 # computed per inspected sample_unit
                 inspection_units_opened_completion = []
@@ -649,32 +943,38 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                     if detailed:
                         ret.inspected_sample_unit_indexes.append(sample_unit_index)
                     ret.sample_units_inspected_completion += 1
-                    # Count plant units inspected (all plants in this sample unit)
-                    iu_idx = math.floor(sample_unit_index / sample_units_per_inspection_unit)
-                    su_local_idx = sample_unit_index % sample_units_per_inspection_unit
+                    
+                    # Count sample units inspected (all plants in this sample unit)
+                    iu_idx = sample_unit_to_inspection.get(
+                        sample_unit_index,
+                        math.floor(sample_unit_index / sample_units_per_inspection_unit),
+                    )
+                    su_local_idx = sample_unit_local_index.get(
+                        sample_unit_index,
+                        sample_unit_index % sample_units_per_inspection_unit,
+                    )
                     try:
-                        su_obj = consignment.inspection_units[iu_idx].sample_unit_objects[su_local_idx]
+                        su_obj = consignment.inspection_units[iu_idx].included_unit_objects[su_local_idx]
                         ret.plant_units_inspected_completion += len(su_obj.plants)
                     except Exception:
                         pass
                     # Compute inspection_unit index number
                     inspection_units_opened_completion.append(
-                        math.floor(sample_unit_index / sample_units_per_inspection_unit))
+                        iu_idx)
                     if not detected:
                         ret.sample_units_inspected_detection += 1
                         try:
-                            su_obj = consignment.inspection_units[iu_idx].sample_unit_objects[su_local_idx]
+                            su_obj = consignment.inspection_units[iu_idx].included_unit_objects[su_local_idx]
                             ret.plant_units_inspected_detection += len(su_obj.plants)
                         except Exception:
                             pass
                         # Compute inspection_unit index number
                         inspection_units_opened_detection.append(
-                            math.floor(sample_unit_index / sample_units_per_inspection_unit)
+                            iu_idx
                         )
-                    # Debug hook to confirm we are inspecting individual sample units
-                    if os.environ.get("SLIPPAGE_DEBUG_INSPECTION"):
-                        print(f"Inspecting sample unit {sample_unit_index}")
+
                     if inspect_sample_unit(consignment.sample_units[sample_unit_index], effectiveness):
+                        consignment.inspection_units[iu_idx].is_detected = True
                         # Count every contaminated sample_unit in sample
                         ret.contaminated_sample_units_completion += 1
                         if not detected:
@@ -695,7 +995,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                     sample_unit_counter = 0
                     total_contaminated_sample_units = 0
                     total_contaminated_units = 0
-                    for samp_unit in inspect_unit.sample_unit_objects:
+                    for samp_unit in inspect_unit.included_unit_objects:
                         if sum(samp_unit.plants) > 0:
                             inspection_unit_contaminated = True
                             total_contaminated_sample_units+=1
@@ -738,7 +1038,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                         inspect_per_inspection_unit = sample_remainder
                     # In each inspection_unit, loop through first n sample_units (n = inspect_per_inspection_unit)
                     for sample_unit_in_inspection_unit_index, sample_unit in enumerate(
-                            (consignment.inspection_units[inspection_unit_index]).sample_units[
+                            (consignment.inspection_units[inspection_unit_index]).included_units[
                                 0:inspect_per_inspection_unit]
                     ):
                         if detailed:
@@ -750,6 +1050,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                         if not detected:
                             ret.sample_units_inspected_detection += 1
                         if inspect_sample_unit(sample_unit, effectiveness):
+                            consignment.inspection_units[inspection_unit_index].is_detected = True
                             # Count all contaminated sample_units in sample, regardless of
                             # detected variable
                             ret.contaminated_sample_units_completion += 1
@@ -776,15 +1077,20 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                         ret.inspected_sample_unit_indexes.append(sample_unit_index)
                     ret.sample_units_inspected_completion += 1
                     # Compute inspection_unit index number
+                    iu_idx = sample_unit_to_inspection.get(
+                        sample_unit_index,
+                        math.floor(sample_unit_index / sample_units_per_inspection_unit),
+                    )
                     inspection_units_opened_completion.append(
-                        math.floor(sample_unit_index / sample_units_per_inspection_unit))
+                        iu_idx)
                     if not detected:
                         ret.sample_units_inspected_detection += 1
                         # Compute inspection_unit index number
                         inspection_units_opened_detection.append(
-                            math.floor(sample_unit_index / sample_units_per_inspection_unit)
+                            iu_idx
                         )
                     if inspect_sample_unit(consignment.sample_units[sample_unit_index], effectiveness):
+                        consignment.inspection_units[iu_idx].is_detected = True
                         # Count every contaminated sample_unit in sample
                         ret.contaminated_sample_units_completion += 1
                         if not detected:
@@ -814,7 +1120,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                     ret.inspection_units_opened_detection += 1
                 # In each inspection_unit, loop through first n sample_units (n = inspect_per_inspection_unit)
                 for sample_unit_in_inspection_unit_index, sample_unit in enumerate(
-                        (consignment.inspection_units[inspection_unit_index]).sample_units[
+                        (consignment.inspection_units[inspection_unit_index]).included_units[
                             0:inspect_per_inspection_unit]
                 ):
                     if detailed:
@@ -825,6 +1131,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
                     if not detected:
                         ret.sample_units_inspected_detection += 1
                     if inspect_sample_unit(sample_unit, effectiveness):
+                        consignment.inspection_units[inspection_unit_index].is_detected = True
                         # Count every contaminated sample_unit in sample
                         ret.contaminated_sample_units_completion += 1
                         # If first contaminated inspection_unit inspected,
@@ -842,7 +1149,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     return ret
 
 
-def get_sample_function(config, compliance_table=None):
+def get_sample_function(config):
     """Based on config, return function to sample a consignment."""
     sample_strategy = config["inspection"]["sample_strategy"]
     if sample_strategy == "proportion":
@@ -868,8 +1175,7 @@ def get_sample_function(config, compliance_table=None):
     elif sample_strategy == "rbs":
 
         def sample(consignment):
-            return sample_rbs(config=config, consignment=consignment, 
-                              compliance_table_dict=compliance_table)
+            return sample_rbs(config=config, consignment=consignment)
 
     else:
         raise RuntimeError(f"Unknown sample strategy: {sample_strategy}")
@@ -893,92 +1199,117 @@ def consignment_contamination_rate(consignment):
     count = np.count_nonzero(consignment.sample_units)
     return count / consignment.num_sample_units
 
-
 def get_detection_and_confidence(
-    consignment,
-    compliance_table_dict,
-    default_detection=0.01,
-    default_confidence=0.8,
-    print_compliance_levels: bool = False,
+        consignment,
+        compliance_table_dict,
+        default_detection=0.01,
+        default_confidence=0.95,
+        print_compliance_levels: bool = False,
 ):
     """
-    Fetch detection and confidence levels for specified rbs variables.
-    If not found, defaults to low compliance values.
-    Returns a tuple: (detection_level, confidence_level)
+    Fetch detection and confidence levels using RiskUnitConfig for attribute extraction.
     """
+    risk_unit_config = RiskUnitConfig()
     rbs_variables = compliance_table_dict['rbs_variables']
-    n_units_to_inspect = {}
-    #key = (origin_country, pm_type)
+    detect_confidence_levels = {}
+    risk_units = consignment.risk_units if consignment.risk_units else []
+    if not risk_units:
+        risk_units = consignment.inspection_units
+
     if len(rbs_variables) == 0:
-        # If no variables detected in the compliance table, default to low compliance
-        # print(f"\nWARNING: No compliance variables found in submitted compliance table. "
-        #       f"Using low compliance defaults for ALL inspection units:")
-        # print(f"      Default Detection Level: {default_detection}")
-        # print(f"      Default Confidence Level: {default_confidence}")
-        for inspection_unit in range(len(consignment.inspection_units)):
-            n_units_to_inspect[inspection_unit] = (default_detection, default_confidence)
-    else:
-        inspection_unit_idx = 0
-        # TODO: Better variable matching approach
-        attr_map = {
-            "PATHWAY": "pathway",
-            "COUNTRY_OF_ORIGIN_NAME": "origin",
-            "PROPAGATIVE_MATERIAL_TYPE": "material_type",
-            "INSPECTION_LOCATION_NAME": "port",
-            "PRODUCER_NAME": "producer",
-        }
-        for inspection_unit in consignment.inspection_units:
-            values = {}
-            for attr in rbs_variables:
-                attr_key = str(attr)
-                mapped = attr_map.get(attr_key.upper())
-                if mapped and hasattr(inspection_unit, mapped):
-                    values[attr_key] = getattr(inspection_unit, mapped, None)
-                elif hasattr(inspection_unit, attr_key):
-                    values[attr_key] = getattr(inspection_unit, attr_key, None)
-                else:
-                    values[attr_key] = getattr(inspection_unit, attr_key.lower(), None)
-            if any(v is None for v in values.values()):
-                # If not all variable specified in compliance table not detected in consignment, then default to low compliance
-                none_attrs = [k for k, v in values.items() if v is None]
-                # print(
-                #     f"\nWARNING: Some compliance tables variables not found as attributes of the consignment."
-                #     f" Namely, {none_attrs}."
-                #     f" Using low compliance defaults:")
-                # print(f"      Default Detection Level: {default_detection}")
-                # print(f"      Default Confidence Level: {default_confidence}")
-                result = (default_detection, default_confidence)
-                key = None
-                #return n_units_to_inspect
-            else:
-                # If variables found in consignment, attempt to look up in table
-                key = tuple(values[attr] for attr in rbs_variables)
-                result = compliance_table_dict.get(key)
-            if result is not None:
-                # If a reference found, then return the associated detection and confidence levels
-                n_units_to_inspect[inspection_unit_idx] = result
-                if print_compliance_levels:
-                    key_str = key if key is not None else "<missing>"
-                    print(
-                        f"Compliance level for inspection unit {inspection_unit_idx}: "
-                        f"key={key_str} detection={result[0]} confidence={result[1]}"
-                    )
-                inspection_unit_idx+=1
-            else:
-                # If no reference found, print warning and use low compliance defaults.
-                # print(
-                #     f"\nWARNING: The variables {key} for inspection unit {inspection_unit_idx} are not found in compliance table. Using low compliance defaults:")
-                # print(f"      Default Detection Level: {default_detection}")
-                # print(f"      Default Confidence Level: {default_confidence}")
-                n_units_to_inspect[inspection_unit_idx] = (default_detection, default_confidence)
-                if print_compliance_levels:
-                    key_str = key if key is not None else "<missing>"
-                    print(
-                        f"Compliance default for inspection unit {inspection_unit_idx}: "
-                        f"key={key_str} detection={default_detection} confidence={default_confidence}"
-                    )
-                inspection_unit_idx+=1
-    return n_units_to_inspect
+        for risk_unit_idx, risk_unit in enumerate(risk_units):
+            risk_unit_id = getattr(risk_unit, "id", risk_unit_idx)
+            detect_confidence_levels[risk_unit_id] = (default_detection, default_confidence)
+        return detect_confidence_levels
+
+    for risk_unit_idx, risk_unit in enumerate(risk_units):
+        risk_unit_id = getattr(risk_unit, "id", risk_unit_idx)
+
+        # Use RiskUnitConfig to extract all enabled attributes
+        # Assuming risk_unit has a method or dict-like interface
+        if hasattr(risk_unit, '__dict__'):
+            risk_unit_dict = risk_unit.__dict__
+        else:
+            risk_unit_dict = dict(risk_unit)
+
+        # Extract only the RBS variables we need
+        values = {}
+        for var in rbs_variables:
+            # Get value using flexible lookup
+            value = _get_risk_unit_attribute(risk_unit, var, risk_unit_config)
+            values[var] = value
+
+        # Check for missing values
+        missing = [var for var, val in values.items() if val is None]
+        if missing:
+            key = None
+            result = (default_detection, default_confidence)
+            if print_compliance_levels:
+                print(
+                    f"Warning: Risk unit {risk_unit_id} missing values for: {missing}. "
+                    f"Using defaults: detection={default_detection}, confidence={default_confidence}"
+                )
+        else:
+            key = tuple(values[attr] for attr in rbs_variables)
+            result = compliance_table_dict.get(key, (default_detection, default_confidence))
+
+        if print_compliance_levels:
+            key_str = key if key is not None else "<missing>"
+            print(
+                f"Risk unit {risk_unit_id}: key={key_str} -> "
+                f"detection={result[0]}, confidence={result[1]}"
+            )
+
+        detect_confidence_levels[risk_unit_id] = result
+
+    return detect_confidence_levels
+
+
+def _get_risk_unit_attribute(
+        risk_unit,
+        attribute_name: str,
+        risk_unit_config: RiskUnitConfig
+) -> Any:
+    """
+    Get an attribute value from a risk unit, trying multiple name variations.
+
+    Args:
+        risk_unit: Risk unit object
+        attribute_name: Canonical attribute name to retrieve
+        risk_unit_config: RiskUnitConfig for mapping hints
+
+    Returns:
+        Attribute value or None if not found
+    """
+    # List of possible attribute names to try, in order of preference
+    names_to_try = [
+        attribute_name,  # Exact match (e.g., "material_type")
+    ]
+
+    # Add CSV column name if mapped
+    if attribute_name in risk_unit_config.attribute_mapping:
+        csv_name = risk_unit_config.attribute_mapping[attribute_name]
+        names_to_try.extend([
+            csv_name,
+            csv_name.lower(),
+        ])
+
+    # Add common variations
+    names_to_try.extend([
+        attribute_name.lower(),
+        attribute_name.upper(),
+        attribute_name.replace('_', ' '),
+        attribute_name.replace(' ', '_'),
+    ])
+
+    # Try each possible name
+    for name in names_to_try:
+        if hasattr(risk_unit, name):
+            value = getattr(risk_unit, name, None)
+            if value is not None:
+                return value
+
+    return None
 
 
 def count_contaminated_inspection_units(consignment):
@@ -1044,6 +1375,8 @@ def normalize_rbs_variables_against_consignment(
         auto_aliases['origin'].update(country_of_origin_names)
     if 'material_type' in canonical_attrs:
         auto_aliases['material_type'].update(pm_type_names)
+    if 'port' in canonical_attrs:
+        auto_aliases['port'].update(possible_pis_stations)
 
     # Build a lookup: normalized alias -> canonical attribute
     alias_index = {}
@@ -1076,5 +1409,151 @@ def normalize_rbs_variables_against_consignment(
             else:
                 unmapped.append(original)
                 updated_vars.append(original)
+
+    return updated_vars, mapping, unmapped
+
+
+def fuzzy_match_attribute(original: str, canonical_attrs: Set[str]) -> Optional[str]:
+    """
+    Attempt fuzzy matching using substring/word matching.
+
+    Args:
+        original: Original variable name to match
+        canonical_attrs: Set of canonical attribute names
+
+    Returns:
+        Matched canonical attribute or None
+    """
+    # Sort by length (longest first) to prefer more specific matches
+    sorted_attrs = sorted(canonical_attrs, key=len, reverse=True)
+
+    for attr in sorted_attrs:
+        # Try exact word boundary match
+        pattern = rf'\b{re.escape(attr.replace("_", " "))}\b'
+        if re.search(pattern, original, flags=re.I):
+            return attr
+
+        # Try matching with underscores
+        pattern = rf'\b{re.escape(attr)}\b'
+        if re.search(pattern, original, flags=re.I):
+            return attr
+
+    return None
+
+# Convenience function that creates a RiskUnitConfig from defaults
+def normalize_rbs_variables_using_risk_unit_config(
+        rbs_variables: List[str]
+) -> Tuple[List[str], Dict[str, str], List[str]]:
+    """
+    Map free-form field names in rbs_variables to actual RiskUnit attributes
+    defined in RiskUnitConfig, using case-insensitive aliasing.
+
+    Args:
+        rbs_variables: List of variable names to normalize
+
+    Returns:
+        Tuple of:
+        - updated_vars: list[str]  # rbs_variables with matched items replaced by canonical attrs
+        - mapping: dict[str, str]  # original string -> canonical attribute
+        - unmapped: list[str]      # originals that didn't match anything
+    """
+    risk_unit_config = RiskUnitConfig()
+    if not rbs_variables:
+        return [], {}, []
+
+    # Get canonical attribute names from the config
+    canonical_attrs = set(risk_unit_config.enabled_attributes)
+
+    # Auto-generate basic aliases from the canonical names
+    auto_aliases = defaultdict(set)
+    for attr in canonical_attrs:
+        spaced = attr.replace('_', ' ')
+        auto_aliases[attr].update({
+            attr,
+            spaced,
+            spaced.title(),  # "Material Type"
+            spaced.upper(),  # "MATERIAL TYPE"
+            spaced.lower(),  # "material type"
+            attr.title(),  # "Material_Type"
+            attr.upper(),  # "MATERIAL_TYPE"
+        })
+
+    # Add aliases from the attribute_mapping (CSV column names)
+    for attr, csv_column in risk_unit_config.attribute_mapping.items():
+        if attr in canonical_attrs:
+            auto_aliases[attr].add(csv_column)
+            # Also add normalized versions of CSV column name
+            csv_spaced = csv_column.replace('_', ' ')
+            auto_aliases[attr].update({
+                csv_column,
+                csv_spaced,
+                csv_spaced.title(),
+                csv_spaced.lower(),
+                csv_spaced.upper(),
+            })
+
+    # Add domain-specific aliases (hardcoded knowledge)
+    domain_aliases = get_domain_specific_aliases()
+    for attr, aliases in domain_aliases.items():
+        if attr in canonical_attrs:
+            auto_aliases[attr].update(aliases)
+
+    # Build a lookup: normalized alias -> canonical attribute
+    alias_index = {}
+    for attr, names in auto_aliases.items():
+        for name in names:
+            normalized = _norm(name)
+            if normalized in alias_index and alias_index[normalized] != attr:
+                # Collision detected - log it
+                warnings.warn(
+                    f"Alias collision detected: '{name}' (normalized: '{normalized}') "
+                    f"maps to both '{alias_index[normalized]}' and '{attr}'. "
+                    f"Using '{alias_index[normalized]}'."
+                )
+            else:
+                alias_index[normalized] = attr
+
+    # Walk the input list, map to canonical attributes when possible
+    updated_vars = []
+    mapping = {}
+    unmapped = []
+
+    for original in rbs_variables:
+        if not original or not original.strip():
+            warnings.warn(f"Empty or whitespace-only variable name found, skipping.")
+            continue
+
+        key = _norm(original)
+
+        if key in alias_index:
+            # Direct match found
+            canonical = alias_index[key]
+            mapping[original] = canonical
+            updated_vars.append(canonical)
+        else:
+            # Heuristic fallback: try to match substrings
+            matched = fuzzy_match_attribute(original, canonical_attrs)
+
+            if matched:
+                mapping[original] = matched
+                updated_vars.append(matched)
+            else:
+                unmapped.append(original)
+                updated_vars.append(original)
+
+    # Provide informative feedback
+    if mapping:
+        print(f"Mapped {len(mapping)} compliance table variable(s) to RiskUnit attributes:")
+        for orig, canonical in list(mapping.items())[:5]:
+            print(f"  '{orig}' -> '{canonical}'")
+        if len(mapping) > 5:
+            print(f"  ... and {len(mapping) - 5} more")
+
+    if unmapped:
+        warnings.warn(
+            f"\nCould not map {len(unmapped)} compliance table variable(s) to RiskUnit attributes.\n"
+            f"Unmapped variables: {unmapped[:5]}{'...' if len(unmapped) > 5 else ''}\n"
+            f"Available RiskUnit attributes: {sorted(canonical_attrs)}"
+        )
 
     return updated_vars, mapping, unmapped

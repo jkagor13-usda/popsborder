@@ -12,6 +12,29 @@ class DefaultPaths:
     def slippage_data_dir(self) -> Path:
         return self.root / "slippage_data"
 
+    def input_data_dir(self) -> Path:
+        return self.root / "data_input"
+
+    def impact_data_dir(self) -> Path:
+        return self.root / "impact_data"
+
+    def output_dir(self) -> Path:
+        return self.root / "output"
+
+    def validation_output_dir(self) -> Path:
+        return self.output_dir() / "validation_outputs"
+
+    def tmp_dir(self) -> Path:
+        """Root temporary data directory"""
+        return self.root / "tmp"
+
+    def compliance_dir(self) -> Path:
+        """Directory for compliance lookup files"""
+        compliance_path = self.tmp_dir() / "compliance"
+        # Ensure directory exists
+        compliance_path.mkdir(parents=True, exist_ok=True)
+        return compliance_path
+
 
 class BoxPaths:
 
@@ -30,3 +53,25 @@ class BoxPaths:
 
     def rbs_calc_data(self) -> Path:
          return self.shared_ppq_data() / "PIS_RBS_calculator.xlsx"
+
+    def validation_data(self) -> Path:
+        primary_path = self.shared_ppq_data() / "APL Created Data Related Items" / "Joe Data Analysis" / "validation_data"
+        if primary_path.exists():
+            return primary_path
+        else:
+            raise FileNotFoundError("No path found to use as the PPQ Data Folder")
+
+    def apl_created_data_folder(self) -> Path:
+         return self.shared_ppq_data() / "APL Created Data Related Items"
+
+    def disambiguated_look_up_tables_folder(self) -> Path:
+         return self.apl_created_data_folder() / "disambiguated_look-up_tables"
+
+    def producer_folder(self) -> Path:
+         return self.disambiguated_look_up_tables_folder() / "producer"
+
+    def disambiguated_producer_table_mapping(self) -> Path:
+         return self.producer_folder() / "parquet" / "train.csv"
+
+    def model_testing_data_folder(self) -> Path:
+        return self.apl_created_data_folder() / "Model_Testing"
