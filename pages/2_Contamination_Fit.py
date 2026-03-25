@@ -437,8 +437,8 @@ render_page_intro(
 
 
 
-fit_tab, assign_tab, saved_tab = st.tabs(
-    ["Fit Contamination Using Data", "Assign Contamination Manually", "Saved Parameter Sets"]
+saved_tab, fit_tab, assign_tab = st.tabs(
+    ["Saved Parameter Sets", "Fit Contamination Using Data", "Assign Contamination Manually"]
 )
 
 # Fit contamination tab

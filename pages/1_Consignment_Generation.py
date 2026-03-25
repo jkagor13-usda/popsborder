@@ -263,11 +263,11 @@ render_page_intro(
     "Generated outputs are written to <i>tmp/consignments</i>."
 )
 
-ingest_tab, manual_tab, saved_tab, producer_grouping_tab = st.tabs(
+saved_tab, ingest_tab, manual_tab, producer_grouping_tab = st.tabs(
     [
+        "Saved consignments",
         "Generate consignments based on data",
         "Define consignments manually",
-        "Saved consignments",
         "Producer grouping",
     ]
 )
@@ -611,9 +611,6 @@ with manual_tab:
 with saved_tab:
     st.subheader("Saved consignments")
     saved_files = sorted(CONSIGNMENT_ROOT.glob("*.csv"))
-    refresh = st.button("Refresh saved consignments", type="secondary")
-    if refresh:
-        st.rerun()
     if not saved_files:
         st.info("No consignment files saved yet in tmp/consignments.")
     else:
@@ -653,10 +650,19 @@ with saved_tab:
                     plot_subcols[2].markdown("**Top material types**")
                     plot_subcols[2].bar_chart(full_df["PROPAGATIVE_MATERIAL_TYPE"].value_counts().head(10).rename("Count"))
             with plots_two_col[1]:
-                if "TOTAL_PLANT_QUANTITY" in full_df.columns and "TOTAL_SAMPLING_UNITS" in full_df.columns:
-                    st.markdown("**Plant units vs sampling units (frequency)**")
-                    quantities = full_df["TOTAL_PLANT_QUANTITY"].dropna().to_numpy()
-                    sampling_units = full_df["TOTAL_SAMPLING_UNITS"].dropna().to_numpy()
+                quantity_col = None
+                sampling_units_col = None
+                if "QUANTITY" in full_df.columns and "SAMPLING_UNITS_FOR_INSPECTION_UNIT" in full_df.columns:
+                    quantity_col = "QUANTITY"
+                    sampling_units_col = "SAMPLING_UNITS_FOR_INSPECTION_UNIT"
+                elif "TOTAL_PLANT_QUANTITY" in full_df.columns and "TOTAL_SAMPLING_UNITS" in full_df.columns:
+                    quantity_col = "TOTAL_PLANT_QUANTITY"
+                    sampling_units_col = "TOTAL_SAMPLING_UNITS"
+
+                if quantity_col and sampling_units_col:
+                    st.markdown("**Plant units vs sample units**")
+                    quantities = full_df[quantity_col].dropna().to_numpy()
+                    sampling_units = full_df[sampling_units_col].dropna().to_numpy()
                     if quantities.size > 0 and sampling_units.size == quantities.size and sampling_units.size > 0:
                         q_min, q_max = float(quantities.min()), float(quantities.max())
                         s_min, s_max = float(sampling_units.min()), float(sampling_units.max())
@@ -679,23 +685,34 @@ with saved_tab:
                                 x=alt.X(
                                     "plant_bin_start:Q",
                                     bin=alt.Bin(binned=True, step=float(q_bins[1] - q_bins[0])),
-                                    title="Plant units (bin start)",
+                                    title="Plant units",
                                 ),
                                 x2="plant_bin_end:Q",
                                 y=alt.Y(
                                     "sample_bin_start:Q",
                                     bin=alt.Bin(binned=True, step=float(s_bins[1] - s_bins[0])),
-                                    title="Sampling units (bin start)",
+                                    title="Sample units",
                                 ),
                                 y2="sample_bin_end:Q",
-                                color=alt.Color("frequency:Q", title="Frequency", scale=alt.Scale(scheme="blues")),
+                                color=alt.Color(
+                                    "frequency:Q",
+                                    title="Number of inspection units",
+                                    scale=alt.Scale(
+                                        domain=[
+                                            0,
+                                            1,
+                                            float(heat_df["frequency"].max()) if not heat_df.empty else 1.0,
+                                        ],
+                                        range=["#d9d9d9", "#deebf7", "#08519c"],
+                                    ),
+                                ),
                             )
                         )
                         st.altair_chart(chart, use_container_width=True)
                     else:
-                        st.info("Need both TOTAL_PLANT_QUANTITY and TOTAL_SAMPLING_UNITS to render the heat map.")
+                        st.info("Need both quantity and sampling units for inspection unit to render the heat map.")
                 else:
-                    st.info("Need both TOTAL_PLANT_QUANTITY and TOTAL_SAMPLING_UNITS to render the heat map.")
+                    st.info("Need both quantity and sampling units for inspection unit to render the heat map.")
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Unable to preview file: {exc}")
 

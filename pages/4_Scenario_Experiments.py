@@ -172,10 +172,34 @@ def _normalize_rows(rows_df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-tabs = st.tabs(["Upload custom scenario", "Build experiments", "Saved experiments"])
+tabs = st.tabs(["Saved experiments", "Upload custom scenario", "Build experiments"])
 
 # --- Tab 1: Upload custom scenario -------------------------------------------
 with tabs[0]:
+    st.subheader("Saved experiments")
+    saved_files = list(SCENARIO_ROOT.glob("*/scenario_table.csv"))
+
+    if not saved_files:
+        st.info("No experiments saved yet.")
+    else:
+        sel = st.selectbox(
+            "Select an experiment set", saved_files, format_func=lambda p: p.parent.name
+        )
+        try:
+            preview = pd.read_csv(sel)
+            st.dataframe(preview, use_container_width=True)
+            st.caption(f"Path: {sel}")
+            if st.button("Delete this experiment set", type="secondary"):
+                try:
+                    shutil.rmtree(sel.parent)
+                    st.success(f"Deleted {sel.parent}")
+                    st.rerun()
+                except Exception as exc:  # pylint: disable=broad-except
+                    st.error(f"Unable to delete experiment: {exc}")
+        except Exception as exc:  # pylint: disable=broad-except
+            st.error(f"Unable to preview experiment: {exc}")
+
+with tabs[1]:
     st.subheader("Upload custom scenario table")
     uploaded = st.file_uploader("Upload scenario CSV", type=["csv"], key="custom_scenario_upload")
     custom_name = st.text_input("Save as experiment set name", value="custom_experiment")
@@ -205,7 +229,7 @@ with tabs[0]:
             st.error(f"Failed to save custom scenario table: {exc}")
 
 # --- Tab 2: Build experiments -------------------------------------------------
-with tabs[1]:
+with tabs[2]:
     state.setdefault("experiment_rows", [])
     col_left, col_right = st.columns([2, 1])
 
@@ -404,31 +428,6 @@ with tabs[1]:
             st.success(f"Experiment saved to {scenario_path}")
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Failed to save experiment: {exc}")
-
-# --- Tab 3: Saved experiments -------------------------------------------------
-with tabs[2]:
-    st.subheader("Saved experiments (tmp/experiments)")
-    saved_files = list(SCENARIO_ROOT.glob("*/scenario_table.csv"))
-
-    if not saved_files:
-        st.info("No experiments saved yet.")
-    else:
-        sel = st.selectbox(
-            "Select an experiment set", saved_files, format_func=lambda p: p.parent.name
-        )
-        try:
-            preview = pd.read_csv(sel)
-            st.dataframe(preview, use_container_width=True)
-            st.caption(f"Path: {sel}")
-            if st.button("Delete this experiment set", type="secondary"):
-                try:
-                    shutil.rmtree(sel.parent)
-                    st.success(f"Deleted {sel.parent}")
-                    st.rerun()
-                except Exception as exc:  # pylint: disable=broad-except
-                    st.error(f"Unable to delete experiment: {exc}")
-        except Exception as exc:  # pylint: disable=broad-except
-            st.error(f"Unable to preview experiment: {exc}")
 
 # --- Bottom navigation --------------------------------------------------------
 st.divider()
