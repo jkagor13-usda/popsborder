@@ -693,23 +693,33 @@ with assign_tab:
 
         st.write("Contamination Summary")
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            render_metric_card("Sample Size", f"{n_trials} plants", "Total number of plants sampled for contamination testing")
-        with col2:
             render_metric_card(
                 "Expected Average",
-                f"{mean:.1f}",
-                "Average number of contaminated plants you can expect to find in the sample based on your contamination rate",
+                f"{mean:.1f} out of {n_trials} plants",
+                "Average number of contaminated plants expected within a sample of 100 plants.",
             )
-
-        with col3:
+        with col2:
             render_metric_card(
                 "95% Range",
                 f"{lb:.1f} - {ub:.1f}",
                 "The typical range where 95% of observed contaminated plant counts will fall. This accounts for natural variability in the sampling process.",
             )
+        with col3:
+            render_metric_card(
+                "Alpha",
+                f"{adj_alpha:.6f}",
+                "Alpha parameter of the beta-binomial distribution.",
+            )
+        with col4:
+            render_metric_card(
+                "Beta",
+                f"{adj_beta:.6f}",
+                "Beta parameter of the beta-binomial distribution.",
+            )
+        st.caption("*Theta is fixed to inf (no clustering) for manual contamination assignment.")
 
         st.write("")
         st.write("")
