@@ -66,7 +66,7 @@ def _beta_chart(alpha: float, beta: float, title: str) -> alt.Chart:
     pdf = _beta_pdf(alpha, beta)
     y_max = float(pdf["density"].max() * 1.05) if not pdf.empty else 1.0
     base = alt.Chart(pdf).encode(
-        x=alt.X("prevalence:Q", title="Contamination prevalence"),
+        x=alt.X("prevalence:Q", title="Contamination prevalence", axis=alt.Axis(format="%")),
         y=alt.Y("density:Q", title="Density", scale=alt.Scale(domain=[0, y_max])),
     )
     area = base.mark_area(opacity=0.3, color="#1f77b4")
