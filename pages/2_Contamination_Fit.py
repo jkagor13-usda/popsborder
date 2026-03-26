@@ -527,7 +527,7 @@ with fit_tab:
 
     fit_cols = st.columns(2)
     with fit_cols[0]:
-        if st.button("Fit contamination parameters", type="primary"):
+        if st.button("Fit contamination parameters*", type="primary"):
             if paths.pis_data is None or paths.rbs_data is None:
                 st.error("Upload PIS data and select an RBS file before fitting.")
             else:
@@ -587,6 +587,8 @@ with fit_tab:
                 f"Saved '{saved_name}' with alpha={fit_to_show.alpha:.6f}, "
                 f"beta={fit_to_show.beta:.6f}, theta={fit_to_show.theta}"
             )
+
+    st.caption("*Clark, R.G., Barnes, B. & Parsa, M. Clustered and Unclustered Group Testing for Biosecurity. JABES 29, 193–211 (2024). https://doi.org/10.1007/s13253-023-00566-x")
 
 # Manual assignment tab
 with assign_tab:
