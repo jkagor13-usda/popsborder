@@ -175,7 +175,7 @@ Running this script should respond "Rscript is alive".
 
 3. Verify that the wrapper runs successfully
 ```
-    python -c "from slippage_model_utils.clarke_r_script_wrapper import run_clarke_bb_group_model as run; print('Wrapper imported successfully')"
+    python -c "from slippage_model_utils.r_script_wrapper import run_clarke_bb_group_model as run; print('Wrapper imported successfully')"
 ```
 Running this line of code should respond "Wrapper imported successfully". 
 
