@@ -129,18 +129,26 @@ High-level, this is a three step process to install and run the model with the u
 ```
     cd plant-inspection-station-simulation
 ```
-  3. Use conda to create a python and Rscript virtual environment called 'venv'.
+  3. If you already have a ```venv``` virtual environment, remove it.
+
 ```
-    conda create -n venv -c conda-forge python=3.11 r-base rpy2 pip -y
+    conda env remove -n venv
+```
+**_Note_**: _You can check if you have this ```venv``` by using command ```conda env list```. Skip this step if you do not see a folder/directory called ```venv``` in list that is displayed. If displayed in list, enter the removal command above._
+
+
+  4. Use conda to create a python and Rscript virtual environment called 'venv'.
+```
+    conda create -n venv -c conda-forge python=3.11 r-base r-jsonlite r-stringr r-dplyr r-arrow rpy2 pip -y
 ```
 **_Note_**: _You may be prompted to accept the Terms of Service (TOS) before being allowed to continue. Review these and type "y" and click enter to continue. You will also be prompted to proceed after the package list is presented; click "y" and enter again to continue._
 
 
-  4. activate the Python virtual environment.
+  5. Activate the Python virtual environment.
 ```
     conda activate venv
 ```
-5. Install the "requirements.txt" file within the plant-inspection-station-simulation folder to include the required versions of required packages in your virtual environment.
+  6. Install the "requirements.txt" file within the plant-inspection-station-simulation folder to include the required versions of required packages in your virtual environment.
 
 ```
     pip install -r requirements.txt --timeout=10000
