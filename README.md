@@ -25,6 +25,21 @@ Features and Functionality Added:
 ---
 ## Things to know before You Start
 
+### Accessing the PoPS Border Graphical User Interface (GUI)
+
+After you have completed the installation process below, you can access the GUI at any time by opening a **Miniforge Prompt** and entering the following lines of code:
+```
+    conda activate venv
+```
+```
+    cd plant-inspection-station-simulation
+```
+```
+    streamlit run frontend.py
+```
+In the **Miniforge Prompt** window, you can revert back to the ability to enter lines of code (for example, to restart the GUI if it is accidentally closed) by pressing **Ctrl+C**. 
+
+---
 ### Required Software
 
 **_Note_**:  _You can skip any aspects you already have
@@ -35,10 +50,13 @@ This software has been tested on **Windows 10/11**.
 
 You will need the following **before** proceeding:
 
-1. **Install Conda or Miniconda with Python 3.11 (Miniconda recommended)**
-   - Download from: https://repo.anaconda.com/miniconda/
-   - Choose this version for 64-bit Windows: "Miniconda3-py311_25.11.1-1-Windows-x86_64.exe"
-   - During installation, accept default and recommended installation options
+1. **Install Miniforge with Python 3.11+**
+   - Download Miniforge from: https://tooomm.github.io/github-release-stats/?username=conda-forge&repository=miniforge
+   - If on a government computer, you can install Miniforge from "Software Center" (managed by IT)
+   - Choose the stable release version for your operating system; e.g. "Miniforge3-Windows-x86_64.exe (84.01 MiB)"
+   - During installation:
+        - Install for all users (requires admin priveledges) 
+        - Accept all other default and recommended installation options
 
 2. **Local Access To This Git Repository**
    - You can download the repository as a archive ('zip' file)
@@ -51,11 +69,11 @@ After installing the above, **restart your computer** before continuing.
 ---
 ### Using Command Windows
 
-You will be using the **Anaconda Prompt window** to utilize conda as you create virtual environments and access the model and UI:
+You will be using the **Miniforge Prompt window** to utilize conda as you create virtual environments and access the model and UI:
 
 - **How to Access**  
-  Install Conda or Miniconda as mentioned above
-  Find and run "Anaconda Prompt" from your Start menu
+  Install Miniforge as mentioned above
+  Find and run "Miniforge Prompt" from your Start menu
 
 You will be using **Command prompt** only if you decide to update the code repository through Git rather than as an archive.
 
@@ -88,6 +106,13 @@ You will be using **Command prompt** only if you decide to update the code repos
 If you see files such as Pipfile, frontend.py, and slippage_model_utils,
 you are in the correct directory.
 
+
+### Subfolders within the Plant-Inspection-Station-Simulation repository
+
+- "data_input": Houses files used for completing the 'GUI Structure Testing' example problems. These examples are intended to walk through examples uses of the PoPS Border tool within the GUI. 
+- "Slippage_model_utils": Contains the files which run the Slippage model within the PoPS Border GUI
+- "popsborder": Contains the files from the original PoPS border used within the PoPS Border GUI
+
 --- 
 
 ## Initial Setup and Installation of PoPs Border and New Features
@@ -95,7 +120,7 @@ High-level, this is a three step process to install and run the model with the u
 
 
 ### Setting up the Python Virtual Environment
-   1. Open **Anaconda Prompt** command window.
+   1. Open **Miniforge Prompt** command window.
      - This should open into your "Username" folder. If not, navigate there through the command prompt.
 ```
      cd C:\Users\<your-username>
@@ -104,64 +129,59 @@ High-level, this is a three step process to install and run the model with the u
 ```
     cd plant-inspection-station-simulation
 ```
-  3. Use conda to create a python virtual environment called 'venv'.
+  3. If you already have a ```venv``` virtual environment, remove it.
+
 ```
-    conda create -n venv python=3.11.14 anaconda
+    conda env remove -n venv
 ```
-**_Note_**: _You will be prompted to accept the Terms of Service (TOS) before being allowed to continue. Review these and type "y" and click enter to continue. You will also be prompted to proceed after the package list is presented; click "y" and enter again to continue._
+**_Note_**: _You can check if you have this ```venv``` by using command ```conda env list```. Skip this step if you do not see a folder/directory called ```venv``` in list that is displayed. If displayed in list, enter the removal command above._
 
 
-  4. activate the Python virtual environment.
+  4. Use conda to create a python and Rscript virtual environment called 'venv'.
+```
+    conda create -n venv -c conda-forge python=3.11 r-base r-jsonlite r-stringr r-dplyr r-arrow rpy2 pip -y
+```
+**_Note_**: _You may be prompted to accept the Terms of Service (TOS) before being allowed to continue. Review these and type "y" and click enter to continue. You will also be prompted to proceed after the package list is presented; click "y" and enter again to continue._
+
+
+  5. Activate the Python virtual environment.
 ```
     conda activate venv
 ```
-5. Install/update/verify the most up-to-date version of  'pip' within the Python virtual environment.
+  6. Install the "requirements.txt" file within the plant-inspection-station-simulation folder to include the required versions of required packages in your virtual environment.
 
-```
-    python -m pip install --upgrade pip
-```
-
-6. Install/update/verify the required libraries from within the "Requirement.txt" document within the plant-inspection-station-simulation folder.
 ```
     pip install -r requirements.txt --timeout=10000
 ```
----
-### Setting up the R-script Virtual Environment
-In the same **Anaconda Prompt** window, create an R-script virtual environment called "rbb" and updated it with required libraries.
-
-```
-    conda create -n rbb -c conda-forge r-base r-essentials -y
-```
-```
-    conda install -n rbb -c conda-forge r-base r-jsonlite r-rmpfr
-```
-**_Note_**: _You may be prompted to accept the Terms of Service (TOS) again before being allowed to continue. Review these and type "y" and click enter to continue. You may also be prompted to proceed again after the package list is presented; click "y" and enter again to continue._
 
 ---
 ### Verify Correct Virtual Environment Setup
-In the same **Anaconda Prompt** window, run these scripts to verify that the virtual environments are working correctly.
+In the same **Miniforge Prompt** window, run these scripts to verify that Python and Rscript are working correctly within the virtual environment.
 1. (optional) Activate the venv environment; you can skip this step if already active. You can tell if the virtual environment is already active if the command line prompt states with "(venv)" instead of "(base)".
 ```
     conda activate venv
 ```
-2. Verify that the R script runs within the venv virtual environment using conda as a bridge.
+2. Verify that python  runs within the venv virtual environment.
 ``` 
-    conda run -n rbb Rscript --version
+    python --version
 ```
+Running this line of code should respond with the version of python installed in the virtual environment.
+
+2. Verify that the R script runs within the venv virtual environment.
 ```
-    conda run -n rbb Rscript -e "cat('Rscript is alive\n')"
+    Rscript -e "cat('Rscript is alive\n')"
 ```
 Running this script should respond "Rscript is alive".
 
 3. Verify that the wrapper runs successfully
 ```
-    Conda run -n venv python -c "from slippage_model_utils.clarke_r_script_wrapper import run_clarke_bb_group_model as run; print('Wrapper imported successfully')"
+    python -c "from slippage_model_utils.r_script_wrapper import run_clarke_bb_group_model as run; print('Wrapper imported successfully')"
 ```
-Running this script should respond "Wrapper imported successfully". 
+Running this line of code should respond "Wrapper imported successfully". 
 
 ---
 ### Verifying Streamlit 
-In the same **Anaconda Prompt** window, run these scripts to verify that the virtual environments are working correctly.
+In the same **Miniforge Prompt** window, run these scripts to verify that the virtual environments are working correctly.
 
 1. (optional) Activate the Python virtual environment (venv); you can skip this step if already active. You can tell if the virtual environment is already active if the command line prompt starts with "(venv)" instead of "(base)".
 ```
@@ -185,6 +205,8 @@ In the same **Anaconda Prompt** window, run these scripts to verify that the vir
 After running the above command, a web browser should automatically open
 with the initial landing page.  If not, then it should provide a link
 that you can open.
+
+In the **Miniforge Prompt** window, you can revert back to the ability to enter lines of code (to restart the GUI if it is accidentally closed) by pressing **Ctrl+C**. 
 
 ### Additional Notes for GUI Use
 
