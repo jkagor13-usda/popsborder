@@ -109,7 +109,7 @@ you are in the correct directory.
 
 ### Subfolders within the Plant-Inspection-Station-Simulation repository
 
-- "Example_input": Houses files used for completing the 'GUI Structure Testing' example problems. These examples are intended to walk through examples uses of the PoPS Border tool within the GUI. 
+- "data_input": Houses files used for completing the 'GUI Structure Testing' example problems. These examples are intended to walk through examples uses of the PoPS Border tool within the GUI. 
 - "Slippage_model_utils": Contains the files which run the Slippage model within the PoPS Border GUI
 - "popsborder": Contains the files from the original PoPS border used within the PoPS Border GUI
 
