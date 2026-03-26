@@ -304,13 +304,13 @@ with tabs[2]:
                 "contamination/contamination_unit": "plant",
                 "contamination/contamination_rate/distribution": "beta-binomial",
                 "contamination/contamination_rate/value": "",
-                "contamination/contamination_rate/beta_binomial_parameters/alpha": param_snapshot.get(
+                "contamination/contamination_rate/beta_binomial_parameters/default/alpha": param_snapshot.get(
                     "alpha"
                 ),
-                "contamination/contamination_rate/beta_binomial_parameters/beta": param_snapshot.get(
+                "contamination/contamination_rate/beta_binomial_parameters/default/beta": param_snapshot.get(
                     "beta"
                 ),
-                "contamination/contamination_rate/beta_binomial_parameters/theta": param_snapshot.get(
+                "contamination/contamination_rate/beta_binomial_parameters/default/theta": param_snapshot.get(
                     "theta"
                 ),
                 "contamination/arrangement": "random",
