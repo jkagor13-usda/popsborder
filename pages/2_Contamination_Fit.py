@@ -834,11 +834,19 @@ with saved_tab:
             beta = float(params.get("beta", FALLBACK_BETA))
             theta = params.get("theta", FALLBACK_THETA)
             sample_unit_rate = params.get("sample_unit_contamination_rate")
-            st.metric("Alpha", f"{alpha:.6f}")
-            st.metric("Beta", f"{beta:.6f}")
-            st.metric("Theta", f"{theta}")
-            if sample_unit_rate is not None:
-                st.metric("Plant unit contamination rate", f"{sample_unit_rate}")
+            summary_cols = st.columns(4)
+            with summary_cols[0]:
+                render_metric_card("Alpha", f"{alpha:.6f}", "Alpha parameter of the beta-binomial distribution.")
+            with summary_cols[1]:
+                render_metric_card("Beta", f"{beta:.6f}", "Beta parameter of the beta-binomial distribution.")
+            with summary_cols[2]:
+                render_metric_card("Theta", f"{theta}", "Third parameter of the contamination model.")
+            with summary_cols[3]:
+                render_metric_card(
+                    "Plant unit contamination rate",
+                    f"{sample_unit_rate}" if sample_unit_rate is not None else "n/a",
+                    "Saved plant unit contamination rate when the parameter set was created from the rate-based workflow.",
+                )
             st.altair_chart(
                 _beta_chart(alpha, beta, f"Beta-binomial PDF for {sel}"),
                 use_container_width=True,
