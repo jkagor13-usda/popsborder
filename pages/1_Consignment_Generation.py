@@ -623,18 +623,48 @@ with saved_tab:
             st.markdown("### Summary statistics")
             stats_cols = st.columns(4)
             if "INSPECTION_NUMBER" in full_df.columns:
-                stats_cols[0].metric("Consignments", f"{full_df['INSPECTION_NUMBER'].nunique():,}")
+                with stats_cols[0]:
+                    render_metric_card(
+                        "Consignments",
+                        f"{full_df['INSPECTION_NUMBER'].nunique():,}",
+                        "Number of unique consignments in the saved file.",
+                    )
             if "PATHWAY" in full_df.columns:
-                stats_cols[1].metric("Pathways", f"{full_df['PATHWAY'].nunique():,}")
+                with stats_cols[1]:
+                    render_metric_card(
+                        "Pathways",
+                        f"{full_df['PATHWAY'].nunique():,}",
+                        "Number of unique shipment pathways represented in the saved file.",
+                    )
             if "INSPECTION_LOCATION_NAME" in full_df.columns:
-                stats_cols[2].metric("Locations", f"{full_df['INSPECTION_LOCATION_NAME'].nunique():,}")
+                with stats_cols[2]:
+                    render_metric_card(
+                        "Locations",
+                        f"{full_df['INSPECTION_LOCATION_NAME'].nunique():,}",
+                        "Number of unique inspection locations represented in the saved file.",
+                    )
             if "COUNTRY_OF_ORIGIN_NAME" in full_df.columns:
-                stats_cols[3].metric("Countries", f"{full_df['COUNTRY_OF_ORIGIN_NAME'].nunique():,}")
+                with stats_cols[3]:
+                    render_metric_card(
+                        "Countries",
+                        f"{full_df['COUNTRY_OF_ORIGIN_NAME'].nunique():,}",
+                        "Number of unique countries of origin represented in the saved file.",
+                    )
             totals_cols = st.columns(2)
             if "TOTAL_PLANT_QUANTITY" in full_df.columns:
-                totals_cols[0].metric("Total plant units", f"{int(full_df['TOTAL_PLANT_QUANTITY'].sum()):,}")
+                with totals_cols[0]:
+                    render_metric_card(
+                        "Total plant units",
+                        f"{int(full_df['TOTAL_PLANT_QUANTITY'].sum()):,}",
+                        "Total plant units across all rows in the saved file.",
+                    )
             if "TOTAL_SAMPLING_UNITS" in full_df.columns:
-                totals_cols[1].metric("Total sampling units", f"{int(full_df['TOTAL_SAMPLING_UNITS'].sum()):,}")
+                with totals_cols[1]:
+                    render_metric_card(
+                        "Total sampling units",
+                        f"{int(full_df['TOTAL_SAMPLING_UNITS'].sum()):,}",
+                        "Total sampling units across all rows in the saved file.",
+                    )
 
             st.markdown("### Distributions")
             plots_two_col = st.columns(2)
