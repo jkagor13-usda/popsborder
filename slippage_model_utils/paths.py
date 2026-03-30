@@ -10,7 +10,7 @@ class DefaultPaths:
         self.root = paths_file.parent.parent
 
     def slippage_data_dir(self) -> Path:
-        return self.root / "slippage_data"
+        return self.root / "development_files" / "slippage_data"
 
     def input_data_dir(self) -> Path:
         return self.root / "data_input"
