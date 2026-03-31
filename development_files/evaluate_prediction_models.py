@@ -160,28 +160,6 @@ def main(df1=None):
             synth_data = synth_data,
             producer_group_mapping = producer_group_mapping
         )
-        # creator = RVariableCreator()
-        #
-        # # Create a raw IMPORTER_NAME column with the original importer name
-        # synth_data['IMPORTER_NAME_RAW'] = synth_data['IMPORTER_NAME']
-        #
-        # # Update the IMPORTER_NAME column with the cleaned version.
-        # synth_data['IMPORTER_NAME'] = creator.batch_basic_text_preproc(synth_data['IMPORTER_NAME_RAW'])
-        #
-        # # Fall back to CSV if needed (smaller data, compatibility)
-        # quantity_binary_variables = creator.generate_quantity_binaries(
-        #     df=synth_data,
-        #     quantity_threshold=200,
-        #     group_cols=['RISK_UNIT'],
-        #     use_parquet=False
-        # )
-        #
-        # synth_data = synth_data.merge(
-        #     quantity_binary_variables,
-        #     on='RISK_UNIT',
-        #     how='left'
-        # )
-
 
         synth_data = construct_risk_units(config=config, data=synth_data)
         synth_data.to_parquet(data_dir / "Synthetic_Base.parquet", compression='snappy', index=False)
@@ -323,7 +301,7 @@ def main(df1=None):
     #################################################################
     #################################################################
 
-    compliance_table_dir = default_paths.compliance_table_dir()
+    compliance_table_dir = default_paths.prediction_model_compliance_dir()
 
     # Check if directory exists
     if not compliance_table_dir.exists():
