@@ -238,12 +238,6 @@ class SyntheticConsignmentDataGenerator:
 
         self.input_data = self._load_input_data(input_data_file)
 
-        self.input_data = apply_producer_grouping(
-            self.input_data,
-            producer_group_mapping,
-            use_shortest_name=True  # Set to False if wanting to use numeric grouping labels
-        )
-
         if 'RISK_UNIT' not in self.input_data.columns and "RISK_UNIT".lower() in self.input_data.columns:
             self.input_data.rename(columns={'risk_unit': 'RISK_UNIT'}, inplace=True)
 
@@ -1430,6 +1424,10 @@ class SyntheticConsignmentDataGenerator:
             'TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT',
             'SAMPLING_UNITS_FOR_INSPECTION_UNIT',
             'REQUIRED_NUMBER_OF_BOXES',
+            'IMPORTER_NAME',
+            'GENUS_NAME',
+            'COMMODITY_DISPLAY_NAME',
+            'COMMODITY_HOST_TYPE',
         ]]
         
         if not target_cols:
