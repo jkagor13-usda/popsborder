@@ -24,6 +24,9 @@ class DefaultPaths:
     def validation_output_dir(self) -> Path:
         return self.output_dir() / "validation_outputs"
 
+    def prediction_model_compliance_dir(self) -> Path:
+        return self.root / "Prediction_Model_Compliance_Tables"
+
     def tmp_dir(self) -> Path:
         """Root temporary data directory"""
         return self.root / "tmp"
