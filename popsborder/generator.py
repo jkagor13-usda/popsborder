@@ -240,8 +240,6 @@ class SyntheticConsignmentDataGenerator:
 
         if 'RISK_UNIT' not in self.input_data.columns and "RISK_UNIT".lower() in self.input_data.columns:
             self.input_data.rename(columns={'risk_unit': 'RISK_UNIT'}, inplace=True)
-
-        self.input_data  = construct_risk_units(config=config, data=self.input_data)
         
         # Initialize random seed for reproducible results
         random.seed(42)
