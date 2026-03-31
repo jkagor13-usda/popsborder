@@ -1,5 +1,4 @@
-#!/usr/bin/env Rscript
-
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 # Suppress startup messages
 options(warn = -1)
 suppressPackageStartupMessages({
@@ -136,8 +135,8 @@ basic_text_preproc <- function(text_field, suffix_string = NULL, prefix_string =
 
   # Drop end of producer names beginning with "box"
   ndx_box1 <- regexpr("box", text) - 1
-  ndx_box1 <- if_else(ndx_box1 > 0, ndx_box1, nchar(text))
-  text <- substr(text, 1, ndx_box1)
+  ndx_box1 <- ifelse(ndx_box1 > 0, ndx_box1, nchar(text))
+  text <- substring(text, 1, ndx_box1)  # << fix here
 
   # Drop stand-alone numbers
   text <- str_remove_all(text, "\\b\\d+\\b")
@@ -316,3 +315,4 @@ tryCatch({
 })
 
 quit(save = "no", status = 0, runLast = FALSE)
+

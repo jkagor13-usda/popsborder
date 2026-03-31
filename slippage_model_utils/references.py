@@ -139,6 +139,8 @@ def get_domain_specific_aliases() -> Dict[str, Set[str]]:
             'producer',
             'grower',
             'producer group',
+            'prod_group_name',
+            'PRODUCER_GROUP_TOP',
         },
         'median_qty_lt200': {
             'median qty lt200',
@@ -161,340 +163,203 @@ def get_domain_specific_aliases() -> Dict[str, Set[str]]:
             'has small',
             'contains small',
         },
+        'importer': {
+            'IMPORTER_NAME',
+            'IMPORTER_NAME_TOP',
+        },
     }
 
 
 
 COLUMN_NAME_ALIASES = {
     'comm_ID': [
-        'comm_id', 'commid', 'comm id', 'commodity_id', 'commodity id',
-        'commodityid', 'comm', 'commodity identifier'
+        'comm_id', 'commid', 'comm id',
+        'COMM_ID', 'COMMID', 'COMM ID',
+        'Comm_Id', 'CommId', 'Comm Id'
     ],
     'INSPECTION_ID': [
-        'inspection_id', 'inspectionid', 'inspection id', 'insp_id',
-        'insp id', 'inspid', 'inspection identifier', 'inspection number id'
+        'inspection_id', 'inspectionid', 'inspection id',
+        'Inspection_Id', 'InspectionId', 'Inspection Id'
     ],
     'REF_COMMODITY_ID': [
         'ref_commodity_id', 'refcommodityid', 'ref commodity id',
-        'reference_commodity_id', 'reference commodity id', 'ref comm id',
-        'ref_comm_id', 'commodity reference', 'commodity ref'
+        'Ref_Commodity_Id', 'RefCommodityId', 'Ref Commodity Id'
     ],
     'CERTIFIED_FACILITY_NAME': [
-        'certified_facility_name', 'certified facility name',
-        'facility_name', 'facility name', 'certified_facility',
-        'certified facility', 'cert facility', 'cert_facility_name'
+        'certified_facility_name', 'certifiedfacilityname', 'certified facility name',
+        'Certified_Facility_Name', 'CertifiedFacilityName', 'Certified Facility Name'
     ],
     'CERTIFIED_FACILITY_NUMBER': [
-        'certified_facility_number', 'certified facility number',
-        'facility_number', 'facility number', 'facility_num',
-        'facility num', 'cert facility number', 'cert_facility_num'
+        'certified_facility_number', 'certifiedfacilitynumber', 'certified facility number',
+        'Certified_Facility_Number', 'CertifiedFacilityNumber', 'Certified Facility Number'
     ],
     'COMMODITY_CLASSIFICATION': [
-        'commodity_classification', 'commodity classification',
-        'classification', 'commodity_class', 'commodity class',
-        'comm_classification', 'comm classification', 'product classification'
+        'commodity_classification', 'commodityclassification', 'commodity classification',
+        'Commodity_Classification', 'CommodityClassification', 'Commodity Classification'
     ],
     'COMMODITY_COMMON_NAME': [
-        'commodity_common_name', 'commodity common name',
-        'common_name', 'common name', 'commodity_name', 'commodity name',
-        'product_name', 'product name', 'commodity', 'item name'
+        'commodity_common_name', 'commoditycommonname', 'commodity common name',
+        'Commodity_Common_Name', 'CommodityCommonName', 'Commodity Common Name'
     ],
     'COMMODITY_DISPLAY_NAME': [
-        'commodity_display_name', 'commodity display name',
-        'display_name', 'display name', 'comm_display_name',
-        'comm display name', 'product display name'
+        'commodity_display_name', 'commoditydisplayname', 'commodity display name',
+        'Commodity_Display_Name', 'CommodityDisplayName', 'Commodity Display Name'
     ],
     'COMMODITY_TAXONOMIC_DISPLAY_NAME': [
-        'commodity_taxonomic_display_name', 'commodity taxonomic display name',
-        'taxonomic_display_name', 'taxonomic display name',
-        'taxonomic_name', 'taxonomic name', 'scientific display name'
+        'commodity_taxonomic_display_name', 'commoditytaxonomicdisplayname',
+        'commodity taxonomic display name',
+        'Commodity_Taxonomic_Display_Name', 'CommodityTaxonomicDisplayName',
+        'Commodity Taxonomic Display Name'
     ],
     'COMMODITY_HOST_TYPE': [
-        'commodity_host_type', 'commodity host type', 'host_type',
-        'host type', 'host', 'comm_host_type', 'comm host type'
+        'commodity_host_type', 'commodityhosttype', 'commodity host type',
+        'Commodity_Host_Type', 'CommodityHostType', 'Commodity Host Type'
     ],
     'COMMODITY_TYPE': [
-        'commodity_type', 'commodity type', 'comm_type', 'comm type',
-        'product_type', 'product type', 'type', 'item type'
+        'commodity_type', 'commoditytype', 'commodity type',
+        'Commodity_Type', 'CommodityType', 'Commodity Type'
     ],
     'COUNTRY_OF_ORIGIN_NAME': [
-        'country_of_origin_name', 'country of origin name',
-        'country_of_origin', 'country of origin', 'origin_country',
-        'origin country', 'country', 'origin', 'source_country',
-        'source country', 'coo', 'origin name'
+        'country_of_origin_name', 'countryoforiginname', 'country of origin name',
+        'Country_Of_Origin_Name', 'CountryOfOriginName', 'Country Of Origin Name',
+        'origin', 'origin name', 'Origin Name', 'Origin', 'Origin_Name',
+        'OriginName', 'originname', 'origin_name', 'ORIGIN', 'ORIGIN_NAME',
+        'ORIGINNAME'
     ],
     'CONSIGNEE_NAME': [
-        'consignee_name', 'consignee name', 'consignee', 'receiver_name',
-        'receiver name', 'receiver', 'recipient', 'recipient_name',
-        'recipient name'
+        'consignee_name', 'consigneename', 'consignee name',
+        'Consignee_Name', 'ConsigneeName', 'Consignee Name'
     ],
     'DESTINATION_STATE_NAME': [
-        'destination_state_name', 'destination state name',
-        'destination_state', 'destination state', 'dest_state',
-        'dest state', 'state', 'destination', 'target state'
+        'destination_state_name', 'destinationstatename', 'destination state name',
+        'Destination_State_Name', 'DestinationStateName', 'Destination State Name'
     ],
     'DISPOSITION_CODE': [
-        'disposition_code', 'disposition code', 'disposition',
-        'disp_code', 'disp code', 'result_code', 'result code',
-        'outcome_code', 'outcome code'
+        'disposition_code', 'dispositioncode', 'disposition code',
+        'Disposition_Code', 'DispositionCode', 'Disposition Code'
     ],
     'GENUS_NAME': [
-        'genus_name', 'genus name', 'genus', 'taxonomic_genus',
-        'taxonomic genus', 'scientific genus'
+        'genus_name', 'genusname', 'genus name',
+        'Genus_Name', 'GenusName', 'Genus Name'
     ],
     'ENTRY_NUMBER': [
-        'entry_number', 'entry number', 'entry_num', 'entry num',
-        'entry', 'entry_id', 'entry id', 'entry identifier'
+        'entry_number', 'entrynumber', 'entry number',
+        'Entry_Number', 'EntryNumber', 'Entry Number'
     ],
     'ENTRY_LINE_NUMBER': [
-        'entry_line_number', 'entry line number', 'entry_line_num',
-        'entry line num', 'line_number', 'line number', 'entry_line',
-        'entry line', 'line_num', 'line num'
+        'entry_line_number', 'entrylinenumber', 'entry line number',
+        'Entry_Line_Number', 'EntryLineNumber', 'Entry Line Number'
     ],
     'PGA_LINE_NUMBER': [
-        'pga_line_number', 'pga line number', 'pga_line_num',
-        'pga line num', 'pga_line', 'pga line', 'pga number'
+        'pga_line_number', 'pgalinenumber', 'pga line number',
+        'Pga_Line_Number', 'PgaLineNumber', 'Pga Line Number'
     ],
     'PRODUCER_ID': [
-        'producer_id', 'producer id', 'producerid', 'grower_id',
-        'grower id', 'growerid', 'producer identifier'
+        'producer_id', 'producerid', 'producer id',
+        'Producer_Id', 'ProducerId', 'Producer Id'
     ],
     'PRODUCER_NAME': [
-        'producer_name', 'producer name', 'producer', 'grower_name',
-        'grower name', 'grower', 'manufacturer', 'supplier_name',
-        'supplier name', 'supplier'
+        'producer_name', 'producername', 'producer name',
+        'Producer_Name', 'ProducerName', 'Producer Name'
     ],
     'PROPAGATIVE_MATERIAL_TYPE': [
-        'propagative_material_type', 'propagative material type',
-        'material_type', 'material type', 'prop_material_type',
-        'prop material type', 'propagative_type', 'propagative type',
-        'prop_type', 'prop type', 'material'
+        'propagative_material_type', 'propagativematerialtype', 'propagative material type',
+        'Propagative_Material_Type', 'PropagativeMaterialType', 'Propagative Material Type',
+        'PM Type', 'pm type', 'PM_Type', 'pm_type'
     ],
     'QUANTITY': [
-        'quantity', 'qty', 'amount', 'count', 'volume', 'number',
-        'total', 'total quantity'
+        'quantity', 'Quantity', 'QUANTITY'
     ],
     'QUANTITY_UNITS_NAME': [
-        'quantity_units_name', 'quantity units name', 'quantity_units',
-        'quantity units', 'units_name', 'units name', 'units', 'uom',
-        'unit_of_measure', 'unit of measure'
+        'quantity_units_name', 'quantityunitsname', 'quantity units name',
+        'Quantity_Units_Name', 'QuantityUnitsName', 'Quantity Units Name'
     ],
     'WADS_CODE': [
-        'wads_code', 'wads code', 'wads', 'wads_id', 'wads id'
+        'wads_code', 'wadscode', 'wads code',
+        'Wads_Code', 'WadsCode', 'Wads Code'
     ],
     'SAMPLING_UNITS': [
-        'sampling_units', 'sampling units', 'samples', 'sample_units',
-        'sample units', 'sampling', 'units sampled'
+        'sampling_units', 'samplingunits', 'sampling units',
+        'Sampling_Units', 'SamplingUnits', 'Sampling Units'
     ],
     'IS_RBS': [
-        'is_rbs', 'is rbs', 'isrbs', 'rbs_flag', 'rbs flag',
-        'rbs_indicator', 'rbs indicator', 'rbs'
+        'is_rbs', 'isrbs', 'is rbs',
+        'Is_Rbs', 'IsRbs', 'Is Rbs'
     ],
     'RBS_STATUS': [
-        'rbs_status', 'rbs status', 'rbs', 'risk_based_status',
-        'risk based status', 'rbs_flag', 'rbs flag'
+        'rbs_status', 'rbsstatus', 'rbs status',
+        'Rbs_Status', 'RbsStatus', 'Rbs Status'
     ],
     'GROWING_MEDIA_PRESENCE': [
-        'growing_media_presence', 'growing media presence',
-        'media_presence', 'media presence', 'growing_media',
-        'growing media', 'soil_presence', 'soil presence', 'media'
+        'growing_media_presence', 'growingmediapresence', 'growing media presence',
+        'Growing_Media_Presence', 'GrowingMediaPresence', 'Growing Media Presence'
     ],
     'CREATED_DATETIME': [
-        'created_datetime', 'created datetime', 'created_date',
-        'created date', 'creation_date', 'creation date',
-        'date_created', 'date created', 'created', 'creation_time',
-        'creation time'
+        'created_datetime', 'createddatetime', 'created datetime',
+        'Created_Datetime', 'CreatedDatetime', 'Created Datetime'
     ],
     'INSPECTION_DATETIME': [
-        'inspection_datetime', 'inspection datetime', 'inspection_date',
-        'inspection date', 'insp_datetime', 'insp datetime',
-        'insp_date', 'insp date', 'date_inspected', 'date inspected'
+        'inspection_datetime', 'inspectiondatetime', 'inspection datetime',
+        'Inspection_Datetime', 'InspectionDatetime', 'Inspection Datetime'
     ],
     'BROKER_NAME': [
-        'broker_name', 'broker name', 'broker', 'agent_name',
-        'agent name', 'agent', 'intermediary', 'broker agent'
+        'broker_name', 'brokername', 'broker name',
+        'Broker_Name', 'BrokerName', 'Broker Name'
     ],
     'CATEGORY': [
-        'category', 'cat', 'main_category', 'main category',
-        'primary_category', 'primary category', 'type'
+        'category', 'Category', 'CATEGORY'
     ],
     'SUBCATEGORY': [
-        'subcategory', 'sub_category', 'sub category', 'subcat',
-        'sub_cat', 'sub cat', 'secondary_category', 'secondary category'
+        'subcategory', 'Subcategory', 'SUBCATEGORY'
     ],
     'IMPORTER_NAME': [
-        'importer_name', 'importer name', 'importer', 'import_company',
-        'import company', 'importing_company', 'importing company'
+        'importer_name', 'importername', 'importer name',
+        'Importer_Name', 'ImporterName', 'Importer Name'
     ],
     'INSPECTION_LOCATION_NAME': [
-        'inspection_location_name', 'inspection location name',
-        'location_name', 'location name', 'inspection_location',
-        'inspection location', 'location', 'site_name', 'site name',
-        'facility_name', 'facility name', 'inspection_site',
-        'inspection site', 'site'
+        'inspection_location_name', 'inspectionlocationname', 'inspection location name',
+        'Inspection_Location_Name', 'InspectionLocationName', 'Inspection Location Name'
     ],
     'INSPECTION_LOCATION_ID': [
-        'inspection_location_id', 'inspection location id',
-        'location_id', 'location id', 'site_id', 'site id',
-        'facility_id', 'facility id', 'inspection_site_id',
-        'inspection site id'
+        'inspection_location_id', 'inspectionlocationid', 'inspection location id',
+        'Inspection_Location_Id', 'InspectionLocationId', 'Inspection Location Id'
     ],
     'INSPECTION_NUMBER': [
-        'inspection_number', 'inspection number', 'inspection_num',
-        'inspection num', 'insp_number', 'insp number', 'insp_num',
-        'insp num', 'inspection_id', 'inspection id', 'case_number',
-        'case number'
+        'inspection_number', 'inspectionnumber', 'inspection number',
+        'Inspection_Number', 'InspectionNumber', 'Inspection Number'
     ],
     'PATHWAY_ID': [
-        'pathway_id', 'pathway id', 'pathwayid', 'route_id',
-        'route id', 'pathway identifier'
+        'pathway_id', 'pathwayid', 'pathway id',
+        'Pathway_Id', 'PathwayId', 'Pathway Id'
     ],
     'PATHWAY': [
-        'pathway', 'route', 'entry_pathway', 'entry pathway',
-        'import_pathway', 'import pathway', 'channel', 'entry_route',
-        'entry route'
+        'pathway', 'Pathway', 'PATHWAY'
     ],
     'SHIPPER_NAME': [
-        'shipper_name', 'shipper name', 'shipper', 'shipping_company',
-        'shipping company', 'carrier', 'carrier_name', 'carrier name',
-        'transporter', 'logistics_provider', 'logistics provider'
+        'shipper_name', 'shippername', 'shipper name',
+        'Shipper_Name', 'ShipperName', 'Shipper Name'
     ],
     'INSPECTION_LOCATION_STATE_CODE': [
-        'inspection_location_state_code', 'inspection location state code',
-        'location_state_code', 'location state code', 'state_code',
-        'state code', 'insp_state_code', 'insp state code',
-        'location_state', 'location state'
-    ],
-    'DOCUMENT_REVIEW_OVERTIME_ID': [
-        'document_review_overtime_id', 'document review overtime id',
-        'doc_review_overtime_id', 'doc review overtime id',
-        'doc_review_ot_id', 'doc review ot id', 'document_ot_id',
-        'document ot id'
-    ],
-    'DOCUMENT_REVIEW_OVERTIME_NAME': [
-        'document_review_overtime_name', 'document review overtime name',
-        'doc_review_overtime_name', 'doc review overtime name',
-        'doc_review_ot_name', 'doc review ot name', 'document_overtime',
-        'document overtime'
-    ],
-    'INSPECTION_RESULTS_OVERTIME_ID': [
-        'inspection_results_overtime_id', 'inspection results overtime id',
-        'insp_results_overtime_id', 'insp results overtime id',
-        'results_ot_id', 'results ot id', 'inspection_ot_id',
-        'inspection ot id'
-    ],
-    'INSPECTION_RESULTS_OVERTIME_NAME': [
-        'inspection_results_overtime_name', 'inspection results overtime name',
-        'insp_results_overtime_name', 'insp results overtime name',
-        'results_overtime', 'results overtime', 'inspection_overtime',
-        'inspection overtime'
-    ],
-    'OFFSHORE_CUT_SHIP_INSP_NEEDED': [
-        'offshore_cut_ship_insp_needed', 'offshore cut ship insp needed',
-        'offshore_inspection_needed', 'offshore inspection needed',
-        'offshore_insp_needed', 'offshore insp needed',
-        'cut_ship_insp_needed', 'cut ship insp needed'
-    ],
-    'TAXONOMY_ORDER': [
-        'taxonomy_order', 'taxonomy order', 'taxonomic_order',
-        'taxonomic order', 'order', 'tax_order', 'tax order',
-        'scientific_order', 'scientific order'
-    ],
-    'TAXONOMY_FAMILY': [
-        'taxonomy_family', 'taxonomy family', 'taxonomic_family',
-        'taxonomic family', 'family', 'tax_family', 'tax family',
-        'scientific_family', 'scientific family'
-    ],
-    'TAXONOMY_GENUS': [
-        'taxonomy_genus', 'taxonomy genus', 'taxonomic_genus',
-        'taxonomic genus', 'genus', 'tax_genus', 'tax genus',
-        'scientific_genus', 'scientific genus'
-    ],
-    'TAXONOMY_SPECIES': [
-        'taxonomy_species', 'taxonomy species', 'taxonomic_species',
-        'taxonomic species', 'species', 'tax_species', 'tax species',
-        'scientific_species', 'scientific species'
-    ],
-    'TAXONOMY_SUBSPECIES': [
-        'taxonomy_subspecies', 'taxonomy subspecies', 'taxonomic_subspecies',
-        'taxonomic subspecies', 'subspecies', 'tax_subspecies',
-        'tax subspecies', 'variety', 'var'
-    ],
-    'MODE_OF_TRANSPORT': [
-        'mode_of_transport', 'mode of transport', 'transport_mode',
-        'transport mode', 'transportation_mode', 'transportation mode',
-        'mode', 'transport_type', 'transport type', 'shipping_method',
-        'shipping method'
-    ],
-    'inspection': [
-        'inspection', 'insp', 'inspection_flag', 'inspection flag',
-        'inspected', 'inspection_indicator', 'inspection indicator'
-    ],
-    'shipment': [
-        'shipment', 'ship', 'shipment_id', 'shipment id',
-        'consignment', 'cargo', 'load'
-    ],
-    'action': [
-        'action', 'action_taken', 'action taken', 'disposition',
-        'decision', 'result', 'outcome', 'action_code', 'action code'
-    ],
-    'fiscal_year': [
-        'fiscal_year', 'fiscal year', 'fy', 'fiscal_yr', 'fiscal yr',
-        'year_fiscal', 'year fiscal', 'budget_year', 'budget year'
-    ],
-    'calendar_year': [
-        'calendar_year', 'calendar year', 'cy', 'cal_year', 'cal year',
-        'year_calendar', 'year calendar', 'year'
-    ],
-    'HOST_PROXIMITY_ID': [
-        'host_proximity_id', 'host proximity id', 'proximity_id',
-        'proximity id', 'host_prox_id', 'host prox id'
-    ],
-    'HOST_PROXIMITY': [
-        'host_proximity', 'host proximity', 'proximity', 'host_prox',
-        'host prox', 'host_distance', 'host distance'
-    ],
-    'year': [
-        'year', 'yr', 'year_value', 'year value', 'annual_year',
-        'annual year'
-    ],
-    'month': [
-        'month', 'mo', 'month_value', 'month value', 'month_name',
-        'month name', 'month_number', 'month number'
+        'inspection_location_state_code', 'inspectionlocationstatecode',
+        'inspection location state code',
+        'Inspection_Location_State_Code', 'InspectionLocationStateCode',
+        'Inspection Location State Code'
     ],
     'RISK_UNIT': [
-        'risk_unit', 'risk unit', 'risk', 'unit', 'risk_level',
-        'risk level', 'ru', 'risk_category', 'risk category'
-    ],
-    'TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT': [
-        'total_sampling_units_for_risk_unit', 'total sampling units for risk unit',
-        'total_sampling_units', 'total sampling units', 'total_samples',
-        'total samples', 'risk_unit_samples', 'risk unit samples',
-        'total_units', 'total units', 'total_samples_risk_unit',
-        'total samples risk unit'
-    ],
-    'SAMPLING_UNITS_FOR_INSPECTION_UNIT': [
-        'sampling_units_for_inspection_unit', 'sampling units for inspection unit',
-        'inspection_sampling_units', 'inspection sampling units',
-        'samples_per_unit', 'samples per unit', 'sampling_unit',
-        'sampling unit', 'inspection_samples', 'inspection samples'
-    ],
-    'REQUIRED_NUMBER_OF_BOXES': [
-        'required_number_of_boxes', 'required number of boxes',
-        'required_boxes', 'required boxes', 'number_of_boxes',
-        'number of boxes', 'boxes_required', 'boxes required',
-        'box_count', 'box count', 'boxes', 'required_box_count',
-        'required box count'
+        'risk_unit', 'riskunit', 'risk unit',
+        'Risk_Unit', 'RiskUnit', 'Risk Unit'
     ],
     'Row_ID': [
-        'row_id', 'row id', 'rowid', 'id', 'record_id', 'record id',
-        'index', 'row_number', 'row number', 'record_number',
-        'record number', 'pk', 'primary_key', 'primary key'
+        'row_id', 'rowid', 'row id',
+        'Row_Id', 'RowId', 'Row Id'
     ],
     'producer_group': [
-        'producer', 'producer group', 'producer_group'
-    ]
+        'producergroup', 'producer group', 'producer',
+        'Producer_Group', 'ProducerGroup', 'Producer Group',
+        'PRODUCER_GROUP', 'PRODUCERGROUP', 'PRODUCER GROUP'
+    ],
 }
+
 
 
 def find_column_name(var: str = None,
@@ -565,5 +430,3 @@ def find_column_name(var: str = None,
         return alias_to_canonical[match[0]]
 
     return None
-
-

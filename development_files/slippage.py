@@ -8,6 +8,10 @@ from typing import Optional
 
 import pandas as pd
 import random
+from datetime import datetime
+import hashlib
+
+from PyInstaller.utils.conftest import data_dir
 
 # Import functions from popsborder
 from popsborder.scenarios import run_scenarios
@@ -22,6 +26,7 @@ from popsborder.inspections import normalize_rbs_variables_against_consignment, 
 # Import utility functions for contamination module
 from slippage_model_utils.r_script_wrapper import *
 from slippage_model_utils.clarke_model_support_functions import *
+from slippage_model_utils.engineered_feature_creator import  create_engineered_features
 from slippage_model_utils.paths import BoxPaths, DefaultPaths
 from pathlib import Path
 import pickle
@@ -35,6 +40,7 @@ def main():
     box_paths = BoxPaths()
 
     ### Set up data folder and file names
+    val_data_path = box_paths.validation_data()
     shared_ppq_data_path = box_paths.shared_ppq_data()
     model_testing_data_path = box_paths.model_testing_data_folder()
     data_dir = default_paths.slippage_data_dir()
@@ -45,11 +51,12 @@ def main():
     ### Compliance table
     compliance_file = data_dir / "compliance_table.csv"
     scenario_file = data_dir / "test_scenario.csv"
-    base_compliance_table = data_dir / "base_compliance_table.csv"
-    base_compliance_table_with_producer = data_dir / "base_compliance_table_with_producer.csv"
+    compliance_table_path = data_dir / "base_compliance_table.csv"
+    compliance_table_path_with_producer = data_dir / "base_compliance_table_with_producer.csv"
     compliance_mapping_to_detection_confidence = data_dir / "compliance_mapping_detection_confidence_levels.csv"
 
     ### PIS Inspection/RBS Calculator Data
+    pis_data_updated = val_data_path / 'train.csv'
     pis_data_updated = shared_ppq_data_path / 'updated_pis_data.csv'  # PIS data
     # pis_data_updated = data_dir / "TEST_PIS_SampleQuantity.csv"       # Test data
     # pis_data_updated = data_dir / "Synthetic_PIS_SampleQuantity_test.csv"       # Test data
@@ -75,32 +82,23 @@ def main():
         synth_data = synthetic_data_generator.input_data[synthetic_data_generator.input_data["INSPECTION_NUMBER"].isin(included_inspection_nums)]
         synth_data.loc[:, 'Row_ID'] = 'CR-' + (synth_data.index + 1).astype(str)
         synth_out_path = data_dir / "Historical_PIS_SampleQuantity.csv"
-        config["consignment"]["input_file"]["file_name"] = "slippage_data/Historical_PIS_SampleQuantity.csv"
+        config["consignment"]["input_file"]["file_name"] = "development_files/slippage_data/Historical_PIS_SampleQuantity.csv"
     else:
         synth_data = synthetic_data_generator.generate_from_input_data(
             n_consignments=num_consignments_to_simulate,
             sampling_method="sequential"
         )
         synth_out_path = data_dir / "Synthetic_PIS_SampleQuantity.csv"
-        config["consignment"]["input_file"]["file_name"] = "slippage_data/Synthetic_PIS_SampleQuantity.csv"
+        config["consignment"]["input_file"]["file_name"] = "development_files/slippage_data/Synthetic_PIS_SampleQuantity.csv"
 
-    # Pull in the VariableCreator object to use R code to create engineered columns
-    creator = RVariableCreator()
-
-    # Fall back to CSV if needed (smaller data, compatibility)
-    quantity_binary_variables = creator.generate_quantity_binaries(
-        df=synth_data,
-        quantity_threshold=200,
-        group_cols=['RISK_UNIT'],
-        use_parquet=False
+    # # Pull in the VariableCreator object to use R code to create engineered columns
+    synth_data = create_engineered_features(
+        synth_data=synth_data,
+        producer_group_mapping=producer_group_mapping
     )
 
-    synth_data = synth_data.merge(
-        quantity_binary_variables,
-        on='RISK_UNIT',
-        how='left'
-    )
-
+    synth_data = construct_risk_units(config=config, data=synth_data)
+    synth_data.to_parquet(data_dir / "Synthetic_PIS_SampleQuantity.parquet", compression='snappy', index=False)
     synth_data.to_csv(synth_out_path)
 
 
@@ -187,49 +185,6 @@ def main():
     ####################################################################
     ####################################################################
 
-    #################################################################
-    #################################################################
-    #################    INSPECTION MODULE  #########################
-    #################################################################
-    #################################################################
-
-    # Load compliance table
-    compliance_table = build_compliance_lookup_table(
-        # compliance_table_filepath=base_compliance_table_with_producer,
-        compliance_table_filepath=base_compliance_table,
-        mapping_filepath=compliance_mapping_to_detection_confidence
-    )
-
-    # Generate a temporary consignment that will be generated during simulation
-    consignment_generator = get_consignment_generator(config)
-    temp_consignment = consignment_generator.generate_consignment()
-
-
-
-    # Normalize RBS variables against RiskUnit attributes
-    updated, mapping2, unmapped2 = normalize_rbs_variables_using_risk_unit_config(
-        compliance_table['rbs_variables']
-    )
-
-    # Update the compliance table variable names to be used later in sim to match attributes of consignment object
-    compliance_table['rbs_variables'] = updated
-
-    # Output files
-    compliance_lookup_pkl = default_paths.compliance_dir() / 'compliance_lookup_final.pkl'
-
-    # Now use these throughout your code
-    with open(compliance_lookup_pkl, 'wb') as f:
-        pickle.dump(compliance_table, f, protocol=pickle.HIGHEST_PROTOCOL)
-
-    config["inspection"]["compliance_table"]['file_name'] = 'compliance_lookup_final.pkl'
-
-
-    ##################################################################
-    ##################################################################
-    ################# END INSPECTION MODULE  #########################
-    ##################################################################
-    ##################################################################
-
     # Load scenario table
     scenarios = load_scenario_table(scenario_file)
     print(f"\nLoaded {len(scenarios)} scenarios from {scenario_file}")
@@ -273,6 +228,121 @@ def main():
     ######## END CONTAMINATION MODULE (Scenario Update)  ###############
     ####################################################################
     ####################################################################
+
+    #################################################################
+    #################################################################
+    #################    INSPECTION MODULE  #########################
+    #################################################################
+    #################################################################
+
+    # Load compliance table
+    compliance_table = build_compliance_lookup_table(
+        compliance_table_filepath=compliance_table_path,
+        mapping_filepath=compliance_mapping_to_detection_confidence
+    )
+
+    # Normalize RBS variables against RiskUnit attributes
+    updated, mapping2, unmapped2 = normalize_rbs_variables_using_risk_unit_config(
+        compliance_table['rbs_variables']
+    )
+
+    # Update the compliance table variable names to be used later in sim to match attributes of consignment object
+    compliance_table['rbs_variables'] = updated
+
+    # Output files
+    compliance_lookup_pkl = data_dir / 'compliance_lookup_final.pkl'
+
+    # Now use these throughout your code
+    with open(compliance_lookup_pkl, 'wb') as f:
+        pickle.dump(compliance_table, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    config["inspection"]["compliance_table"]['file_name'] = data_dir / 'compliance_lookup_final.pkl'
+
+
+
+    temp_compliance_table = pd.read_csv(compliance_table_path)
+
+    if "prod_group_name" in temp_compliance_table.columns:
+        # Find values in synth_data that are NOT in temp_compliance_table
+        mask = ~synth_data["producer_group"].isin(temp_compliance_table["prod_group_name"])
+
+        # Collect the values that will be replaced (unique)
+        replaced_values = synth_data.loc[mask, "producer_group"].unique()
+
+        # Create a DataFrame for these values
+        replaced_df = pd.DataFrame(replaced_values, columns=["Replaced_Producer_Group"])
+
+        # Write to CSV
+        replaced_df.to_csv(data_dir / "replaced_producer_group_from_prod_group_name.csv", index=False)
+
+        # Replace those values with "Reference"
+        synth_data.loc[mask, "producer_group"] = "Reference"
+
+        # Check if ALL values in synth_data are in temp_compliance_table
+        all_present = synth_data["producer_group"].isin(temp_compliance_table["prod_group_name"]).all()
+
+        if all_present:
+            print("✓ All producer groups are valid!")
+        else:
+            print("✗ Some producer groups are missing from temp_compliance_table")
+    elif "PRODUCER_GROUP_TOP" in temp_compliance_table.columns:
+        # Find values in synth_data that are NOT in temp_compliance_table
+        mask = ~synth_data["producer_group"].isin(temp_compliance_table["PRODUCER_GROUP_TOP"])
+
+        # Collect the values that will be replaced (unique)
+        replaced_values = synth_data.loc[mask, "producer_group"].unique()
+
+        # Create a DataFrame for these values
+        replaced_df = pd.DataFrame(replaced_values, columns=["Replaced_Producer_Group"])
+
+        # Write to CSV
+        replaced_df.to_csv(data_dir / "replaced_producer_group_from_PRODUCER_GROUP_TOP.csv", index=False)
+
+        # Replace those values with "Reference"
+        synth_data.loc[mask, "producer_group"] = "Reference"
+
+        # Check if ALL values in synth_data are in temp_compliance_table
+        all_present = synth_data["producer_group"].isin(temp_compliance_table["PRODUCER_GROUP_TOP"]).all()
+
+        if all_present:
+            print("✓ All producer groups are valid!")
+        else:
+            print("✗ Some producer groups are missing from temp_compliance_table")
+    if "IMPORTER_NAME_TOP" in temp_compliance_table.columns:
+        # Find values in synth_data that are NOT in temp_compliance_table
+        mask = ~synth_data["IMPORTER_NAME"].isin(temp_compliance_table["IMPORTER_NAME_TOP"])
+
+        # Collect the replaced rows (both columns)
+        replaced_df = synth_data.loc[mask, ["IMPORTER_NAME", "IMPORTER_NAME_RAW"]].drop_duplicates()
+
+        # Rename columns for clarity
+        replaced_df.rename(columns={"IMPORTER_NAME": "Replaced_Importer_Name",
+                                    "IMPORTER_NAME_RAW": "Raw_Importer_Name"}, inplace=True)
+
+        # Write to CSV
+        replaced_df.to_csv(data_dir / "replaced_importer_names.csv", index=False)
+
+        # Replace those values with "Reference"
+        synth_data.loc[mask, "IMPORTER_NAME"] = "Reference"
+
+        # Check if ALL values in synth_data are in temp_compliance_table
+        all_present = synth_data["IMPORTER_NAME"].isin(temp_compliance_table["IMPORTER_NAME_TOP"]).all()
+
+        if all_present:
+            print("✓ All importer names are valid!")
+        else:
+            print("✗ Some importer names are missing from temp_compliance_table")
+
+    synth_data.to_parquet(data_dir / "Synthetic_Base_Use.parquet", compression='snappy', index=False)
+    synth_data.to_csv(data_dir / "Synthetic_Base_Use.csv", index=False)
+
+    config["consignment"]["input_file"]["file_name"] = "slippage_data/Synthetic_Base_Use.csv"
+
+    ##################################################################
+    ##################################################################
+    ################# END INSPECTION MODULE  #########################
+    ##################################################################
+    ##################################################################
 
     # Run one scenario analysis simulation
     detailed_bool = True
