@@ -27,7 +27,8 @@ class RiskUnitConfig:
         "median_qty_lt200": "MEDIAN_QTY_LT200",
         "frac_small": "FRAC_SMALL",
         "frac_small_gt07": "FRAC_SMALL_GT07",
-        "any_small": "ANY_SMALL"
+        "any_small": "ANY_SMALL",
+        "importer": "IMPORTER_NAME",
     })
 
     # Default values if column is missing
@@ -41,6 +42,7 @@ class RiskUnitConfig:
         "frac_small": None,
         "frac_small_gt07": False,
         "any_small": False,
+        "importer": None
     })
 
     # Which attributes to include
@@ -53,7 +55,8 @@ class RiskUnitConfig:
         "median_qty_lt200",
         "frac_small",
         "frac_small_gt07",
-        "any_small"
+        "any_small",
+        "importer"
     ])
 
     def get_attributes_from_record(self, record) -> Dict[str, Any]:

@@ -112,9 +112,3 @@ inspection:
       - Origin
       - PM Type
       - Producer
-    Atlanta:
-      - Origin
-      - PM Type
-      - Importer
-    Los Angeles:
-      - Producer

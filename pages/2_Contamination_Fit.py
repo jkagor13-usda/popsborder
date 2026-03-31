@@ -66,7 +66,7 @@ def _beta_chart(alpha: float, beta: float, title: str) -> alt.Chart:
     pdf = _beta_pdf(alpha, beta)
     y_max = float(pdf["density"].max() * 1.05) if not pdf.empty else 1.0
     base = alt.Chart(pdf).encode(
-        x=alt.X("prevalence:Q", title="Contamination prevalence"),
+        x=alt.X("prevalence:Q", title="Contamination prevalence", axis=alt.Axis(format="%")),
         y=alt.Y("density:Q", title="Density", scale=alt.Scale(domain=[0, y_max])),
     )
     area = base.mark_area(opacity=0.3, color="#1f77b4")
@@ -251,191 +251,6 @@ render_page_intro(
 )
 
 
-########### Notes on using Markdowns ############
-#################################################
-
-## Style tagging
-# Tag	            Effect	        Example
-# <em> or <i>	    Italic	        <em>text</em>
-# <strong> or <b>	Bold	        <strong>text</strong>
-# <u>	            Underline	    <u>text</u>
-# <s> or <del>	    Strikethrough	<s>text</s>
-# <mark>	        Highlight	    <mark>text</mark>
-# <small>	        Smaller	        <small>text</small>
-# <sup>	            Superscript	    x<sup>2</sup>
-# <sub>	            Subscript	    H<sub>2</sub>O
-
-#### CSS Properties Reference
-# Property	        Effect	                Example Values
-# font-size	        Tab text size	        14px, 20px, 28px
-# font-weight	    Boldness	            400 (normal), 600 (semi-bold), 700 (bold)
-# color	            Text color	            #000000, #1f77b4
-# padding	        Space inside tab	    10px 20px (top/bottom left/right)
-# letter-spacing	Space between letters	0.5px, 1px
-# text-transform	Case	                uppercase, lowercase
-
-
-# Multiple Lines via mark down
-# st.markdown("""
-#     <div style='font-size: 20px; color: #2c3e50; line-height: 0.5;'>
-#         <p style='margin-bottom: 12px;'>
-#             Fit, assign, and manage contamination parameters.
-#             PIS upload and RBS selection live in the Fit tab.
-#             All outputs are written to tmp/contamination.
-#         </p>
-#         <p style='margin-bottom: 0;'>
-#             All outputs are written to tmp/contamination.
-#         </p>
-#     </div>
-# """, unsafe_allow_html=True)
-
-# st.caption(
-#     "Fit, assign, and manage contamination parameters. PIS upload and RBS selection live in the Fit tab. "
-#     "All outputs are written to tmp/contamination."
-# )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-####################################################################
-####################################################################
-## Mark down and CSS customizable options
-
-# st.markdown("""
-#     <style>
-#     /* ========== LABEL TEXT STYLING ========== */
-#     .selectbox-label-text {
-#         font-size: 28px;                    /* Text size */
-#         font-weight: 700;                   /* Bold text */
-#         color: #0d47a1;                     /* Dark blue color */
-#         text-transform: capitalize;         /* Capitalize first letter */
-#         letter-spacing: 0.5px;              /* Space between letters */
-#         line-height: 1.4;                   /* Line height */
-#         font-family: 'Arial', sans-serif;   /* Font family */
-#         text-shadow: 1px 1px 2px rgba(0,0,0,0.1); /* Subtle shadow */
-#     }
-#
-#     /* ========== INFO ICON STYLING ========== */
-#     .info-icon {
-#         display: inline-block;
-#         width: 24px;                        /* Icon width */
-#         height: 24px;                       /* Icon height */
-#         border-radius: 50%;                 /* Circular shape */
-#         background-color: #1976d2;          /* Blue background */
-#         color: white;                       /* White text */
-#         text-align: center;
-#         line-height: 24px;                  /* Vertical centering */
-#         font-size: 15px;                    /* Icon character size */
-#         margin-left: 10px;                  /* Space from label */
-#         cursor: help;                       /* Help cursor on hover */
-#         vertical-align: middle;             /* Align with text */
-#         border: 2px solid #0d47a1;          /* Border around icon */
-#         box-shadow: 0 2px 4px rgba(0,0,0,0.15); /* Subtle shadow */
-#         opacity: 0.9;                       /* Slight transparency */
-#         position: relative;
-#     }
-#
-#     /* Icon hover effect */
-#     .info-icon:hover {
-#         background-color: #0d47a1;          /* Darker on hover */
-#         transform: scale(1.1);              /* Slightly larger */
-#         opacity: 1;                         /* Full opacity */
-#     }
-#
-#     /* ========== TOOLTIP BOX STYLING ========== */
-#     .info-icon .tooltip {
-#         visibility: hidden;
-#         width: 350px;                       /* Tooltip width */
-#         max-width: 90vw;                    /* Max width for mobile */
-#         background-color: #263238;          /* Dark gray background */
-#         color: #ffffff;                     /* White text */
-#         text-align: left;                   /* Left-aligned text */
-#         border-radius: 10px;                /* Rounded corners */
-#         padding: 18px;                      /* Internal spacing */
-#         position: absolute;
-#         z-index: 999;                       /* Layer on top */
-#         bottom: 140%;                       /* Position above icon */
-#         left: 50%;
-#         margin-left: -175px;                /* Center horizontally */
-#         opacity: 0;                         /* Initially invisible */
-#         transition: opacity 0.4s ease-in-out; /* Smooth fade */
-#         font-size: 15px;                    /* Text size */
-#         font-weight: 400;                   /* Normal weight */
-#         line-height: 1.7;                   /* Comfortable line spacing */
-#         box-shadow: 0 6px 12px rgba(0,0,0,0.4); /* Drop shadow */
-#         border: 1px solid rgba(255,255,255,0.1); /* Subtle border */
-#         font-family: 'Segoe UI', sans-serif; /* Font family */
-#     }
-#
-#     /* ========== TOOLTIP ARROW ========== */
-#     .info-icon .tooltip::after {
-#         content: "";
-#         position: absolute;
-#         top: 100%;                          /* Position at bottom of tooltip */
-#         left: 50%;
-#         margin-left: -8px;                  /* Center the arrow */
-#         border-width: 8px;                  /* Arrow size */
-#         border-style: solid;
-#         border-color: #263238 transparent transparent transparent; /* Arrow color */
-#     }
-#
-#     /* Show tooltip on hover */
-#     .info-icon:hover .tooltip {
-#         visibility: visible;
-#         opacity: 1;                         /* Fully visible */
-#         transform: translateY(-5px);        /* Slide up slightly */
-#     }
-#
-#     /* ========== SELECTBOX DROPDOWN STYLING ========== */
-#     .stSelectbox div[data-baseweb="select"] > div {
-#         font-size: 20px !important;         /* Dropdown text size */
-#         font-weight: 500 !important;        /* Medium weight */
-#         color: #1a237e !important;          /* Indigo text */
-#         background-color: #f5f7fa !important; /* Light background */
-#         border: 2px solid #1976d2 !important; /* Blue border */
-#         border-radius: 8px !important;      /* Rounded corners */
-#         padding: 12px 16px !important;      /* Internal padding */
-#         box-shadow: 0 2px 4px rgba(0,0,0,0.08) !important; /* Subtle shadow */
-#     }
-#
-#     /* Dropdown hover effect */
-#     .stSelectbox div[data-baseweb="select"] > div:hover {
-#         border-color: #0d47a1 !important;   /* Darker border on hover */
-#         box-shadow: 0 4px 8px rgba(0,0,0,0.12) !important; /* Stronger shadow */
-#     }
-#
-#     /* ========== DROPDOWN OPTIONS STYLING ========== */
-#     .stSelectbox div[data-baseweb="select"] ul li {
-#         font-size: 18px !important;
-#         padding: 14px 18px !important;
-#         font-weight: 500 !important;
-#     }
-#
-#     /* Option hover effect */
-#     .stSelectbox div[data-baseweb="select"] ul li:hover {
-#         background-color: #e3f2fd !important; /* Light blue on hover */
-#     }
-#     </style>
-# """, unsafe_allow_html=True)
-
-####################################################################
-####################################################################
-
-
-
-
 
 saved_tab, fit_tab, assign_tab = st.tabs(
     ["Saved Parameter Sets", "Fit Contamination Using Data", "Assign Contamination Manually"]
@@ -527,7 +342,7 @@ with fit_tab:
 
     fit_cols = st.columns(2)
     with fit_cols[0]:
-        if st.button("Fit contamination parameters", type="primary"):
+        if st.button("Fit contamination parameters*", type="primary"):
             if paths.pis_data is None or paths.rbs_data is None:
                 st.error("Upload PIS data and select an RBS file before fitting.")
             else:
@@ -587,6 +402,8 @@ with fit_tab:
                 f"Saved '{saved_name}' with alpha={fit_to_show.alpha:.6f}, "
                 f"beta={fit_to_show.beta:.6f}, theta={fit_to_show.theta}"
             )
+
+    st.caption("*Clark, R.G., Barnes, B. & Parsa, M. Clustered and Unclustered Group Testing for Biosecurity. JABES 29, 193–211 (2024). https://doi.org/10.1007/s13253-023-00566-x")
 
 # Manual assignment tab
 with assign_tab:
@@ -691,23 +508,33 @@ with assign_tab:
 
         st.write("Contamination Summary")
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            render_metric_card("Sample Size", f"{n_trials} plants", "Total number of plants sampled for contamination testing")
-        with col2:
             render_metric_card(
                 "Expected Average",
-                f"{mean:.1f}",
-                "Average number of contaminated plants you can expect to find in the sample based on your contamination rate",
+                f"{mean:.1f} out of {n_trials} plants",
+                "Average number of contaminated plants expected within a sample of 100 plants.",
             )
-
-        with col3:
+        with col2:
             render_metric_card(
                 "95% Range",
                 f"{lb:.1f} - {ub:.1f}",
                 "The typical range where 95% of observed contaminated plant counts will fall. This accounts for natural variability in the sampling process.",
             )
+        with col3:
+            render_metric_card(
+                "Alpha",
+                f"{adj_alpha:.6f}",
+                "Alpha parameter of the beta-binomial distribution.",
+            )
+        with col4:
+            render_metric_card(
+                "Beta",
+                f"{adj_beta:.6f}",
+                "Beta parameter of the beta-binomial distribution.",
+            )
+        st.caption("*Theta is fixed to inf (no clustering) for manual contamination assignment.")
 
         st.write("")
         st.write("")
@@ -822,11 +649,19 @@ with saved_tab:
             beta = float(params.get("beta", FALLBACK_BETA))
             theta = params.get("theta", FALLBACK_THETA)
             sample_unit_rate = params.get("sample_unit_contamination_rate")
-            st.metric("Alpha", f"{alpha:.6f}")
-            st.metric("Beta", f"{beta:.6f}")
-            st.metric("Theta", f"{theta}")
-            if sample_unit_rate is not None:
-                st.metric("Plant unit contamination rate", f"{sample_unit_rate}")
+            summary_cols = st.columns(4)
+            with summary_cols[0]:
+                render_metric_card("Alpha", f"{alpha:.6f}", "Alpha parameter of the beta-binomial distribution.")
+            with summary_cols[1]:
+                render_metric_card("Beta", f"{beta:.6f}", "Beta parameter of the beta-binomial distribution.")
+            with summary_cols[2]:
+                render_metric_card("Theta", f"{theta}", "Third parameter of the contamination model.")
+            with summary_cols[3]:
+                render_metric_card(
+                    "Plant unit contamination rate",
+                    f"{sample_unit_rate}" if sample_unit_rate is not None else "n/a",
+                    "Saved plant unit contamination rate when the parameter set was created from the rate-based workflow.",
+                )
             st.altair_chart(
                 _beta_chart(alpha, beta, f"Beta-binomial PDF for {sel}"),
                 use_container_width=True,

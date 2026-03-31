@@ -770,6 +770,62 @@ class RVariableCreator:
             print(f"Error in execution of basic_text_preproc function: {e}")
             raise
 
+    def batch_basic_text_preproc(self, text_fields, suffix_string=None, prefix_string=None, timeout_sec=120.0):
+        # Prepare argument payload
+        args = {"text_field": list(map(str, text_fields))}
+        if suffix_string is not None:
+            args["suffix_string"] = str(suffix_string)
+        if prefix_string is not None:
+            args["prefix_string"] = str(prefix_string)
+        payload = {
+            "func_name": "basic_text_preproc",
+            "args": args
+        }
+
+        # Write to temp file
+        with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as f:
+            json.dump(payload, f, allow_nan=False)
+            temp_json_path = f.name
+
+        r_script_path = str(self._get_r_script_path())
+        cmd, env = _pick_rscript_command()
+        subprocess_env = env if env else None
+
+        try:
+            proc = subprocess.run(
+                cmd + [r_script_path, temp_json_path],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout_sec,
+                env=subprocess_env,
+            )
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_json_path):
+                os.unlink(temp_json_path)
+
+        if proc.returncode != 0:
+            error_msg = (
+                f"R function 'basic_text_preproc' failed with return code {proc.returncode}\n"
+                f"STDOUT:\n{proc.stdout}\n"
+                f"STDERR:\n{proc.stderr}\n"
+                f"Command: {' '.join(proc.args)}\n"
+            )
+            print(error_msg)
+            raise subprocess.CalledProcessError(
+                returncode=proc.returncode,
+                cmd=proc.args,
+                output=proc.stdout,
+                stderr=proc.stderr,
+            )
+
+        result = _parse_json_from_r_stdout(proc.stdout)
+        # Your R returns {processed_text: [cleaned names...]}
+        if "processed_text" in result:
+            return result["processed_text"]
+        raise ValueError("R did not return processed_text")
+
     def generate_quantity_binaries(
             self,
             df: pd.DataFrame,

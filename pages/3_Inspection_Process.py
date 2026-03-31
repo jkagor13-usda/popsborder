@@ -116,15 +116,21 @@ def _save_policy_artifact(
     else:
         if mapping_csv_path is None or not mapping_csv_path.exists():
             raise FileNotFoundError("Compliance mapping detection/confidence file is required.")
+        compliance_preview_df = pd.read_csv(compliance_csv_path)
+        mapping_preview_df = pd.read_csv(mapping_csv_path)
         compliance_table = build_compliance_lookup_table(
             compliance_table_filepath=compliance_csv_path,
             mapping_filepath=mapping_csv_path,
         )
-        preview_df = pd.read_csv(compliance_csv_path).merge(
-            pd.read_csv(mapping_csv_path),
+        preview_df = compliance_preview_df.merge(
+            mapping_preview_df,
             on="Compliance",
             how="left",
         )
+        ordered_preview_cols = compliance_preview_df.columns.tolist() + [
+            col for col in mapping_preview_df.columns.tolist() if col not in compliance_preview_df.columns
+        ]
+        preview_df = preview_df[[col for col in ordered_preview_cols if col in preview_df.columns]]
     updated_vars, _, _ = normalize_rbs_variables_using_risk_unit_config(
         compliance_table.get("rbs_variables", [])
     )
@@ -218,10 +224,7 @@ with tabs[1]:
             upload_preview = None
     if upload_preview is not None:
         selected_column = _pick_compliance_column(upload_preview)
-        origin_col = _first_matching_column(upload_preview, ["Origin Location Country Name", "Origin"])
-        material_col = _first_matching_column(upload_preview, ["Propagative Material type", "PM Type"])
-        display_cols = [c for c in [origin_col, material_col, selected_column] if c]
-        styled_base = upload_preview[display_cols].copy() if display_cols else upload_preview.copy()
+        styled_base = upload_preview.copy()
         if selected_column and selected_column in styled_base.columns:
             styled_base = styled_base.style.applymap(_compliance_cell_style, subset=[selected_column])
         st.markdown("**Compliance policy table**")

@@ -10,7 +10,7 @@ class DefaultPaths:
         self.root = paths_file.parent.parent
 
     def slippage_data_dir(self) -> Path:
-        return self.root / "slippage_data"
+        return self.root / "development_files" / "slippage_data"
 
     def input_data_dir(self) -> Path:
         return self.root / "data_input"
@@ -23,6 +23,9 @@ class DefaultPaths:
 
     def validation_output_dir(self) -> Path:
         return self.output_dir() / "validation_outputs"
+
+    def prediction_model_compliance_dir(self) -> Path:
+        return self.root / "Prediction_Model_Compliance_Tables"
 
     def tmp_dir(self) -> Path:
         """Root temporary data directory"""

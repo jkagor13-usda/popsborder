@@ -135,8 +135,9 @@ dmypy.json
 .vscode/
 old/
 output/
-slippage_data/
+development_files/slippage_data/
 tmp/
+Prediction_Model_Compliance_Tables/
 slippage_data/uploaded_pis_data.csv
 slippage_data/uploaded_rbs_data.csv
 
