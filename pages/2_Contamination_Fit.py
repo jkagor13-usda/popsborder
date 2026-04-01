@@ -16,6 +16,7 @@ suppress_optional_dependency_warnings()
 
 import pandas as pd
 import streamlit as st
+from typing import Any, Dict, Tuple
 from scipy.stats import betabinom
 
 from gui.models import init_state
@@ -94,14 +95,35 @@ def _next_param_name(store: dict, base: str = "contamination_param_set") -> str:
         idx += 1
     return f"{base}_{idx}"
 
-
-def _save_param_set(name: str, alpha: float, beta: float, theta: float, sample_unit_rate: Optional[float] = None) -> str:
+def _save_param_set_fall_back(name: str, alpha: float, beta: float, theta: float, sample_unit_rate: Optional[float] = None) -> str:
     store = _read_param_store()
+    name = 'FALL_BACK_CONTAMINATION_PARAMETERS'
     if not name:
         name = _next_param_name(store)
     entry = {"alpha": alpha, "beta": beta, "theta": theta}
     if sample_unit_rate is not None:
         entry["sample_unit_contamination_rate"] = sample_unit_rate
+    store[name] = entry
+    _write_param_store(store)
+    st.session_state["last_saved_param_set"] = name
+    return name
+
+def _save_param_set(name: str, res: Dict[Tuple, Any], inputs_by_quantity: Dict[Any,Any]) -> str:
+    store = _read_param_store()
+    if not name:
+        name = _next_param_name(store)
+    entry = {}
+    for key in res.keys():
+        key_str = str(key)
+        entry[key_str] = {
+            "alpha": res[key]['alpha'],
+            "beta": res[key]['beta'],
+            "theta": inputs_by_quantity[key].theta,
+            "mu": res[key]['mu'],
+            "D": res[key]['D'],
+            "rho": res[key]['rho'],
+            "J": inputs_by_quantity[key].B,
+        }
     store[name] = entry
     _write_param_store(store)
     st.session_state["last_saved_param_set"] = name
@@ -262,7 +284,7 @@ with fit_tab:
     st.caption("Fits are based on the PIS action upload and RBS calculator selection in this tab.")
 
     st.subheader("PIS action data upload")
-    rbs_candidates = sorted((Path("tmp") / "consignments").glob("*.csv"))
+    rbs_candidates = sorted((Path("tmp") / "consignments" / "source").glob("*.csv"))
     rbs_source = st.radio(
         "Consignment data source",
         ["Use consignment data from Page 1", "Upload a new consignment data file"],
@@ -347,37 +369,62 @@ with fit_tab:
                 st.error("Upload PIS data and select an RBS file before fitting.")
             else:
                 try:
-                    fit, pis_df, rbs_df = fit_contamination_distribution(paths.pis_data, paths.rbs_data)
-                    # Force theta to infinity per requirement
-                    fit = ClarkeFit(alpha=fit.alpha, beta=fit.beta, theta=float("inf"), raw_result=fit.raw_result)
+                    fit, pis_df, inputs_by_quantity = fit_contamination_distribution(paths.pis_data)
                     slippage_state["fit"] = fit
-                    st.session_state["last_fit_params"] = {
-                        "alpha": fit.alpha,
-                        "beta": fit.beta,
-                        "theta": fit.theta,
-                    }
-                    st.success(
-                        f"Fit succeeded: alpha={fit.alpha:.6f}, beta={fit.beta:.6f}, theta={fit.theta}"
-                    )
+                    slippage_state["inputs_by_quantity"] = inputs_by_quantity
+                    # Build the success message
+                    n = 1000
+                    message_lines = [f"**FIT SUCCESSFUL:**\n\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:\n"]
+                    for (lower, upper), results in fit.items():
+                        alpha = results["alpha"]
+                        beta = results["beta"]
+
+                        if alpha + beta == 0:
+                            print(f'   For quantities ranging in {(lower, upper)}, alpha+beta=0')
+                            print(f'      α={alpha:.4f}, β={beta:.4f}')
+                            print('')
+                            mean = -1
+                            std_dev = -1
+                        else:
+                            mean = n * alpha / (alpha + beta)
+                            variance = (n * alpha * beta * (alpha + beta + n)) / (
+                                        (alpha + beta) ** 2 * (alpha + beta + 1))
+                            std_dev = variance ** 0.5
+
+                        message_lines.append(
+                            f"- For quantities ranging in `{(lower, upper)}`:"
+                            f"    - α = {alpha:.4f}, β = {beta:.4f}\n"
+                            f"    - Mean = {mean:.2f}, SD = {std_dev:.2f} (N = {n})\n"
+                        )
+
+                    final_message = "\n".join(message_lines)
+                    st.success(final_message)
+
+
+
                 except Exception as exc:  # pylint: disable=broad-except
                     st.error(f"Fitting failed: {exc}")
-                    fit = ClarkeFit(
+                    fall_back_fit = ClarkeFit(
                         alpha=FALLBACK_ALPHA,
                         beta=FALLBACK_BETA,
                         theta=FALLBACK_THETA,
                         raw_result={"fallback": True, "error": str(exc)},
                     )
-                    slippage_state["fit"] = fit
+                    slippage_state["fall_back_fit"] = fit
                     st.info("Applied fallback parameters.")
 
-    fit_to_show: Optional[ClarkeFit] = slippage_state.get("fit")
+    fit_to_show: Dict[Tuple,Any] = slippage_state.get("fit")
+    fall_back_fit_to_show: Optional[ClarkeFit] = slippage_state.get("fall_back_fit")
     if fit_to_show:
+        inputs_by_quantity: Dict[Any, Any] = slippage_state.get("inputs_by_quantity")
+
+    elif fall_back_fit_to_show:
         metrics = st.columns(3)
-        metrics[0].metric("Alpha", f"{fit_to_show.alpha:.6f}")
-        metrics[1].metric("Beta", f"{fit_to_show.beta:.6f}")
-        metrics[2].metric("Theta", f"{fit_to_show.theta}")
+        metrics[0].metric("Alpha", f"{fall_back_fit_to_show.alpha:.6f}")
+        metrics[1].metric("Beta", f"{fall_back_fit_to_show.beta:.6f}")
+        metrics[2].metric("Theta", f"{fall_back_fit_to_show.theta}")
         st.altair_chart(
-            _beta_chart(fit_to_show.alpha, fit_to_show.beta, "Beta-Binomial Probability Density Function"),
+            _beta_chart(fall_back_fit_to_show.alpha, fall_back_fit_to_show.beta, "Beta-Binomial Probability Density Function"),
             use_container_width=True,
         )
 
@@ -389,19 +436,30 @@ with fit_tab:
     )
     can_save_fitted_parameters = fit_to_show is not None and bool(name_input.strip())
     if st.button("Save fitted parameters", key="save_fit_params", disabled=not can_save_fitted_parameters):
-        if fit_to_show is None:
-            st.error("No parameters to save. Fit parameters first.")
-        else:
+        if fit_to_show is not None:
             saved_name = _save_param_set(
+                name=name_input or _next_param_name(_read_param_store()),
+                res=fit_to_show,
+                inputs_by_quantity=inputs_by_quantity
+            )
+
+            st.success(
+                f"Saved '{saved_name}' with parameters as above."
+            )
+        elif fall_back_fit_to_show is not None:
+            saved_name = _save_param_set_fall_back(
                 name_input or _next_param_name(_read_param_store()),
-                fit_to_show.alpha,
-                fit_to_show.beta,
-                fit_to_show.theta,
+                fall_back_fit_to_show.alpha,
+                fall_back_fit_to_show.beta,
+                float("inf"),
             )
             st.success(
-                f"Saved '{saved_name}' with alpha={fit_to_show.alpha:.6f}, "
-                f"beta={fit_to_show.beta:.6f}, theta={fit_to_show.theta}"
+                f"Saved '{saved_name}' with alpha={fall_back_fit_to_show.alpha:.6f}, "
+                f"beta={fall_back_fit_to_show.beta:.6f}, theta={fall_back_fit_to_show.theta}"
             )
+        else:
+            st.error("No parameters to save. Fit parameters first.")
+
 
     st.caption("*Clark, R.G., Barnes, B. & Parsa, M. Clustered and Unclustered Group Testing for Biosecurity. JABES 29, 193–211 (2024). https://doi.org/10.1007/s13253-023-00566-x")
 
