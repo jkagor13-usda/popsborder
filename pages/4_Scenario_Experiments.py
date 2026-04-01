@@ -293,35 +293,54 @@ with tabs[2]:
             else []
         )
         param_snapshot = param_sets.get(param_choice, {})
-        scenario_row = {col: "" for col in template_cols} if template_cols else {}
-        scenario_row.update(
-            {
-                "name": scenario_label,
-                "consignment/input_file/file_name": consignment_choice.name,
-                "inspection/compliance_table/file_name": compliance_choice.name,
-                "consignment/generation_method": "RBS",
-                "consignment/input_file/file_type": "RBS",
-                "contamination/contamination_unit": "plant",
-                "contamination/contamination_rate/distribution": "beta-binomial",
-                "contamination/contamination_rate/value": "",
-                "contamination/contamination_rate/beta_binomial_parameters/default/alpha": param_snapshot.get(
-                    "alpha"
-                ),
-                "contamination/contamination_rate/beta_binomial_parameters/default/beta": param_snapshot.get(
-                    "beta"
-                ),
-                "contamination/contamination_rate/beta_binomial_parameters/default/theta": param_snapshot.get(
-                    "theta"
-                ),
-                "contamination/arrangement": "random",
-                "inspection/sample_strategy": "rbs",
-                "inspection/proportion/value": 0.02,
-                "inspection/unit": "sample_units",
-                "inspection/min_boxes": 0,
-                "inspection/selection_strategy": "random",
-                "inspection/within_box_proportion": 1,
-            }
-        )
+        scenario_row = {
+            "name": scenario_label,
+            "consignment/input_file/file_name": consignment_choice.name,
+            "inspection/compliance_table/file_name": compliance_choice.name,
+            "consignment/generation_method": "RBS",
+            "consignment/input_file/file_type": "RBS",
+            "contamination/contamination_unit": "plant",
+            "contamination/contamination_rate/distribution": "beta-binomial",
+            "contamination/contamination_rate/value": "",
+            "contamination/arrangement": "random",
+            "inspection/sample_strategy": "rbs",
+            "inspection/proportion/value": 0.02,
+            "inspection/unit": "sample_units",
+            "inspection/min_boxes": 0,
+            "inspection/selection_strategy": "random",
+            "inspection/within_box_proportion": 1,
+        }
+
+        if (
+                isinstance(param_snapshot, dict)
+                and param_snapshot
+                and all(isinstance(v, dict) for v in param_snapshot.values())
+        ):
+            for key, pdict in param_snapshot.items():
+                scenario_row[
+                    f"contamination/contamination_rate/beta_binomial_parameters/{key}/alpha"] = pdict.get(
+                    'alpha')
+                scenario_row[
+                    f"contamination/contamination_rate/beta_binomial_parameters/{key}/beta"] = pdict.get('beta')
+                scenario_row[f"contamination/contamination_rate/beta_binomial_parameters/{key}/mu"] = pdict.get(
+                    'mu')
+                scenario_row[
+                    f"contamination/contamination_rate/beta_binomial_parameters/{key}/rho"] = pdict.get('rho')
+                scenario_row[f"contamination/contamination_rate/beta_binomial_parameters/{key}/D"] = pdict.get(
+                    'D')
+                scenario_row[
+                    f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = pdict.get(
+                    'theta')
+                scenario_row[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = pdict.get(
+                    'J')
+        else:
+            scenario_row[
+                "contamination/contamination_rate/beta_binomial_parameters/default/alpha"] = param_snapshot.get("alpha")
+            scenario_row["contamination/contamination_rate/beta_binomial_parameters/default/beta"] = param_snapshot.get(
+                "beta")
+            scenario_row[
+                "contamination/contamination_rate/beta_binomial_parameters/default/theta"] = param_snapshot.get("theta")
+
         # If a scenario with this label exists, replace it; otherwise append
         replaced = False
         for idx, row in enumerate(state["experiment_rows"]):
