@@ -43,6 +43,11 @@ def _consignment_dir() -> Path:
     base.mkdir(parents=True, exist_ok=True)
     return base
 
+def _consignment_source_dir() -> Path:
+    temp_dir = _consignment_dir() / "source"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    return temp_dir
+
 
 def _consignment_paths(base_name: Optional[str] = None) -> dict[str, Path]:
     base = _consignment_dir()
@@ -96,7 +101,7 @@ def _save_rbs_to_tmp(
             dest_rbs = _unique_path(paths_map["uploaded_rbs"])
             dest_rbs.parent.mkdir(parents=True, exist_ok=True)
             if pending_upload_rbs is not None:
-                seed_path = _consignment_dir() / f"{base_name}_seed_rbs.csv"
+                seed_path = _consignment_source_dir() / f"{base_name}_seed_rbs.csv"
                 pending_upload_rbs.to_csv(seed_path, index=False)
                 state["pending_rbs_upload"] = None
             elif current_rbs and Path(current_rbs).exists():
@@ -263,12 +268,12 @@ render_page_intro(
     "Generated outputs are written to <i>tmp/consignments</i>."
 )
 
-saved_tab, ingest_tab, manual_tab, producer_grouping_tab = st.tabs(
+saved_tab, ingest_tab, producer_grouping_tab, manual_tab= st.tabs(
     [
         "Saved consignments",
         "Generate consignments based on data",
-        "Define consignments manually",
         "Producer grouping",
+        "Define consignments manually",
     ]
 )
 
@@ -278,8 +283,8 @@ with ingest_tab:
     rbs_df: Optional[pd.DataFrame] = state.get("pending_rbs_upload")
 
     render_labeled_help(
-        "Upload actual consignment data",
-        "Upload the RBS calculator CSV that will be saved directly or used as the seed input for synthetic consignment generation.",
+        "Upload consignment data",
+        "Upload data (as .csv file) that will be saved directly or used as input for synthetic consignment generation.",
     )
     rbs_upload = st.file_uploader(
         "RBS calculator CSV",
@@ -331,7 +336,7 @@ with ingest_tab:
             totals_cards[1].metric("Total sampling units", f"{int(rbs_df['TOTAL_SAMPLING_UNITS'].sum()):,}")
         st.info("Save or generate to view rich plots in the Saved consignments tab.")
     else:
-        st.info("Upload RBS calculator data here.")
+        st.info("Upload .csv data file here.")
 
     render_labeled_help(
         "Consignment source for downstream analysis",

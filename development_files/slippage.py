@@ -57,7 +57,7 @@ def main():
 
     ### PIS Inspection/RBS Calculator Data
     pis_data_updated = val_data_path / 'train.csv'
-    pis_data_updated = shared_ppq_data_path / 'updated_pis_data.csv'  # PIS data
+    #pis_data_updated = shared_ppq_data_path / 'updated_pis_data.csv'  # PIS data
     # pis_data_updated = data_dir / "TEST_PIS_SampleQuantity.csv"       # Test data
     # pis_data_updated = data_dir / "Synthetic_PIS_SampleQuantity_test.csv"       # Test data
 

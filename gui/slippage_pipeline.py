@@ -29,6 +29,7 @@ from popsborder.outputs import save_scenario_result_to_pandas
 from popsborder.scenarios import run_scenarios
 from slippage_model_utils.clarke_model_support_functions import gen_clarke_model_inputs
 from slippage_model_utils.r_script_wrapper import run_clarke_bb_group_model
+from typing import Any, Dict, Tuple
 
 
 # Default config columns to persist into results
@@ -234,95 +235,39 @@ def _infer_num_consignments(consignment_path: Optional[Path]) -> int:
 
 def fit_contamination_distribution(
     pis_data_path: Path,
-    rbs_data_path: Path,
-) -> Tuple[ClarkeFit, pd.DataFrame, pd.DataFrame]:
+) -> Tuple[Dict[Tuple,Any], pd.DataFrame, Dict[Any, Any]]:
     """Fit contamination parameters using the Clarke beta-binomial model."""
     if pis_data_path is None or not Path(pis_data_path).exists():
         raise FileNotFoundError("PIS action data not provided. Upload on Page 2 - Contamination Fit.")
-    if rbs_data_path is None or not Path(rbs_data_path).exists():
-        raise FileNotFoundError("RBS calculator data not provided. Upload on Page 1 or Page 2.")
     pis_df = pd.read_csv(pis_data_path)
     if "action" not in pis_df.columns:
-        pis_df["action"] = 0
-    rbs_df = pd.read_csv(rbs_data_path)
-    # Ensure we have overlapping inspection IDs; if INSPECTION_ID is missing/empty, fall back to INSPECTION_NUMBER.
-    for df in (pis_df, rbs_df):
-        if "INSPECTION_ID" not in df.columns and "INSPECTION_NUMBER" in df.columns:
-            df["INSPECTION_ID"] = df["INSPECTION_NUMBER"]
-        elif "INSPECTION_ID" in df.columns and "INSPECTION_NUMBER" in df.columns:
-            df["INSPECTION_ID"] = df["INSPECTION_ID"].fillna(df["INSPECTION_NUMBER"])
-
-    if "INSPECTION_ID" not in pis_df.columns or "INSPECTION_ID" not in rbs_df.columns:
-        raise ValueError("PIS/RBS files must include INSPECTION_ID or INSPECTION_NUMBER to align for fitting.")
-    shared_ids = set(pis_df["INSPECTION_ID"]).intersection(set(rbs_df["INSPECTION_ID"]))
-    if not shared_ids:
-        raise ValueError(
-            "No shared inspection IDs between PIS and RBS files. "
-            "Ensure both files reference the same consignments."
-        )
+        raise ValueError("Data files must include binary 'action' column to align for fitting.")
     try:
         inputs_by_quantity = gen_clarke_model_inputs(pis_df)
     except StopIteration as exc:
         raise ValueError(
-            "Fitting failed: no compatible scenarios found between PIS and RBS data. "
-            "Verify that shared INSPECTION_NUMBER rows contain sampling/plant quantities."
+            "Fitting failed: check the uploaded data. "
+            "Verify required columns are there."
         ) from exc
 
     if not inputs_by_quantity:
-        raise ValueError("Fitting failed: no frequency counts available after aligning PIS and RBS data.")
+        raise ValueError("Fitting failed: generating of Clark inputs has failed.  Check input data.")
 
-    theta_val = float("inf")
-    results_by_quantity: Dict[str, Any] = {}
-    weighted_alpha = 0.0
-    weighted_beta = 0.0
-    total_weight = 0.0
+    res = {}
+    print(f'\nNow Executing Clarke Model Based on Quantities')
+    for (lower, upper), inputs in inputs_by_quantity.items():
+        print(f'   Calculating for Quantity Range:  {(lower, upper)}')
+        res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
+                                                        inputs.b,
+                                                        inputs.B,
+                                                        inputs.Nbar,
+                                                        inputs.freq,
+                                                        inputs.theta,
+                                                        inputs.R,
+                                                        inputs.start_val,
+                                                        inputs.se)
 
-    for quantity_range, inputs in inputs_by_quantity.items():
-        if not inputs.freq or sum(inputs.freq) <= 0:
-            continue
-
-        start_vals = [float(v) for v in (inputs.start_val or [])]
-        if not start_vals or all(abs(v) < 1e-9 for v in start_vals):
-            start_vals = [0.1, 0.1]
-
-        try:
-            result = run_clarke_bb_group_model(
-                inputs.ty,
-                int(round(inputs.b)),
-                int(round(inputs.B)),
-                int(round(inputs.Nbar)),
-                inputs.freq,
-                theta_val,
-                inputs.R,
-                start_vals,
-                inputs.se,
-            )
-        except subprocess.CalledProcessError as exc:
-            stderr_preview = (exc.stderr or "")[:500].replace("\n", " | ")
-            stdout_preview = (exc.output or "")[:500].replace("\n", " | ")
-            raise ValueError(
-                f"Fitting failed in R (returncode {exc.returncode}). "
-                f"stdout: {stdout_preview} stderr: {stderr_preview}"
-            ) from exc
-
-        alpha_val = max(float(result.get("alpha", 0) or 0), 1e-3)
-        beta_val = max(float(result.get("beta", 0) or 0), 1e-3)
-        weight = float(sum(inputs.freq))
-        weighted_alpha += alpha_val * weight
-        weighted_beta += beta_val * weight
-        total_weight += weight
-        results_by_quantity[str(quantity_range)] = result
-
-    if total_weight <= 0:
-        raise ValueError("Fitting failed: no usable Clarke model results were produced.")
-
-    fit = ClarkeFit(
-        alpha=weighted_alpha / total_weight,
-        beta=weighted_beta / total_weight,
-        theta=theta_val,
-        raw_result=results_by_quantity,
-    )
-    return fit, pis_df, rbs_df
+    return res, pis_df, inputs_by_quantity
 
 
 

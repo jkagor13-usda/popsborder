@@ -16,6 +16,7 @@ suppress_optional_dependency_warnings()
 
 import pandas as pd
 import streamlit as st
+from typing import Any, Dict, Tuple
 from scipy.stats import betabinom
 
 from gui.models import init_state
@@ -94,14 +95,35 @@ def _next_param_name(store: dict, base: str = "contamination_param_set") -> str:
         idx += 1
     return f"{base}_{idx}"
 
-
-def _save_param_set(name: str, alpha: float, beta: float, theta: float, sample_unit_rate: Optional[float] = None) -> str:
+def _save_param_set_fall_back(name: str, alpha: float, beta: float, theta: float, sample_unit_rate: Optional[float] = None) -> str:
     store = _read_param_store()
+    name = 'FALL_BACK_CONTAMINATION_PARAMETERS'
     if not name:
         name = _next_param_name(store)
     entry = {"alpha": alpha, "beta": beta, "theta": theta}
     if sample_unit_rate is not None:
         entry["sample_unit_contamination_rate"] = sample_unit_rate
+    store[name] = entry
+    _write_param_store(store)
+    st.session_state["last_saved_param_set"] = name
+    return name
+
+def _save_param_set(name: str, res: Dict[Tuple, Any], inputs_by_quantity: Dict[Any,Any]) -> str:
+    store = _read_param_store()
+    if not name:
+        name = _next_param_name(store)
+    entry = {}
+    for key in res.keys():
+        key_str = str(key)
+        entry[key_str] = {
+            "alpha": res[key]['alpha'],
+            "beta": res[key]['beta'],
+            "theta": inputs_by_quantity[key].theta,
+            "mu": res[key]['mu'],
+            "D": res[key]['D'],
+            "rho": res[key]['rho'],
+            "J": inputs_by_quantity[key].B,
+        }
     store[name] = entry
     _write_param_store(store)
     st.session_state["last_saved_param_set"] = name
@@ -231,6 +253,24 @@ def transform_concentration_to_input(
     return float(((np.log(concentration) - log_min) / (log_max - log_min)) * 100.0)
 
 
+
+def clean_range_key(key):
+    k = str(key).replace("(", "").replace(")", "").replace(" ", "")
+    parts = k.split(",")
+    cleaned_parts = []
+    for p in parts:
+        try:
+            num = float(p)
+            if num.is_integer():
+                cleaned_parts.append(str(int(num)))
+            else:
+                cleaned_parts.append(str(num))
+        except ValueError:
+            cleaned_parts.append(p)
+    return "-".join(cleaned_parts)
+
+
+
 # ---- Page setup ----
 init_state()
 slippage_state = get_slippage_state()
@@ -262,7 +302,7 @@ with fit_tab:
     st.caption("Fits are based on the PIS action upload and RBS calculator selection in this tab.")
 
     st.subheader("PIS action data upload")
-    rbs_candidates = sorted((Path("tmp") / "consignments").glob("*.csv"))
+    rbs_candidates = sorted((Path("tmp") / "consignments" / "source").glob("*.csv"))
     rbs_source = st.radio(
         "Consignment data source",
         ["Use consignment data from Page 1", "Upload a new consignment data file"],
@@ -347,37 +387,62 @@ with fit_tab:
                 st.error("Upload PIS data and select an RBS file before fitting.")
             else:
                 try:
-                    fit, pis_df, rbs_df = fit_contamination_distribution(paths.pis_data, paths.rbs_data)
-                    # Force theta to infinity per requirement
-                    fit = ClarkeFit(alpha=fit.alpha, beta=fit.beta, theta=float("inf"), raw_result=fit.raw_result)
+                    fit, pis_df, inputs_by_quantity = fit_contamination_distribution(paths.pis_data)
                     slippage_state["fit"] = fit
-                    st.session_state["last_fit_params"] = {
-                        "alpha": fit.alpha,
-                        "beta": fit.beta,
-                        "theta": fit.theta,
-                    }
-                    st.success(
-                        f"Fit succeeded: alpha={fit.alpha:.6f}, beta={fit.beta:.6f}, theta={fit.theta}"
-                    )
+                    slippage_state["inputs_by_quantity"] = inputs_by_quantity
+                    # Build the success message
+                    n = 1000
+                    message_lines = [f"**FIT SUCCESSFUL:**\n\nFINAL CLARK MODEL BETA-BINOMIAL PARAMETERS:\n"]
+                    for (lower, upper), results in fit.items():
+                        alpha = results["alpha"]
+                        beta = results["beta"]
+
+                        if alpha + beta == 0:
+                            print(f'   For quantities ranging in {(lower, upper)}, alpha+beta=0')
+                            print(f'      α={alpha:.4f}, β={beta:.4f}')
+                            print('')
+                            mean = -1
+                            std_dev = -1
+                        else:
+                            mean = n * alpha / (alpha + beta)
+                            variance = (n * alpha * beta * (alpha + beta + n)) / (
+                                        (alpha + beta) ** 2 * (alpha + beta + 1))
+                            std_dev = variance ** 0.5
+
+                        message_lines.append(
+                            f"For quantities ranging in `{(lower, upper)}`:\n"
+                            f"    α = {alpha:.4f}, β = {beta:.4f}\n"
+                            f"    Mean = {mean:.2f}, SD = {std_dev:.2f} (N = {n})\n"
+                        )
+
+                    final_message = "\n".join(message_lines)
+                    st.success(final_message)
+
+
+
                 except Exception as exc:  # pylint: disable=broad-except
                     st.error(f"Fitting failed: {exc}")
-                    fit = ClarkeFit(
+                    fall_back_fit = ClarkeFit(
                         alpha=FALLBACK_ALPHA,
                         beta=FALLBACK_BETA,
                         theta=FALLBACK_THETA,
                         raw_result={"fallback": True, "error": str(exc)},
                     )
-                    slippage_state["fit"] = fit
+                    slippage_state["fall_back_fit"] = fit
                     st.info("Applied fallback parameters.")
 
-    fit_to_show: Optional[ClarkeFit] = slippage_state.get("fit")
+    fit_to_show: Dict[Tuple,Any] = slippage_state.get("fit")
+    fall_back_fit_to_show: Optional[ClarkeFit] = slippage_state.get("fall_back_fit")
     if fit_to_show:
+        inputs_by_quantity: Dict[Any, Any] = slippage_state.get("inputs_by_quantity")
+
+    elif fall_back_fit_to_show:
         metrics = st.columns(3)
-        metrics[0].metric("Alpha", f"{fit_to_show.alpha:.6f}")
-        metrics[1].metric("Beta", f"{fit_to_show.beta:.6f}")
-        metrics[2].metric("Theta", f"{fit_to_show.theta}")
+        metrics[0].metric("Alpha", f"{fall_back_fit_to_show.alpha:.6f}")
+        metrics[1].metric("Beta", f"{fall_back_fit_to_show.beta:.6f}")
+        metrics[2].metric("Theta", f"{fall_back_fit_to_show.theta}")
         st.altair_chart(
-            _beta_chart(fit_to_show.alpha, fit_to_show.beta, "Beta-Binomial Probability Density Function"),
+            _beta_chart(fall_back_fit_to_show.alpha, fall_back_fit_to_show.beta, "Beta-Binomial Probability Density Function"),
             use_container_width=True,
         )
 
@@ -389,19 +454,30 @@ with fit_tab:
     )
     can_save_fitted_parameters = fit_to_show is not None and bool(name_input.strip())
     if st.button("Save fitted parameters", key="save_fit_params", disabled=not can_save_fitted_parameters):
-        if fit_to_show is None:
-            st.error("No parameters to save. Fit parameters first.")
-        else:
+        if fit_to_show is not None:
             saved_name = _save_param_set(
+                name=name_input or _next_param_name(_read_param_store()),
+                res=fit_to_show,
+                inputs_by_quantity=inputs_by_quantity
+            )
+
+            st.success(
+                f"Saved '{saved_name}' with parameters as above."
+            )
+        elif fall_back_fit_to_show is not None:
+            saved_name = _save_param_set_fall_back(
                 name_input or _next_param_name(_read_param_store()),
-                fit_to_show.alpha,
-                fit_to_show.beta,
-                fit_to_show.theta,
+                fall_back_fit_to_show.alpha,
+                fall_back_fit_to_show.beta,
+                float("inf"),
             )
             st.success(
-                f"Saved '{saved_name}' with alpha={fit_to_show.alpha:.6f}, "
-                f"beta={fit_to_show.beta:.6f}, theta={fit_to_show.theta}"
+                f"Saved '{saved_name}' with alpha={fall_back_fit_to_show.alpha:.6f}, "
+                f"beta={fall_back_fit_to_show.beta:.6f}, theta={fall_back_fit_to_show.theta}"
             )
+        else:
+            st.error("No parameters to save. Fit parameters first.")
+
 
     st.caption("*Clark, R.G., Barnes, B. & Parsa, M. Clustered and Unclustered Group Testing for Biosecurity. JABES 29, 193–211 (2024). https://doi.org/10.1007/s13253-023-00566-x")
 
@@ -644,28 +720,68 @@ with saved_tab:
             default_idx = saved_keys.index(last_saved)
         sel = st.selectbox("Select a saved set", saved_keys, index=default_idx)
         params = saved.get(sel, {})
-        if params:
+
+        if (
+                isinstance(params, dict)
+                and params
+                and all(isinstance(v, dict) for v in params.values())
+        ):
+            # MULTI-RANGE CASE
+            st.markdown("### Parameter Ranges Summary")
+            for key, pdict in params.items():
+                cleaned_key = clean_range_key(key)
+                alpha = float(pdict.get("alpha", FALLBACK_ALPHA))
+                beta = float(pdict.get("beta", FALLBACK_BETA))
+                theta = pdict.get("theta", FALLBACK_THETA)
+                sample_unit_rate = pdict.get("sample_unit_contamination_rate")
+                render_labeled_help(
+                    f"Quantity Range: {cleaned_key}",
+                    "Beta binomial parameters for a risk unit if the quantity of plants is within this range.",
+                )
+                #st.markdown(f"### Quantity Range: `{cleaned_key}`")
+                summary_cols = st.columns(2)
+                with summary_cols[0]:
+                    render_metric_card("Alpha", f"{alpha:.6f}", "Alpha parameter of the beta-binomial distribution.")
+                with summary_cols[1]:
+                    render_metric_card("Beta", f"{beta:.6f}", "Beta parameter of the beta-binomial distribution.")
+                # with summary_cols[2]:
+                #     render_metric_card("Theta", f"{theta}", "Third parameter of the contamination model.")
+                # with summary_cols[3]:
+                #     render_metric_card(
+                #         "Plant unit contamination rate",
+                #         f"{sample_unit_rate}" if sample_unit_rate is not None else "n/a",
+                #         "Saved plant unit contamination rate for this range.",
+                #     )
+                if alpha+beta != 0:
+                    st.altair_chart(
+                        _beta_chart(alpha, beta, f"Beta-binomial PDF for range {cleaned_key}"),
+                        use_container_width=True,
+                    )
+                st.markdown("---")
+            st.info("Sets are stored in tmp/contamination/contamination_parameter_sets.json.")
+        elif params:
             alpha = float(params.get("alpha", FALLBACK_ALPHA))
             beta = float(params.get("beta", FALLBACK_BETA))
             theta = params.get("theta", FALLBACK_THETA)
             sample_unit_rate = params.get("sample_unit_contamination_rate")
-            summary_cols = st.columns(4)
+            summary_cols = st.columns(2)
             with summary_cols[0]:
                 render_metric_card("Alpha", f"{alpha:.6f}", "Alpha parameter of the beta-binomial distribution.")
             with summary_cols[1]:
                 render_metric_card("Beta", f"{beta:.6f}", "Beta parameter of the beta-binomial distribution.")
-            with summary_cols[2]:
-                render_metric_card("Theta", f"{theta}", "Third parameter of the contamination model.")
-            with summary_cols[3]:
-                render_metric_card(
-                    "Plant unit contamination rate",
-                    f"{sample_unit_rate}" if sample_unit_rate is not None else "n/a",
-                    "Saved plant unit contamination rate when the parameter set was created from the rate-based workflow.",
+            # with summary_cols[2]:
+            #     render_metric_card("Theta", f"{theta}", "Third parameter of the contamination model.")
+            # with summary_cols[3]:
+            #     render_metric_card(
+            #         "Plant unit contamination rate",
+            #         f"{sample_unit_rate}" if sample_unit_rate is not None else "n/a",
+            #         "Saved plant unit contamination rate when the parameter set was created from the rate-based workflow.",
+            #     )
+            if alpha + beta != 0:
+                st.altair_chart(
+                    _beta_chart(alpha, beta, f"Beta-binomial PDF for {sel}"),
+                    use_container_width=True,
                 )
-            st.altair_chart(
-                _beta_chart(alpha, beta, f"Beta-binomial PDF for {sel}"),
-                use_container_width=True,
-            )
             st.info("Sets are stored in tmp/contamination/contamination_parameter_sets.json.")
 
 # ---- Footer ----
