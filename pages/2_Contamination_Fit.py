@@ -253,6 +253,24 @@ def transform_concentration_to_input(
     return float(((np.log(concentration) - log_min) / (log_max - log_min)) * 100.0)
 
 
+
+def clean_range_key(key):
+    k = str(key).replace("(", "").replace(")", "").replace(" ", "")
+    parts = k.split(",")
+    cleaned_parts = []
+    for p in parts:
+        try:
+            num = float(p)
+            if num.is_integer():
+                cleaned_parts.append(str(int(num)))
+            else:
+                cleaned_parts.append(str(num))
+        except ValueError:
+            cleaned_parts.append(p)
+    return "-".join(cleaned_parts)
+
+
+
 # ---- Page setup ----
 init_state()
 slippage_state = get_slippage_state()
@@ -374,7 +392,7 @@ with fit_tab:
                     slippage_state["inputs_by_quantity"] = inputs_by_quantity
                     # Build the success message
                     n = 1000
-                    message_lines = [f"**FIT SUCCESSFUL:**\n\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:\n"]
+                    message_lines = [f"**FIT SUCCESSFUL:**\n\nFINAL CLARK MODEL BETA-BINOMIAL PARAMETERS:\n"]
                     for (lower, upper), results in fit.items():
                         alpha = results["alpha"]
                         beta = results["beta"]
@@ -392,9 +410,9 @@ with fit_tab:
                             std_dev = variance ** 0.5
 
                         message_lines.append(
-                            f"- For quantities ranging in `{(lower, upper)}`:"
-                            f"    - α = {alpha:.4f}, β = {beta:.4f}\n"
-                            f"    - Mean = {mean:.2f}, SD = {std_dev:.2f} (N = {n})\n"
+                            f"For quantities ranging in `{(lower, upper)}`:\n"
+                            f"    α = {alpha:.4f}, β = {beta:.4f}\n"
+                            f"    Mean = {mean:.2f}, SD = {std_dev:.2f} (N = {n})\n"
                         )
 
                     final_message = "\n".join(message_lines)
@@ -702,28 +720,68 @@ with saved_tab:
             default_idx = saved_keys.index(last_saved)
         sel = st.selectbox("Select a saved set", saved_keys, index=default_idx)
         params = saved.get(sel, {})
-        if params:
+
+        if (
+                isinstance(params, dict)
+                and params
+                and all(isinstance(v, dict) for v in params.values())
+        ):
+            # MULTI-RANGE CASE
+            st.markdown("### Parameter Ranges Summary")
+            for key, pdict in params.items():
+                cleaned_key = clean_range_key(key)
+                alpha = float(pdict.get("alpha", FALLBACK_ALPHA))
+                beta = float(pdict.get("beta", FALLBACK_BETA))
+                theta = pdict.get("theta", FALLBACK_THETA)
+                sample_unit_rate = pdict.get("sample_unit_contamination_rate")
+                render_labeled_help(
+                    f"Quantity Range: {cleaned_key}",
+                    "Beta binomial parameters for a risk unit if the quantity of plants is within this range.",
+                )
+                #st.markdown(f"### Quantity Range: `{cleaned_key}`")
+                summary_cols = st.columns(2)
+                with summary_cols[0]:
+                    render_metric_card("Alpha", f"{alpha:.6f}", "Alpha parameter of the beta-binomial distribution.")
+                with summary_cols[1]:
+                    render_metric_card("Beta", f"{beta:.6f}", "Beta parameter of the beta-binomial distribution.")
+                # with summary_cols[2]:
+                #     render_metric_card("Theta", f"{theta}", "Third parameter of the contamination model.")
+                # with summary_cols[3]:
+                #     render_metric_card(
+                #         "Plant unit contamination rate",
+                #         f"{sample_unit_rate}" if sample_unit_rate is not None else "n/a",
+                #         "Saved plant unit contamination rate for this range.",
+                #     )
+                if alpha+beta != 0:
+                    st.altair_chart(
+                        _beta_chart(alpha, beta, f"Beta-binomial PDF for range {cleaned_key}"),
+                        use_container_width=True,
+                    )
+                st.markdown("---")
+            st.info("Sets are stored in tmp/contamination/contamination_parameter_sets.json.")
+        elif params:
             alpha = float(params.get("alpha", FALLBACK_ALPHA))
             beta = float(params.get("beta", FALLBACK_BETA))
             theta = params.get("theta", FALLBACK_THETA)
             sample_unit_rate = params.get("sample_unit_contamination_rate")
-            summary_cols = st.columns(4)
+            summary_cols = st.columns(2)
             with summary_cols[0]:
                 render_metric_card("Alpha", f"{alpha:.6f}", "Alpha parameter of the beta-binomial distribution.")
             with summary_cols[1]:
                 render_metric_card("Beta", f"{beta:.6f}", "Beta parameter of the beta-binomial distribution.")
-            with summary_cols[2]:
-                render_metric_card("Theta", f"{theta}", "Third parameter of the contamination model.")
-            with summary_cols[3]:
-                render_metric_card(
-                    "Plant unit contamination rate",
-                    f"{sample_unit_rate}" if sample_unit_rate is not None else "n/a",
-                    "Saved plant unit contamination rate when the parameter set was created from the rate-based workflow.",
+            # with summary_cols[2]:
+            #     render_metric_card("Theta", f"{theta}", "Third parameter of the contamination model.")
+            # with summary_cols[3]:
+            #     render_metric_card(
+            #         "Plant unit contamination rate",
+            #         f"{sample_unit_rate}" if sample_unit_rate is not None else "n/a",
+            #         "Saved plant unit contamination rate when the parameter set was created from the rate-based workflow.",
+            #     )
+            if alpha + beta != 0:
+                st.altair_chart(
+                    _beta_chart(alpha, beta, f"Beta-binomial PDF for {sel}"),
+                    use_container_width=True,
                 )
-            st.altair_chart(
-                _beta_chart(alpha, beta, f"Beta-binomial PDF for {sel}"),
-                use_container_width=True,
-            )
             st.info("Sets are stored in tmp/contamination/contamination_parameter_sets.json.")
 
 # ---- Footer ----
