@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import copy
-import json
 import pickle
-import subprocess
 from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
 from .runtime_warnings import suppress_optional_dependency_warnings
 
 suppress_optional_dependency_warnings()
@@ -23,13 +20,11 @@ from popsborder.inputs import (
     load_compliance_lookup_csv,
     load_configuration,
     load_scenario_table,
-    text_to_value,
 )
 from popsborder.outputs import save_scenario_result_to_pandas
 from popsborder.scenarios import run_scenarios
 from slippage_model_utils.clarke_model_support_functions import gen_clarke_model_inputs
 from slippage_model_utils.r_script_wrapper import run_clarke_bb_group_model
-from typing import Any, Dict, Tuple
 
 
 # Default config columns to persist into results
@@ -86,10 +81,8 @@ class SyntheticOptions:
 
 
 DEFAULT_DATA_DIR = Path("data_input")
-CONS_FILENAME = "consignment_uploaded_rbs_data.csv"
 COMPLIANCE_FILENAME = "compliance_table.csv"
 CONFIG_FILENAME = "config.yml"
-SCENARIO_FILENAME = "scenario_table.csv"
 
 
 
