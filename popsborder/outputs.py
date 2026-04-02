@@ -128,17 +128,16 @@ import operator
 import shutil
 import types
 import weakref
-from collections.abc import MutableMapping
 from collections import Counter
+from collections.abc import MutableMapping
 from functools import reduce
-import pandas as pd
-import numpy as np
-import os
 from pathlib import Path
-from typing import Optional, Dict, List, Any, Union
 from types import SimpleNamespace
+from typing import Any, Dict, List, Optional
 
-from .inspections import count_contaminated_boxes
+import numpy as np
+import pandas as pd
+
 from .consignments import Consignment
 
 
@@ -848,13 +847,21 @@ class PISSimData:
         'Origin',
         'Pathway',
         'Port',
-        'Total Number of Risk Units',  # Fixed comma
+        'Total Number of Risk Units',
         'Total Number of Sample Units',
         'Total Units (Plants)',
-        'Total Units Contaminated',
-        'Total Number of Inspection Units Contaminated',
-        'Total Number Contaminated in Each Inspection Unit',
+        'Total Units Infested',
+        'Total Number of Risk Units Infested',
+        'Total Number of Inspection Units Infested',
+        'Total Units Infested in Each Inspection Unit',
     ]
+
+    OUTPUT_FILENAMES = {
+        "consignments": "synthetic_consignment_data.csv",
+        "pis": "synthetic_pis_data.csv",
+        "rbs": "synthetic_rbs_calc_data.csv",
+        "commodity_line_results": "synthetic_commodity_line_results_data.csv",
+    }
 
     def __init__(self, output_dir_rep: Optional[Path] = None, config: dict = None):
         """
@@ -897,17 +904,40 @@ class PISSimData:
     def __repr__(self) -> str:
         """Provide useful string representation."""
         return (
-            f"SimData(records_collected={self.commodity_line_records.shape[0] + len(self.rbs_records) + len(self.consignment_records)}, "
+            f"SimData(records_collected={self._commodity_line_record_count() + len(self.rbs_records) + len(self.consignment_records)}, "
             f"current_id={self.current_id}, "
             f"output_dir={self.output_dir_rep})"
         )
 
+    def _commodity_line_record_count(self) -> int:
+        if self.commodity_line_results is not None:
+            return len(self.commodity_line_results)
+        return len(self.inspection_unit_detection_records)
+
+    @staticmethod
+    def _has_rows(df: Optional[pd.DataFrame]) -> bool:
+        return df is not None and not df.empty
+
+    @classmethod
+    def _output_paths(cls, output_path: Path) -> Dict[str, Path]:
+        return {key: output_path / filename for key, filename in cls.OUTPUT_FILENAMES.items()}
+
+    @staticmethod
+    def _write_dataframe_to_csv(df: Optional[pd.DataFrame], destination: Path, empty_message: str) -> None:
+        if df is not None and not df.empty:
+            df.to_csv(destination, index=False)
+        else:
+            print(empty_message)
 
     def clear_all(self) -> None:
         """Clear all DataFrames and reset ID counter."""
         self.pis_synthetic_data = pd.DataFrame(columns=self.PIS_COLUMNS)
         self.rbs_calc_synthetic_data = pd.DataFrame(columns=self.RBS_COLUMNS)
         self.consignments = pd.DataFrame(columns=self.CONSIGNMENT_COLUMNS)
+        self.commodity_line_results = pd.DataFrame()
+        self.rbs_records = []
+        self.consignment_records = []
+        self.inspection_unit_detection_records = []
         self.current_id = 0
 
 
@@ -938,34 +968,30 @@ class PISSimData:
         # Ensure output directory exists
         output_path = Path(self.output_dir_rep)
         output_path.mkdir(parents=True, exist_ok=True)
-
-        # Define file paths
-        consignment_file = output_path / "synthetic_consignment_data.csv"
-        pis_file = output_path / "synthetic_pis_data.csv"
-        rbs_file = output_path / "synthetic_rbs_calc_data.csv"
-        commodity_line_results_file = output_path / "synthetic_commodity_line_results_data.csv"
+        output_files = self._output_paths(output_path)
 
         # Write DataFrames to CSV
         try:
-            if self.consignments is not None and not self.consignments.empty:
-                self.consignments.to_csv(consignment_file, index=False)
-            else:
-                print(f"Warning: No consignment data to write")
-
-            if self.pis_synthetic_data is not None and not self.pis_synthetic_data.empty:
-                self.pis_synthetic_data.to_csv(pis_file, index=False)
-            else:
-                print(f"Warning: No PIS data to write")
-
-            if self.rbs_calc_synthetic_data is not None and not self.rbs_calc_synthetic_data.empty:
-                self.rbs_calc_synthetic_data.to_csv(rbs_file, index=False)
-            else:
-                print(f"Warning: No RBS data to write")
-
-            if self.commodity_line_results is not None and not self.commodity_line_results.empty:
-                self.commodity_line_results.to_csv(commodity_line_results_file, index=False)
-            else:
-                print(f"Warning: No consignment data to write")
+            self._write_dataframe_to_csv(
+                self.consignments,
+                output_files["consignments"],
+                "Warning: No consignment data to write",
+            )
+            self._write_dataframe_to_csv(
+                self.pis_synthetic_data,
+                output_files["pis"],
+                "Warning: No PIS data to write",
+            )
+            self._write_dataframe_to_csv(
+                self.rbs_calc_synthetic_data,
+                output_files["rbs"],
+                "Warning: No RBS data to write",
+            )
+            self._write_dataframe_to_csv(
+                self.commodity_line_results,
+                output_files["commodity_line_results"],
+                "Warning: No commodity-line results to write",
+            )
 
             print(f"Successfully wrote synthetic data to {output_path}")
 
@@ -985,22 +1011,14 @@ class PISSimData:
             - Safe to call multiple times (won't duplicate data)
             - No-op if records are already converted or empty
         """
-        # Convert PIS records
-        # if self.pis_records and (self.pis_synthetic_data is None or self.pis_synthetic_data.empty):
-        #     self.pis_synthetic_data = pd.DataFrame(self.pis_records, columns=self.PIS_COLUMNS)
-        #     print(f"Finalized {len(self.pis_records)} PIS inspection records")
-
-        # Convert RBS records
-        if self.rbs_records and (self.rbs_calc_synthetic_data is None or self.rbs_calc_synthetic_data.empty):
+        if self.rbs_records and not self._has_rows(self.rbs_calc_synthetic_data):
             self.rbs_calc_synthetic_data = pd.DataFrame(self.rbs_records, columns=self.RBS_COLUMNS)
             print(f"Finalized {len(self.rbs_records)} RBS calculator records")
 
-        # Convert consignment records
-        if self.consignment_records and (self.consignments is None or self.consignments.empty):
+        if self.consignment_records and not self._has_rows(self.consignments):
             self.consignments = pd.DataFrame(self.consignment_records, columns=self.CONSIGNMENT_COLUMNS)
             print(f"Finalized {len(self.consignment_records)} consignment records")
 
-        # Convert inspection record results
         self.commodity_line_results = inspection_unit_detection_records_to_pandas(self.inspection_unit_detection_records)
 
     def get_next_consignment_id(self) -> int:
@@ -1031,14 +1049,11 @@ class PISSimData:
         Returns:
             Dictionary with record counts and basic statistics
         """
-        # If using list collection, count from lists
-        commodity_line_count = len(self.commodity_line_records) if hasattr(self, 'commodity_line_records') else (
-            len(self.pis_synthetic_data) if self.pis_synthetic_data is not None else 0
-        )
-        rbs_count = len(self.rbs_records) if hasattr(self, 'rbs_records') else (
+        commodity_line_count = self._commodity_line_record_count()
+        rbs_count = len(self.rbs_records) if self.rbs_records else (
             len(self.rbs_calc_synthetic_data) if self.rbs_calc_synthetic_data is not None else 0
         )
-        consignment_count = len(self.consignment_records) if hasattr(self, 'consignment_records') else (
+        consignment_count = len(self.consignment_records) if self.consignment_records else (
             len(self.consignments) if self.consignments is not None else 0
         )
 
