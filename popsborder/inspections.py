@@ -125,37 +125,66 @@ Modifications:
 """
 
 import math
-import os
+import pickle
 import random
+import re
 import types
+import warnings
+from collections import defaultdict
+from difflib import get_close_matches
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
 
 from .inputs import get_validated_effectiveness
-
+from slippage_model_utils.UnitAttributes import RiskUnitConfig
+from slippage_model_utils.paths import DefaultPaths
 from slippage_model_utils.references import (
     country_of_origin_names,
+    find_column_name,
+    get_domain_specific_aliases,
     pm_type_names,
     possible_pis_stations,
-    get_domain_specific_aliases
 )
-import re
-from collections import defaultdict
-from difflib import get_close_matches
-from slippage_model_utils.references import find_column_name
-from slippage_model_utils.r_script_wrapper import find_repo_root
-import warnings
 
-from typing import List, Dict, Tuple, Set, Any
-from slippage_model_utils.UnitAttributes import RiskUnitConfig
-import pickle
 
-import pickle
-import time
-from pathlib import Path
-from typing import Dict, Optional
-from slippage_model_utils.paths import DefaultPaths
+SAMPLE_UNIT_ALIASES = {"sample_unit", "sample_units", "item", "items"}
+INSPECTION_UNIT_ALIASES = {"inspection_unit", "inspection_units", "box", "boxes"}
+
+
+def _is_sample_unit_unit(unit: str) -> bool:
+    return unit in SAMPLE_UNIT_ALIASES
+
+
+def _is_inspection_unit_unit(unit: str) -> bool:
+    return unit in INSPECTION_UNIT_ALIASES
+
+
+def _get_min_inspection_units(config: dict) -> int:
+    inspection_cfg = config["inspection"]
+    return inspection_cfg.get("min_inspection_units", inspection_cfg.get("min_boxes", 0))
+
+
+def _get_within_inspection_unit_proportion(config: dict) -> float:
+    inspection_cfg = config["inspection"]
+    return inspection_cfg.get(
+        "within_inspection_unit_proportion",
+        inspection_cfg.get("within_box_proportion", 1.0),
+    )
+
+
+def _get_unit_population(consignment, unit: str) -> int:
+    if _is_sample_unit_unit(unit):
+        return consignment.num_sample_units
+    if _is_inspection_unit_unit(unit):
+        return consignment.num_inspection_units
+    raise RuntimeError(f"Unknown unit: {unit}")
+
+
+def _select_convenience_indexes(unit: str, consignment, n_units_to_inspect: int) -> List[int]:
+    return list(range(min(n_units_to_inspect, _get_unit_population(consignment, unit))))
 
 
 def load_compliance_lookup(
@@ -244,8 +273,6 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
     :param data: Dataframe that has as rows inspection units/commodity lines
     """
 
-    unit = config["inspection"]["unit"]
-
     # Get the PIS Station for the consignment and the corresponding Risk Unit Group variables
     rbs_calculator_grouping_variables_stations = list(config["inspection"]["rbs_calculator_grouping_variables"].keys())
 
@@ -266,9 +293,6 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
             if ('default' in config["inspection"]["rbs_calculator_grouping_variables"].keys()
                     and len(config["inspection"]["rbs_calculator_grouping_variables"]['default'])>0):
                 default_list = config["inspection"]["rbs_calculator_grouping_variables"]['default']
-                # print(f'\nWARNING\nPIS Station ---{port_name}--- for the consignment not found in config.\n'
-                #       f'Using defaults found in config for risk unit grouping variables...'
-                #       f'{default_list}')
                 warnings.warn(
                     f"PIS Station ---{port_name}--- for the consignment not found in config. "
                     f"Using defaults found in config for risk unit grouping variables: {default_list}",
@@ -281,8 +305,6 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
                 ]
             else:
                 default_list = ['origin','material_type']
-                # print(f'\nWARNING\nPIS Station ---{port_name}--- for the consignment not found in config.\n'
-                #       f'Also, no defaults found in config so risk unit group variables being defaulted to...{default_list}')
                 warnings.warn(
                     f"PIS Station ---{port_name}--- for the consignment not found in config."
                     f"Also, no defaults found in config so risk unit group variables being defaulted to...{default_list}",
@@ -293,8 +315,6 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
         else:
             if len(config["inspection"]["rbs_calculator_grouping_variables"][pis_station]) == 0:
                 default_list = ['origin', 'material_type']
-                # print(f'\nWARNING\n  PIS Station ---{port_name}--- found in config. \n'
-                #       f'However, no grouping variables found in the config, so default risk unit grouping variables being used (Origin and PM Type).')
                 warnings.warn(
                     f"PIS Station ---{port_name}--- for the consignment not found in config."
                     f"However, no grouping variables found in the config, so risk unit group variables being defaulted to...{default_list}",
@@ -308,23 +328,15 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
                     for x in config["inspection"]["rbs_calculator_grouping_variables"][pis_station]
                 ]
 
-        # Print out risk unit variables being used
-        count = 0
-        for var in risk_unit_grouping_variables:
+        for count, var in enumerate(risk_unit_grouping_variables):
             matching_column_name = find_column_name(var,list(group.columns))
             if matching_column_name is not None:
                 risk_unit_grouping_variables[count] = matching_column_name
             else:
                 raise ValueError(f'Variable {var} not a valid column for risk unit construction. ')
-            #print(f'  Variable {count + 1}: {var}')
-            count += 1
 
         # Relabel risk units based on grouping variables
         group = relabel_risk_units(group, risk_unit_grouping_variables)
-
-
-
-
         return group
 
     # Apply processing
@@ -382,20 +394,11 @@ def sample_proportion(config, consignment):
     """
     unit = config["inspection"]["unit"]
     ratio = config["inspection"]["proportion"]["value"]
-    num_sample_units = consignment.num_sample_units
-    num_inspection_units = consignment.num_inspection_units
-    # Handle backward compatibility for min inspection units
-    min_inspection_units = config["inspection"].get("min_inspection_units",
-                                                      config["inspection"].get("min_boxes", 0))
-
-    if unit in ["sample_unit", "sample_units", "item", "items"]:
-        n_units_to_inspect = round(ratio * num_sample_units)
-    elif unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
-        n_units_to_inspect = round(ratio * num_inspection_units)
-        n_units_to_inspect = max(min_inspection_units, n_units_to_inspect)
-        n_units_to_inspect = min(num_inspection_units, n_units_to_inspect)
-    else:
-        raise RuntimeError(f"Unknown sampling unit: {unit}")
+    population = _get_unit_population(consignment, unit)
+    n_units_to_inspect = round(ratio * population)
+    if _is_inspection_unit_unit(unit):
+        n_units_to_inspect = max(_get_min_inspection_units(config), n_units_to_inspect)
+        n_units_to_inspect = min(consignment.num_inspection_units, n_units_to_inspect)
     return n_units_to_inspect
 
 
@@ -432,20 +435,11 @@ def sample_hypergeometric(config, consignment):
     unit = config["inspection"]["unit"]
     detection_level = config["inspection"]["hypergeometric"]["detection_level"]
     confidence_level = config["inspection"]["hypergeometric"]["confidence_level"]
-    num_sample_units = consignment.num_sample_units
-    num_inspection_units = consignment.num_inspection_units
-
-    if unit in ["sample_unit", "sample_units", "item", "items"]:
-        n_units_to_inspect = compute_hypergeometric(
-            detection_level, confidence_level, num_sample_units
-        )
-    elif unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
-        n_units_to_inspect = compute_hypergeometric(
-            detection_level, confidence_level, num_inspection_units
-        )
-    else:
-        raise RuntimeError(f"Unknown sampling unit: {unit}")
-    return n_units_to_inspect
+    return compute_hypergeometric(
+        detection_level,
+        confidence_level,
+        _get_unit_population(consignment, unit),
+    )
 
 
 def sample_all(config, consignment):
@@ -456,11 +450,7 @@ def sample_all(config, consignment):
     :param consignment: Consignment to be inspected
     """
     unit = config["inspection"]["unit"]
-    if unit in ["sample_unit", "sample_units", "item", "items"]:
-        n_units_to_inspect = consignment.num_sample_units
-    elif unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
-        n_units_to_inspect = consignment.num_inspection_units
-    return n_units_to_inspect
+    return _get_unit_population(consignment, unit)
 
 
 def sample_n(config, consignment):
@@ -473,26 +463,24 @@ def sample_n(config, consignment):
     """
     fixed_n = config["inspection"]["fixed_n"]
     unit = config["inspection"]["unit"]
-    # Handle backward compatibility for within inspection unit proportion
-    within_inspection_unit_proportion = config["inspection"].get("within_inspection_unit_proportion",
-                                                                   config["inspection"].get("within_box_proportion", 1.0))
+    within_inspection_unit_proportion = _get_within_inspection_unit_proportion(config)
     sample_units_per_inspection_unit = consignment.sample_units_per_inspection_unit
     num_sample_units = consignment.num_sample_units
     num_inspection_units = consignment.num_inspection_units
-    # Handle backward compatibility for min inspection units
-    min_inspection_units = config["inspection"].get("min_inspection_units",
-                                                      config["inspection"].get("min_boxes", 0))
+    min_inspection_units = _get_min_inspection_units(config)
 
-    if unit in ["sample_unit", "sample_units", "item", "items"]:
+    if _is_sample_unit_unit(unit):
         max_sample_units = compute_max_inspectable_sample_units(
             num_sample_units, sample_units_per_inspection_unit, within_inspection_unit_proportion
         )
         # Check if max number of sample_units that can be inspected is less than fixed number.
         n_units_to_inspect = min(max_sample_units, fixed_n)
-    elif unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
+    elif _is_inspection_unit_unit(unit):
         n_units_to_inspect = fixed_n
         n_units_to_inspect = max(min_inspection_units, n_units_to_inspect)
         n_units_to_inspect = min(num_inspection_units, n_units_to_inspect)
+    else:
+        raise RuntimeError(f"Unknown sampling unit: {unit}")
     return n_units_to_inspect
 
 
@@ -570,10 +558,8 @@ def convert_sample_units_to_inspection_units_fixed_proportion(config, consignmen
     :param n_sample_units_to_inspect: Number of sample_units to inspect defined in sample functions.
     """
     sample_units_per_inspection_unit = consignment.sample_units_per_inspection_unit
-    # Handle backward compatibility for within inspection unit proportion
-    within_inspection_unit_proportion = config["inspection"].get("within_inspection_unit_proportion",
-                                                                   config["inspection"].get("within_box_proportion", 1.0))
-    min_inspection_units = config["inspection"]["min_inspection_units"]
+    within_inspection_unit_proportion = _get_within_inspection_unit_proportion(config)
+    min_inspection_units = _get_min_inspection_units(config)
     num_inspection_units = consignment.num_inspection_units
     inspect_per_inspection_unit = int(math.ceil(within_inspection_unit_proportion * sample_units_per_inspection_unit))
 
@@ -596,12 +582,8 @@ def compute_n_clusters_to_inspect(config, consignment, n_sample_units_to_inspect
     """
     cluster_selection = config["inspection"]["cluster"]["cluster_selection"]
     sample_units_per_inspection_unit = consignment.sample_units_per_inspection_unit
-    # Handle backward compatibility for within inspection unit proportion
-    within_inspection_unit_proportion = config["inspection"].get("within_inspection_unit_proportion",
-                                                                   config["inspection"].get("within_box_proportion", 1.0))
-    # Handle backward compatibility for min inspection units
-    min_inspection_units = config["inspection"].get("min_inspection_units",
-                                                      config["inspection"].get("min_boxes", 0))
+    within_inspection_unit_proportion = _get_within_inspection_unit_proportion(config)
+    min_inspection_units = _get_min_inspection_units(config)
     num_inspection_units = consignment.num_inspection_units
     num_sample_units = consignment.num_sample_units
 
@@ -688,16 +670,8 @@ def select_random_indexes(unit, consignment, n_units_to_inspect):
     :param consignment: Consignment to be inspected
     :param n_units_to_inspect: Number of units to inspect defined in sample functions.
     """
-    if unit in ["sample_unit", "sample_units", "item", "items"]:
-        indexes_to_inspect = random.sample(
-            list(range(consignment.num_sample_units)), n_units_to_inspect
-        )
-    elif unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
-        indexes_to_inspect = random.sample(
-            list(range(consignment.num_inspection_units)), n_units_to_inspect
-        )
-    else:
-        raise RuntimeError(f"Unknown unit: {unit}")
+    population = _get_unit_population(consignment, unit)
+    indexes_to_inspect = random.sample(list(range(population)), n_units_to_inspect)
     indexes_to_inspect.sort()
     return indexes_to_inspect
 
@@ -712,7 +686,7 @@ def select_random_indexes_rbs(unit, consignment, n_units_to_inspect):
     """
     
     indexes_to_inspect = []
-    if unit in ["sample_unit", "sample_units", "item", "items"]:
+    if _is_sample_unit_unit(unit):
         inspection_unit_counter = 0
         inspection_units_to_inspect = {
             idx: [] for idx in range(consignment.num_inspection_units)
@@ -801,12 +775,12 @@ def select_cluster_indexes(config, consignment, n_units_to_inspect):
             # Create list of indexes incremented by interval size
             indexes_to_inspect = []
             index = 0
-            for unused_i in range(n_inspection_units_to_inspect):
+            for _ in range(n_inspection_units_to_inspect):
                 indexes_to_inspect.append(index)
                 index += interval
         else:
             raise RuntimeError(f"Unknown cluster selection method: {cluster_selection}")
-    elif unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
+    elif _is_inspection_unit_unit(unit):
         raise RuntimeError(
             "Cannot use cluster selection strategy with inspection_unit sampling unit"
         )
@@ -833,8 +807,7 @@ def select_units_to_inspect(config, consignment, n_units_to_inspect):
         elif selection_strategy == "cluster":
             return select_cluster_indexes(config, consignment, n_units_to_inspect)
         elif selection_strategy == "convenience":
-            # Convenience sampling - just select the first n units
-            return list(range(min(n_units_to_inspect, consignment.num_sample_units if unit in ["sample_unit", "sample_units", "item", "items"] else consignment.num_inspection_units)))
+            return _select_convenience_indexes(unit, consignment, n_units_to_inspect)
         else:
             raise RuntimeError(f"Unknown selection strategy: {selection_strategy}")
     else:
@@ -843,8 +816,7 @@ def select_units_to_inspect(config, consignment, n_units_to_inspect):
         elif selection_strategy == "cluster":
             return select_cluster_indexes(config, consignment, n_units_to_inspect)
         elif selection_strategy == "convenience":
-            # Convenience sampling - just select the first n units
-            return list(range(min(n_units_to_inspect, consignment.num_sample_units if unit in ["sample_unit", "sample_units", "item", "items"] else consignment.num_inspection_units)))
+            return _select_convenience_indexes(unit, consignment, n_units_to_inspect)
         else:
             raise RuntimeError(f"Unknown selection strategy: {selection_strategy}")
 
@@ -1224,13 +1196,6 @@ def get_detection_and_confidence(
 
     for risk_unit_idx, risk_unit in enumerate(risk_units):
         risk_unit_id = getattr(risk_unit, "id", risk_unit_idx)
-
-        # Use RiskUnitConfig to extract all enabled attributes
-        # Assuming risk_unit has a method or dict-like interface
-        if hasattr(risk_unit, '__dict__'):
-            risk_unit_dict = risk_unit.__dict__
-        else:
-            risk_unit_dict = dict(risk_unit)
 
         # Extract only the RBS variables we need
         values = {}
