@@ -384,7 +384,6 @@ class SyntheticConsignmentDataGenerator:
             raise ValueError("No valid data to fit distribution.")
 
         # (Optional) clip extreme values to reduce numerical issues
-        # comment these two lines out if you don't want clipping
         lo, hi = np.percentile(data, [0.1, 99.9])
         data = np.clip(data, lo, hi)
 
