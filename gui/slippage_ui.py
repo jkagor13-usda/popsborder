@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -166,7 +166,7 @@ def set_engine_options(**kwargs: Any):
 def record_pipeline_error(message: str):
     state = get_slippage_state()
     state["run_error"] = message
-    state["last_run"] = datetime.now(UTC)
+    state["last_run"] = datetime.now(timezone.utc)
 
 
 

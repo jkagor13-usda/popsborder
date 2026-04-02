@@ -1,11 +1,10 @@
 # © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
+from dataclasses import replace
 from pathlib import Path
-from typing import Optional, Union
 import json
 import re
 import shutil
-from pathlib import Path
 
 from gui.runtime_warnings import suppress_optional_dependency_warnings
 
@@ -25,8 +24,6 @@ SCENARIO_ROOT = TMP_DIR / "experiments"
 TEMPLATE_SCENARIO = Path("data_input") / "pis_contaminate_scenarios.csv"
 CONTAM_PARAM_PATH = TMP_DIR / "contamination" / "contamination_parameter_sets.json"
 SCENARIO_FILENAME = "scenario_table.csv"
-CONS_FILENAME = "consignment_uploaded_rbs_data.csv"
-COMPLIANCE_FILENAME = "compliance_table.csv"
 CONFIG_FILENAME = "config.yml"
 
 TMP_DIR.mkdir(exist_ok=True)
@@ -71,55 +68,134 @@ def _load_param_sets() -> dict:
     except Exception:  # pylint: disable=broad-except
         return {}
 
+
+def _update_state_paths(**updates) -> None:
+    state["paths"] = replace(state["paths"], **updates)
+
+
+def _copy_first_existing_file(name: str, scenario_dir: Path, candidates: list[Path], copied_files: list[str], missing: list[str]) -> None:
+    src = next((p for p in candidates if p.exists()), None)
+    if src:
+        dest = scenario_dir / name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(src.read_bytes())
+        copied_files.append(dest.name)
+    else:
+        missing.append(name)
+
+
+def _scenario_row_to_portable_paths(rows_df: pd.DataFrame, set_slug: str) -> pd.DataFrame:
+    df = rows_df.copy()
+    base_prefix = f"tmp/experiments/{set_slug}"
+    for col in ("consignment/input_file/file_name", "inspection/compliance_table/file_name"):
+        if col in df.columns:
+            df[col] = df[col].apply(lambda v: f"{base_prefix}/{Path(str(v)).name}".replace("\\", "/") if v else v)
+    return df
+
+
+def _apply_scenario_defaults(rows_df: pd.DataFrame) -> pd.DataFrame:
+    df = rows_df.copy()
+    cont_rate_col = "contamination/contamination_rate/value"
+    cont_unit_col = "contamination/contamination_unit"
+    if cont_rate_col in df.columns:
+        df[cont_rate_col] = df[cont_rate_col].fillna("None")
+    if cont_unit_col in df.columns:
+        df[cont_unit_col] = df[cont_unit_col].replace("", "plant").fillna("plant")
+    else:
+        df[cont_unit_col] = "plant"
+    return _normalize_rows(df)
+
+
+def _normalize_proportion_value(val) -> float:
+    try:
+        normalized = float(val)
+    except Exception:
+        normalized = 0.0
+    return 0.02 if normalized <= 0 else normalized
+
+
+def _default_template_columns(rows_df: pd.DataFrame) -> list[str]:
+    if TEMPLATE_SCENARIO.exists():
+        return pd.read_csv(TEMPLATE_SCENARIO, nrows=0).columns.tolist()
+    return rows_df.columns.tolist()
+
+
+def _build_scenario_row(scenario_label: str, consignment_choice: Path, compliance_choice: Path, param_choice: str, param_sets: dict) -> dict:
+    param_snapshot = param_sets.get(param_choice, {})
+    scenario_row = {
+        "name": scenario_label,
+        "consignment/input_file/file_name": consignment_choice.name,
+        "inspection/compliance_table/file_name": compliance_choice.name,
+        "consignment/generation_method": "RBS",
+        "consignment/input_file/file_type": "RBS",
+        "contamination/contamination_unit": "plant",
+        "contamination/contamination_rate/distribution": "beta-binomial",
+        "contamination/contamination_rate/value": "",
+        "contamination/arrangement": "random",
+        "inspection/sample_strategy": "rbs",
+        "inspection/proportion/value": 0.02,
+        "inspection/unit": "sample_units",
+        "inspection/min_boxes": 0,
+        "inspection/selection_strategy": "random",
+        "inspection/within_box_proportion": 1,
+    }
+
+    if isinstance(param_snapshot, dict) and param_snapshot and all(isinstance(v, dict) for v in param_snapshot.values()):
+        for key, pdict in param_snapshot.items():
+            base = f"contamination/contamination_rate/beta_binomial_parameters/{key}"
+            scenario_row[f"{base}/alpha"] = pdict.get("alpha")
+            scenario_row[f"{base}/beta"] = pdict.get("beta")
+            scenario_row[f"{base}/mu"] = pdict.get("mu")
+            scenario_row[f"{base}/rho"] = pdict.get("rho")
+            scenario_row[f"{base}/D"] = pdict.get("D")
+            scenario_row[f"{base}/theta"] = pdict.get("theta")
+            scenario_row[f"{base}/J"] = pdict.get("J")
+    else:
+        base = "contamination/contamination_rate/beta_binomial_parameters/default"
+        scenario_row[f"{base}/alpha"] = param_snapshot.get("alpha")
+        scenario_row[f"{base}/beta"] = param_snapshot.get("beta")
+        scenario_row[f"{base}/theta"] = param_snapshot.get("theta")
+    return scenario_row
+
+
+def _render_file_inventory(label: str, values, formatter) -> None:
+    st.write(f"**{label} ({len(values)}):** {formatter(values) if values else 'none'}")
+
 def _copy_inputs(rows_df: pd.DataFrame, scenario_dir: Path) -> None:
     """Copy consignment/compliance files and contamination params/config into scenario_dir with standard names."""
     missing: list[str] = []
     copied_files: list[str] = []
-    # Copy consignment file as CONS_FILENAME
     cons_col = "consignment/input_file/file_name"
     if cons_col in rows_df.columns:
         vals = [v for v in rows_df[cons_col].dropna().tolist() if v]
         if vals:
             for val in vals:
                 name = Path(str(val)).name
-                src_candidates = [
-                    Path(str(val)),
-                    Path("tmp") / "consignments" / name,
-                    Path(name),
-                ]
-                src = next((p for p in src_candidates if p.exists()), None)
-                if src:
-                    dest = scenario_dir / name
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    dest.write_bytes(src.read_bytes())
-                    copied_files.append(dest.name)
-                else:
-                    missing.append(f"consignment file '{name}'")
+                _copy_first_existing_file(
+                    name,
+                    scenario_dir,
+                    [Path(str(val)), Path("tmp") / "consignments" / name, Path(name)],
+                    copied_files,
+                    missing,
+                )
         else:
             missing.append("consignment file (none listed)")
     else:
         missing.append("consignment file column missing")
 
-    # Copy compliance file as COMPLIANCE_FILENAME
     comp_col = "inspection/compliance_table/file_name"
     if comp_col in rows_df.columns:
         vals = [v for v in rows_df[comp_col].dropna().tolist() if v]
         if vals:
             for val in vals:
                 name = Path(str(val)).name
-                src_candidates = [
-                    Path(str(val)),
-                    Path("tmp") / "compliance" / name,
-                    Path(name),
-                ]
-                src = next((p for p in src_candidates if p.exists()), None)
-                if src:
-                    dest = scenario_dir / name
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    dest.write_bytes(src.read_bytes())
-                    copied_files.append(dest.name)
-                else:
-                    missing.append(f"compliance file '{name}'")
+                _copy_first_existing_file(
+                    name,
+                    scenario_dir,
+                    [Path(str(val)), Path("tmp") / "compliance" / name, Path(name)],
+                    copied_files,
+                    missing,
+                )
         else:
             missing.append("compliance file (none listed)")
     else:
@@ -156,13 +232,7 @@ def _normalize_rows(rows_df: pd.DataFrame) -> pd.DataFrame:
     if "inspection/sample_strategy" in df.columns:
         df["inspection/sample_strategy"] = df["inspection/sample_strategy"].replace("", "rbs").fillna("rbs")
     if "inspection/proportion/value" in df.columns:
-        def _norm_prop(val):
-            try:
-                v = float(val)
-            except Exception:
-                v = 0.0
-            return 0.02 if v <= 0 else v
-        df["inspection/proportion/value"] = df["inspection/proportion/value"].apply(_norm_prop)
+        df["inspection/proportion/value"] = df["inspection/proportion/value"].apply(_normalize_proportion_value)
     alpha_col = "contamination/contamination_rate/beta_binomial_parameters/alpha"
     beta_col = "contamination/contamination_rate/beta_binomial_parameters/beta"
     if alpha_col in df.columns:
@@ -221,9 +291,7 @@ with tabs[1]:
             scenario_dir.mkdir(parents=True, exist_ok=True)
             dest = scenario_dir / "scenario_table.csv"
             df.to_csv(dest, index=False)
-            state["paths"] = state["paths"].__class__(
-                **{**state["paths"].__dict__, "scenario_table": dest}
-            )
+            _update_state_paths(scenario_table=dest)
             st.success(f"Saved custom scenario table to {dest}")
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Failed to save custom scenario table: {exc}")
@@ -272,74 +340,13 @@ with tabs[2]:
 
     with col_right:
         with st.expander("Files available", expanded=True):
-            st.write(
-                f"**Consignments ({len(consignment_files)}):** "
-                f"{', '.join(p.name for p in consignment_files) if consignment_files else 'none'}"
-            )
-            st.write(
-                f"**Contamination ({len(param_keys)}):** "
-                f"{', '.join(param_keys) if param_keys else 'none'}"
-            )
-            st.write(
-                f"**RBS Compliance Policies ({len(compliance_files)}):** "
-                f"{', '.join(p.name for p in compliance_files) if compliance_files else 'none'}"
-            )
+            _render_file_inventory("Consignments", consignment_files, lambda files: ", ".join(p.name for p in files))
+            _render_file_inventory("Contamination", param_keys, lambda files: ", ".join(files))
+            _render_file_inventory("RBS Compliance Policies", compliance_files, lambda files: ", ".join(p.name for p in files))
 
     add_ready = all([scenario_label, consignment_choice, compliance_choice, param_choice])
     if st.button("Add scenario row", type="primary", disabled=not add_ready):
-        template_cols = (
-            pd.read_csv(TEMPLATE_SCENARIO, nrows=0).columns.tolist()
-            if TEMPLATE_SCENARIO.exists()
-            else []
-        )
-        param_snapshot = param_sets.get(param_choice, {})
-        scenario_row = {
-            "name": scenario_label,
-            "consignment/input_file/file_name": consignment_choice.name,
-            "inspection/compliance_table/file_name": compliance_choice.name,
-            "consignment/generation_method": "RBS",
-            "consignment/input_file/file_type": "RBS",
-            "contamination/contamination_unit": "plant",
-            "contamination/contamination_rate/distribution": "beta-binomial",
-            "contamination/contamination_rate/value": "",
-            "contamination/arrangement": "random",
-            "inspection/sample_strategy": "rbs",
-            "inspection/proportion/value": 0.02,
-            "inspection/unit": "sample_units",
-            "inspection/min_boxes": 0,
-            "inspection/selection_strategy": "random",
-            "inspection/within_box_proportion": 1,
-        }
-
-        if (
-                isinstance(param_snapshot, dict)
-                and param_snapshot
-                and all(isinstance(v, dict) for v in param_snapshot.values())
-        ):
-            for key, pdict in param_snapshot.items():
-                scenario_row[
-                    f"contamination/contamination_rate/beta_binomial_parameters/{key}/alpha"] = pdict.get(
-                    'alpha')
-                scenario_row[
-                    f"contamination/contamination_rate/beta_binomial_parameters/{key}/beta"] = pdict.get('beta')
-                scenario_row[f"contamination/contamination_rate/beta_binomial_parameters/{key}/mu"] = pdict.get(
-                    'mu')
-                scenario_row[
-                    f"contamination/contamination_rate/beta_binomial_parameters/{key}/rho"] = pdict.get('rho')
-                scenario_row[f"contamination/contamination_rate/beta_binomial_parameters/{key}/D"] = pdict.get(
-                    'D')
-                scenario_row[
-                    f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = pdict.get(
-                    'theta')
-                scenario_row[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = pdict.get(
-                    'J')
-        else:
-            scenario_row[
-                "contamination/contamination_rate/beta_binomial_parameters/default/alpha"] = param_snapshot.get("alpha")
-            scenario_row["contamination/contamination_rate/beta_binomial_parameters/default/beta"] = param_snapshot.get(
-                "beta")
-            scenario_row[
-                "contamination/contamination_rate/beta_binomial_parameters/default/theta"] = param_snapshot.get("theta")
+        scenario_row = _build_scenario_row(scenario_label, consignment_choice, compliance_choice, param_choice, param_sets)
 
         # If a scenario with this label exists, replace it; otherwise append
         replaced = False
@@ -380,17 +387,8 @@ with tabs[2]:
         try:
             scenario_dir.mkdir(parents=True, exist_ok=True)
             scenario_path = scenario_dir / SCENARIO_FILENAME
-            # Always use forward-slash tmp-relative paths in the saved scenario table
-            base_prefix = f"tmp/experiments/{set_slug}"
-
-            # Template columns
             raw_rows_df = rows_df.copy()
-            template_cols = (
-                pd.read_csv(TEMPLATE_SCENARIO, nrows=0).columns.tolist()
-                if TEMPLATE_SCENARIO.exists()
-                else rows_df.columns.tolist()
-            )
-            # Normalize legacy names
+            template_cols = _default_template_columns(rows_df)
             if "consignment name" in template_cols and "consignment/input_file/file_name" not in template_cols:
                 template_cols = [c for c in template_cols if c != "consignment name"]
                 template_cols.append("consignment/input_file/file_name")
@@ -398,7 +396,6 @@ with tabs[2]:
                 template_cols = [c for c in template_cols if c != "inspection name"]
                 template_cols.append("inspection/compliance_table/file_name")
 
-            # Keep file path columns together before unnamed columns
             ordered_targets = [
                 "consignment/input_file/file_name",
                 "inspection/compliance_table/file_name",
@@ -414,36 +411,14 @@ with tabs[2]:
                 + filtered_cols[anchor:]
             )
 
-            # Make file paths portable (within scenario_dir, forward slashes)
-            if "consignment/input_file/file_name" in rows_df.columns:
-                rows_df["consignment/input_file/file_name"] = rows_df["consignment/input_file/file_name"].apply(
-                    lambda v: f"{base_prefix}/{Path(str(v)).name}".replace("\\", "/") if v else v
-                )
-            if "inspection/compliance_table/file_name" in rows_df.columns:
-                rows_df["inspection/compliance_table/file_name"] = rows_df["inspection/compliance_table/file_name"].apply(
-                    lambda v: f"{base_prefix}/{Path(str(v)).name}".replace("\\", "/") if v else v
-                )
-            # Keep explicit "None" marker for contamination rate so downstream can detect missing value
-            cont_rate_col = "contamination/contamination_rate/value"
-            if cont_rate_col in rows_df.columns:
-                rows_df[cont_rate_col] = rows_df[cont_rate_col].fillna("None")
-            # Default contamination unit to plant unless explicitly set
-            cont_unit_col = "contamination/contamination_unit"
-            if cont_unit_col in rows_df.columns:
-                rows_df[cont_unit_col] = rows_df[cont_unit_col].replace("", "plant").fillna("plant")
-            else:
-                rows_df[cont_unit_col] = "plant"
-
-            rows_df = _normalize_rows(rows_df)
+            rows_df = _apply_scenario_defaults(_scenario_row_to_portable_paths(rows_df, set_slug))
             scenario_table = rows_df.reindex(columns=template_cols, fill_value="")
             scenario_table.to_csv(scenario_path, index=False)
 
             copied = _copy_inputs(raw_rows_df, scenario_dir)
             st.caption(f"Copied files to {scenario_dir}: {', '.join(copied)}")
 
-            state["paths"] = state["paths"].__class__(
-                **{**state["paths"].__dict__, "scenario_table": scenario_path}
-            )
+            _update_state_paths(scenario_table=scenario_path)
             st.success(f"Experiment saved to {scenario_path}")
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Failed to save experiment: {exc}")

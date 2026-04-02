@@ -154,6 +154,40 @@ def _safe_float(value) -> float:
         return 0.0
 
 
+def _format_count(value) -> str:
+    return f"{_safe_float(value):,.1f}"
+
+
+def _format_percent(value) -> str:
+    if value is None or pd.isna(value):
+        return "n/a"
+    return f"{_safe_float(value):.2f}%"
+
+
+def _interval_text(
+    lower,
+    upper,
+    replications: int,
+    *,
+    digits: int = 2,
+    suffix: str = "",
+) -> str:
+    if pd.isna(lower) or pd.isna(upper) or replications < MIN_REPLICATIONS_FOR_INTERVAL:
+        return "n/a"
+    return f"{float(lower):.{digits}f}{suffix} - {float(upper):.{digits}f}{suffix}"
+
+
+def _maybe_warning_for_replications(all_runs_df: Optional[pd.DataFrame]) -> bool:
+    if all_runs_df is not None and not all_runs_df.empty and "replication" in all_runs_df.columns:
+        rep_counts = all_runs_df.groupby("name").size()
+        if (rep_counts < MIN_REPLICATIONS_FOR_INTERVAL).any():
+            st.warning(
+                f"*Uncertainty bounds are hidden for scenarios with fewer than {MIN_REPLICATIONS_FOR_INTERVAL} replications."
+            )
+            return True
+    return False
+
+
 def _render_consignments_visual(
     action_results_source: pd.DataFrame,
     total_consignments,
@@ -697,16 +731,10 @@ with st.expander("Slippage Level", expanded=expand_all_summary_sections):
                 )
                 slip_chart = slip_chart + slip_error_bars
         st.altair_chart(slip_chart, use_container_width=True)
-        if all_runs_df is not None and not all_runs_df.empty and "replication" in all_runs_df.columns:
-            rep_counts = all_runs_df.groupby("name").size()
-            if (rep_counts < MIN_REPLICATIONS_FOR_INTERVAL).any():
-                st.warning(
-                    f"*Uncertainty bounds are hidden for scenarios with fewer than {MIN_REPLICATIONS_FOR_INTERVAL} replications."
-                )
-            else:
-                st.caption(
-                    f"Bars show scenario means. Error bars show 95% intervals across replications within the same scenario when at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available."
-                )
+        if not _maybe_warning_for_replications(all_runs_df):
+            st.caption(
+                f"Bars show scenario means. Error bars show 95% intervals across replications within the same scenario when at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available."
+            )
         slip_summary_df = results_df[["name", "total_slipped_units"]].rename(
             columns={"name": "Scenario", "total_slipped_units": "Mean slipped plant units"}
         )
@@ -724,15 +752,15 @@ with st.expander("Slippage Level", expanded=expand_all_summary_sections):
             )
             slip_summary_df = slip_summary_df.merge(slip_table_intervals, left_on="Scenario", right_on="name", how="left")
             slip_summary_df["95% interval"] = slip_summary_df.apply(
-                lambda row: f"{row['lower']:.2f} - {row['upper']:.2f}"
-                if pd.notna(row.get("lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
-                else "n/a",
+                lambda row: _interval_text(row.get("lower"), row.get("upper"), int(row.get("replications", 0))),
                 axis=1,
             )
             if "name" in slip_summary_df.columns:
                 slip_summary_df = slip_summary_df.drop(columns=["name"])
         if "Mean slipped plant units" in slip_summary_df.columns:
-            slip_summary_df["Mean slipped plant units"] = slip_summary_df["Mean slipped plant units"].map(lambda value: f"{value:,.2f}")
+            slip_summary_df["Mean slipped plant units"] = slip_summary_df["Mean slipped plant units"].map(
+                lambda value: f"{_safe_float(value):,.2f}"
+            )
         st.dataframe(
             _styled_summary_table(
                 slip_summary_df,
@@ -840,7 +868,7 @@ def render_inspection_workload_level():
             if col in display_df.columns
         ]
         for col in numeric_cols:
-            display_df[col] = display_df[col].map(lambda value: f"{value:,.1f}")
+            display_df[col] = display_df[col].map(_format_count)
         styled_inspected = _styled_summary_table(
             display_df,
             mean_columns=["Plants inspected", "Sample units inspected", "Inspection units opened"],
@@ -892,21 +920,15 @@ def render_inspection_workload_level():
             )
             inspected_pct_df = inspected_pct_df.merge(inspected_pct_intervals, on="name", how="left")
             inspected_pct_df["Plant units 95% interval"] = inspected_pct_df.apply(
-                lambda row: f"{row['plant_lower']:.2f}% - {row['plant_upper']:.2f}%"
-                if pd.notna(row.get("plant_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
-                else "n/a",
+                lambda row: _interval_text(row.get("plant_lower"), row.get("plant_upper"), int(row.get("replications", 0)), suffix="%"),
                 axis=1,
             )
             inspected_pct_df["Sample units 95% interval"] = inspected_pct_df.apply(
-                lambda row: f"{row['sample_lower']:.2f}% - {row['sample_upper']:.2f}%"
-                if pd.notna(row.get("sample_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
-                else "n/a",
+                lambda row: _interval_text(row.get("sample_lower"), row.get("sample_upper"), int(row.get("replications", 0)), suffix="%"),
                 axis=1,
             )
             inspected_pct_df["Inspection units 95% interval"] = inspected_pct_df.apply(
-                lambda row: f"{row['inspection_lower']:.2f}% - {row['inspection_upper']:.2f}%"
-                if pd.notna(row.get("inspection_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
-                else "n/a",
+                lambda row: _interval_text(row.get("inspection_lower"), row.get("inspection_upper"), int(row.get("replications", 0)), suffix="%"),
                 axis=1,
             )
         render_labeled_help(
@@ -935,7 +957,7 @@ def render_inspection_workload_level():
             if col in inspected_pct_display.columns
         ]
         for col in inspected_pct_mean_cols:
-            inspected_pct_display[col] = inspected_pct_display[col].map(lambda value: f"{value:.2f}%")
+            inspected_pct_display[col] = inspected_pct_display[col].map(_format_percent)
         st.dataframe(
             _styled_summary_table(
                 inspected_pct_display,
@@ -949,12 +971,7 @@ def render_inspection_workload_level():
             use_container_width=True,
             height=min(420, 70 + 38 * max(len(inspected_pct_display), 1)),
         )
-        if all_runs_df is not None and not all_runs_df.empty and "replication" in all_runs_df.columns:
-            rep_counts = all_runs_df.groupby("name").size()
-            if (rep_counts < MIN_REPLICATIONS_FOR_INTERVAL).any():
-                st.warning(
-                    f"*Uncertainty bounds are hidden for scenarios with fewer than {MIN_REPLICATIONS_FOR_INTERVAL} replications."
-                )
+        _maybe_warning_for_replications(all_runs_df)
 
 with st.expander("Action Level", expanded=expand_all_summary_sections):
 
@@ -1112,7 +1129,7 @@ with st.expander("Action Level", expanded=expand_all_summary_sections):
                 if pd.notna(row.get("slipped_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
                 else "n/a",
                 axis=1,
-            )
+        )
         action_count_display = action_counts_df.rename(columns={"name": "Scenario"}).copy()
         action_count_display = action_count_display[
             [
@@ -1130,7 +1147,7 @@ with st.expander("Action Level", expanded=expand_all_summary_sections):
         ]
         for col in ["Intercepted", "Slipped"]:
             if col in action_count_display.columns:
-                action_count_display[col] = action_count_display[col].map(lambda value: f"{value:,.1f}")
+                action_count_display[col] = action_count_display[col].map(_format_count)
         st.dataframe(
             _styled_summary_table(
                 action_count_display,
@@ -1174,15 +1191,11 @@ with st.expander("Action Level", expanded=expand_all_summary_sections):
             )
             action_pct_df = action_pct_df.merge(action_pct_intervals, on=["name", "Level"], how="left")
             action_pct_df["Intercepted 95% interval"] = action_pct_df.apply(
-                lambda row: f"{row['intercepted_lower']:.2f}% - {row['intercepted_upper']:.2f}%"
-                if pd.notna(row.get("intercepted_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
-                else "n/a",
+                lambda row: _interval_text(row.get("intercepted_lower"), row.get("intercepted_upper"), int(row.get("replications", 0)), suffix="%"),
                 axis=1,
             )
             action_pct_df["Slipped 95% interval"] = action_pct_df.apply(
-                lambda row: f"{row['slipped_lower']:.2f}% - {row['slipped_upper']:.2f}%"
-                if pd.notna(row.get("slipped_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
-                else "n/a",
+                lambda row: _interval_text(row.get("slipped_lower"), row.get("slipped_upper"), int(row.get("replications", 0)), suffix="%"),
                 axis=1,
             )
         action_pct_display = action_pct_df[
@@ -1214,9 +1227,7 @@ with st.expander("Action Level", expanded=expand_all_summary_sections):
             ]
         ]
         for col in ["Intercepted %", "Slipped %"]:
-            action_pct_display[col] = action_pct_display[col].map(
-                lambda value: f"{value:.2f}%" if pd.notna(value) else "n/a"
-            )
+            action_pct_display[col] = action_pct_display[col].map(_format_percent)
         st.dataframe(
             _styled_summary_table(
                 action_pct_display,
@@ -1226,12 +1237,7 @@ with st.expander("Action Level", expanded=expand_all_summary_sections):
             use_container_width=True,
             height=min(420, 70 + 38 * max(len(action_pct_display), 1)),
         )
-        if all_runs_df is not None and not all_runs_df.empty and "replication" in all_runs_df.columns:
-            rep_counts = all_runs_df.groupby("name").size()
-            if (rep_counts < MIN_REPLICATIONS_FOR_INTERVAL).any():
-                st.warning(
-                    f"*Uncertainty bounds are hidden for scenarios with fewer than {MIN_REPLICATIONS_FOR_INTERVAL} replications."
-                )
+        _maybe_warning_for_replications(all_runs_df)
 
 with st.expander("Contamination Level", expanded=expand_all_summary_sections):
 
@@ -1335,16 +1341,10 @@ with st.expander("Contamination Level", expanded=expand_all_summary_sections):
             ),
             use_container_width=True,
         )
-        if all_runs_df is not None and not all_runs_df.empty and "replication" in all_runs_df.columns:
-            rep_counts = all_runs_df.groupby("name").size()
-            if (rep_counts < MIN_REPLICATIONS_FOR_INTERVAL).any():
-                st.warning(
-                    f"*Uncertainty bounds are hidden for scenarios with fewer than {MIN_REPLICATIONS_FOR_INTERVAL} replications."
-                )
-            else:
-                st.caption(
-                    f"Bars show scenario means. Error bars show 95% intervals across replications within the same scenario when at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available."
-                )
+        if not _maybe_warning_for_replications(all_runs_df):
+            st.caption(
+                f"Bars show scenario means. Error bars show 95% intervals across replications within the same scenario when at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available."
+            )
         contam_summary_df = results_df[
             [
                 "name",
@@ -1390,21 +1390,15 @@ with st.expander("Contamination Level", expanded=expand_all_summary_sections):
             )
             contam_summary_df = contam_summary_df.merge(contam_intervals, left_on="Scenario", right_on="name", how="left")
             contam_summary_df["Plant 95% interval"] = contam_summary_df.apply(
-                lambda row: f"{row['plant_lower']:.2f} - {row['plant_upper']:.2f}"
-                if pd.notna(row.get("plant_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
-                else "n/a",
+                lambda row: _interval_text(row.get("plant_lower"), row.get("plant_upper"), int(row.get("replications", 0))),
                 axis=1,
             )
             contam_summary_df["Sample unit 95% interval"] = contam_summary_df.apply(
-                lambda row: f"{row['sample_lower']:.2f} - {row['sample_upper']:.2f}"
-                if pd.notna(row.get("sample_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
-                else "n/a",
+                lambda row: _interval_text(row.get("sample_lower"), row.get("sample_upper"), int(row.get("replications", 0))),
                 axis=1,
             )
             contam_summary_df["Inspection unit 95% interval"] = contam_summary_df.apply(
-                lambda row: f"{row['inspection_lower']:.2f} - {row['inspection_upper']:.2f}"
-                if pd.notna(row.get("inspection_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
-                else "n/a",
+                lambda row: _interval_text(row.get("inspection_lower"), row.get("inspection_upper"), int(row.get("replications", 0))),
                 axis=1,
             )
             if "name" in contam_summary_df.columns:
@@ -1415,7 +1409,7 @@ with st.expander("Contamination Level", expanded=expand_all_summary_sections):
             "Inspection unit contaminated mean",
         ]
         for col in [col for col in contam_mean_cols if col in contam_summary_df.columns]:
-            contam_summary_df[col] = contam_summary_df[col].map(lambda value: f"{value:,.2f}")
+            contam_summary_df[col] = contam_summary_df[col].map(lambda value: f"{_safe_float(value):,.2f}")
         contam_display_cols = [
             "Scenario",
             "Plant contaminated mean",
@@ -1513,21 +1507,15 @@ with st.expander("Contamination Level", expanded=expand_all_summary_sections):
             )
             pct_df = pct_df.merge(pct_intervals, on="name", how="left")
             pct_df["Plant 95% interval"] = pct_df.apply(
-                lambda row: f"{row['plant_lower']:.2f}% - {row['plant_upper']:.2f}%"
-                if pd.notna(row.get("plant_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
-                else "n/a",
+                lambda row: _interval_text(row.get("plant_lower"), row.get("plant_upper"), int(row.get("replications", 0)), suffix="%"),
                 axis=1,
             )
             pct_df["Sample unit 95% interval"] = pct_df.apply(
-                lambda row: f"{row['sample_lower']:.2f}% - {row['sample_upper']:.2f}%"
-                if pd.notna(row.get("sample_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
-                else "n/a",
+                lambda row: _interval_text(row.get("sample_lower"), row.get("sample_upper"), int(row.get("replications", 0)), suffix="%"),
                 axis=1,
             )
             pct_df["Inspection unit 95% interval"] = pct_df.apply(
-                lambda row: f"{row['inspection_lower']:.2f}% - {row['inspection_upper']:.2f}%"
-                if pd.notna(row.get("inspection_lower")) and row.get("replications", 0) >= MIN_REPLICATIONS_FOR_INTERVAL
-                else "n/a",
+                lambda row: _interval_text(row.get("inspection_lower"), row.get("inspection_upper"), int(row.get("replications", 0)), suffix="%"),
                 axis=1,
             )
 
@@ -1556,7 +1544,7 @@ with st.expander("Contamination Level", expanded=expand_all_summary_sections):
             if col in pct_display_df.columns
         ]
         for col in pct_numeric_cols:
-            pct_display_df[col] = pct_display_df[col].map(lambda value: f"{value:.2f}%")
+            pct_display_df[col] = pct_display_df[col].map(_format_percent)
         styled_pct = _styled_summary_table(
             pct_display_df,
             mean_columns=pct_numeric_cols,
