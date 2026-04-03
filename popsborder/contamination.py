@@ -82,6 +82,130 @@ import ast
 ## START: Updated New Functions for Fitting Distributions with RBS data ##
 ##########################################################################
 
+def heuristic_adjust_nonzeros(rng, X, N_bar, target_nonzeros, max_iters=1000):
+    X = X.copy()
+    total = X.sum()
+
+    for i in range(max_iters):
+        print(f'Heuristic iteration {i+1} out of {max_iters}')
+
+        nonzero_indices = np.nonzero(X)[0]
+        nnz = len(nonzero_indices)
+
+        # Handle degenerate case
+        if target_nonzeros == 0:
+            X[:] = 0
+            break
+
+        # Relative difference from target
+        rel_diff = abs(nnz - target_nonzeros) / target_nonzeros
+
+        # Termination criterion (within 5% relative difference of the target clustering)
+        if rel_diff < 0.05:
+            break
+
+        if nnz > target_nonzeros:
+            # CASE 1: Too many nonzero indices so merge some
+            # Sort nonzeros by X value ascending (smallest first)
+            nz_vals = X[nonzero_indices]
+            order = np.argsort(nz_vals)
+            sorted_indices = nonzero_indices[order]
+
+            merged_any = False
+
+            for idx in sorted_indices:
+                # Recompute nnz cheaply: we will zero idx if we merge
+                if nnz <= target_nonzeros:
+                    break
+
+                val = X[idx]
+                if val == 0:
+                    continue
+
+                # Prefer targets with larger remaining capacity
+                remaining_capacity = N_bar - X
+                candidates = np.where((remaining_capacity >= val) & (np.arange(len(X)) != idx))[0]
+
+                if len(candidates) == 0:
+                    continue
+
+                # Choose among the candidates with largest remaining capacity
+                cand_cap = remaining_capacity[candidates]
+                best_idx = candidates[np.argmax(cand_cap)]
+
+                # Merge: move all mass from idx to best_idx
+                X[best_idx] += val
+                X[idx] = 0
+                nnz -= 1
+                merged_any = True
+
+            if not merged_any:
+                # No more merges possible without violating capacity
+                break
+
+        else:
+            # CASE 2: Too Few nonzero indices split larger ones into multiple
+            # Indices that are currently zero but have capacity > 0
+            zero_indices = np.where(X == 0)[0]
+            zero_with_capacity = zero_indices[N_bar[zero_indices] > 0]
+
+            if len(zero_with_capacity) == 0:
+                # No place to create new nonzeros
+                break
+
+            # Candidates to split from: nonzero indices sorted by descending X
+            nonzero_indices = np.nonzero(X)[0]
+            nz_vals = X[nonzero_indices]
+            order = np.argsort(-nz_vals)  # largest first
+            split_sources = nonzero_indices[order]
+
+            split_any = False
+
+            for src in split_sources:
+                if nnz >= target_nonzeros:
+                    break
+
+                src_val = X[src]
+                if src_val <= 1:
+                    continue  # not enough to split
+
+                # Choose a zero index with largest remaining capacity
+                remaining_capacity_zero = (N_bar - X)[zero_with_capacity]
+                if len(remaining_capacity_zero) == 0:
+                    break
+
+                best_zero_idx = zero_with_capacity[np.argmax(remaining_capacity_zero)]
+
+                capacity_left = N_bar[best_zero_idx] - X[best_zero_idx]
+                if capacity_left <= 0:
+                    zero_with_capacity = zero_with_capacity[zero_with_capacity != best_zero_idx]
+                    continue
+
+                # Move at most half of src_val, but not more than capacity_left, and at least 1
+                move = min(src_val // 2, capacity_left)
+                if move <= 0:
+                    continue
+
+                # Perform split
+                X[src] -= move
+                X[best_zero_idx] += move
+
+                nnz += 1
+                split_any = True
+
+                # best_zero_idx is no longer zero
+                zero_with_capacity = zero_with_capacity[zero_with_capacity != best_zero_idx]
+
+                if len(zero_with_capacity) == 0:
+                    break
+
+            if not split_any:
+                # No way to create new nonzeros given capacities
+                break
+
+    return X
+
+
 def get_range_key(d, num_plants):
     last_key = None
     max_upper = float("-inf")
@@ -140,28 +264,6 @@ def _set_beta_binomial_params(contamination_config, consignment,rng=None):
     key = get_range_key(param_dict, num_plants)
     beta_binomial_params = param_dict[key] if key is not None else param_dict["default"]
 
-    # # Get the J parameter (number of groups) needed for contaminating via beta binomial
-    # if consignment.get('num_sample_units') is None:
-    #     if consignment.get('sample_units') is None:
-    #         warnings.warn(
-    #             "Attempting to set the 'J' (number of groups/sample units on the consignment)"
-    #             " beta binomial parameters in the '_set_beta_binomial_params' function"
-    #             " of the contamination.py module and no sample unit information was found (i.e., no 'num_sample_units'"
-    #             " or 'sample_units' attribute in the consignment object).  Default value found from the generation of"
-    #             " Clarke input values function being used.",
-    #             UserWarning
-    #         )
-    #     else:
-    #         beta_binomial_params['J'] = len(consignment.get('sample_units'))
-    # else:
-    #     beta_binomial_params['J'] = consignment.get('num_sample_units')
-    #
-    # # Get the N_bar parameter (number of units per group) needed for contaminating via beta binomial
-    # num_sample_units = beta_binomial_params['J']
-    # beta_binomial_params['N_bar'] = int(num_plants / num_sample_units)
-
-    #########################################################################################################
-    #########################################################################################################
     # Get J and actual N values per sample unit
     all_sample_unit_objects = []
     for inspection_unit in consignment.inspection_units:
@@ -173,14 +275,9 @@ def _set_beta_binomial_params(contamination_config, consignment,rng=None):
 
     beta_binomial_params['J'] = len(all_sample_unit_objects)
 
-    # Use actual plant counts per sample unit instead of average
+    # Use actual plant counts per sample unit
     actual_N = np.array([len(su.plants) for su in all_sample_unit_objects])
-    beta_binomial_params['N_bar'] = actual_N  # Array of actual counts, not average
-    #########################################################################################################
-    #########################################################################################################
-
-
-
+    beta_binomial_params['N_bar'] = actual_N  # Array of plant unit counts
 
     # Get theta parameter
     if beta_binomial_params['theta'] is None:
@@ -289,9 +386,7 @@ def add_contaminant_beta_binomial(beta_binomial_config, rng=None):
     # Seed random number generator
     rng = np.random.default_rng() if rng is None else np.random.default_rng(rng)
 
-
-    #############################################################
-    # 1) p_i ~ Beta(alpha, beta), shape (I,)
+    # Sample from beta p_i ~ Beta(alpha, beta), shape (I,)
     p_i = rng.beta(alpha, beta)
 
     if np.isinf(theta):
@@ -308,8 +403,6 @@ def add_contaminant_beta_binomial(beta_binomial_config, rng=None):
 
     # Draw X_ij from Binomial(N_bar, p_ij) for each of the J cells
     X = rng.binomial(N_bar, p_ij)
-
-    ################################################################
 
 
     # Apply clustering
@@ -338,7 +431,9 @@ def add_contaminant_beta_binomial(beta_binomial_config, rng=None):
                 target = rng.choice(nonzero_idx)
                 X[target] += val
 
-
+        # Check if any overflow exists, and if so, apply heuristic approach to
+        if np.any(X > N_bar):
+            X = heuristic_adjust_nonzeros(rng, X, N_bar, len(nonzero_idx))
     return X
 
 
@@ -558,29 +653,17 @@ def add_contaminant_uniform_random(config, consignment, rng=None):
             print(f"WARNING: contaminated_plants length ({len(contaminated_plants)}) "
                   f"!= sample_units length ({len(consignment.sample_units)})")
 
-        # Flatten all sample unit objects into a list matching contaminated_plants order
-        all_sample_unit_objects = []
         for inspection_unit in consignment.inspection_units:
-            all_sample_unit_objects.extend(inspection_unit.included_unit_objects)
+            for sample_unit in inspection_unit.included_unit_objects:
+                if contaminated_plants[sample_unit.id] <= 0:
+                    continue
+                # If more contaminated plants than exist, then contaminate entire sample unit
+                if  contaminated_plants[sample_unit.id] > sample_unit.num_plants:
+                    contaminated_plants[sample_unit.id] = sample_unit.num_plants
 
-        # Apply contamination to each sample unit
-        for su_idx, (su_obj, k) in enumerate(zip(all_sample_unit_objects, contaminated_plants)):
-            k = int(k)
-            if k <= 0:
-                continue
-
-            num_plants_in_su = len(su_obj.plants)
-            if num_plants_in_su <= 0:
-                if k > 0:
-                    print(f"WARNING: Sample unit {su_idx} has {k} contaminated plants but 0 total plants")
-                continue
-
-            # Can't contaminate more plants than exist
-            k = min(k, num_plants_in_su)
-
-            # Randomly select k plants to contaminate in this sample unit
-            chosen_indices = rng.choice(num_plants_in_su, size=k, replace=False)
-            su_obj.plants[chosen_indices] = 1
+                # Randomly select k plants to contaminate in this sample unit
+                chosen_indices = rng.choice(sample_unit.num_plants, size=contaminated_plants[sample_unit.id], replace=False)
+                sample_unit.plants[chosen_indices] = 1
 
         # Update consignment.sample_units to sum of contaminated plants
         sample_unit_counter = 0
