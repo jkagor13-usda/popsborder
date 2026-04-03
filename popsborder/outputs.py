@@ -39,12 +39,6 @@ Notes:
 - Maintains support for legacy configuration while displaying updated terminology
 - All output functions now support both inspection_unit/sample_unit and box/item terminology
 
-
-
-
-
-
-
 Modifications:
 - 10/3/2025: Modeifications described below (Gary Lin and Joseph Agor)
     Following New Classes Added

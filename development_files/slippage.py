@@ -14,6 +14,11 @@ import hashlib
 from PyInstaller.utils.conftest import data_dir
 
 # Import functions from popsborder
+import sys
+_repo_root = Path(__file__).resolve().parents[1]
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
+
 from popsborder.scenarios import run_scenarios
 from popsborder.inputs import load_configuration, load_scenario_table, load_compliance_lookup_csv, build_compliance_lookup_table
 from popsborder.outputs import save_scenario_result_to_pandas

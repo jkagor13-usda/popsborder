@@ -69,7 +69,7 @@ import chardet
 from scipy import stats
 import warnings
 import re
-from typing import Optional
+from typing import Optional, Union
 
 DEFAULT_RANDOM_STATE = 42
 DEFAULT_SAMPLING_METHOD = "sequential"
