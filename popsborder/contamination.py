@@ -32,7 +32,7 @@ Modifications:
 
 - 10/28/2025:  Modified the following functions (Joseph Agor)
     - add_contaminant_uniform_random():
-        * Added functionality to use the beta-binomial model from Clarke et. al. 2023 paper for plant units
+        * Added functionality to use the beta-binomial model from Clark et. al. 2023 paper for plant units
     - get_contaminant_function():
         * Updated to include ability to contaminate using the beta-binomial approach
         * Embedded logic from previously existing create_contaminant_function() into this function
@@ -82,6 +82,130 @@ import ast
 ## START: Updated New Functions for Fitting Distributions with RBS data ##
 ##########################################################################
 
+def heuristic_adjust_nonzeros(rng, X, N_bar, target_nonzeros, max_iters=1000):
+    X = X.copy()
+    total = X.sum()
+
+    for i in range(max_iters):
+        print(f'Heuristic iteration {i+1} out of {max_iters}')
+
+        nonzero_indices = np.nonzero(X)[0]
+        nnz = len(nonzero_indices)
+
+        # Handle degenerate case
+        if target_nonzeros == 0:
+            X[:] = 0
+            break
+
+        # Relative difference from target
+        rel_diff = abs(nnz - target_nonzeros) / target_nonzeros
+
+        # Termination criterion (within 5% relative difference of the target clustering)
+        if rel_diff < 0.05:
+            break
+
+        if nnz > target_nonzeros:
+            # CASE 1: Too many nonzero indices so merge some
+            # Sort nonzeros by X value ascending (smallest first)
+            nz_vals = X[nonzero_indices]
+            order = np.argsort(nz_vals)
+            sorted_indices = nonzero_indices[order]
+
+            merged_any = False
+
+            for idx in sorted_indices:
+                # Recompute nnz cheaply: we will zero idx if we merge
+                if nnz <= target_nonzeros:
+                    break
+
+                val = X[idx]
+                if val == 0:
+                    continue
+
+                # Prefer targets with larger remaining capacity
+                remaining_capacity = N_bar - X
+                candidates = np.where((remaining_capacity >= val) & (np.arange(len(X)) != idx))[0]
+
+                if len(candidates) == 0:
+                    continue
+
+                # Choose among the candidates with largest remaining capacity
+                cand_cap = remaining_capacity[candidates]
+                best_idx = candidates[np.argmax(cand_cap)]
+
+                # Merge: move all mass from idx to best_idx
+                X[best_idx] += val
+                X[idx] = 0
+                nnz -= 1
+                merged_any = True
+
+            if not merged_any:
+                # No more merges possible without violating capacity
+                break
+
+        else:
+            # CASE 2: Too Few nonzero indices split larger ones into multiple
+            # Indices that are currently zero but have capacity > 0
+            zero_indices = np.where(X == 0)[0]
+            zero_with_capacity = zero_indices[N_bar[zero_indices] > 0]
+
+            if len(zero_with_capacity) == 0:
+                # No place to create new nonzeros
+                break
+
+            # Candidates to split from: nonzero indices sorted by descending X
+            nonzero_indices = np.nonzero(X)[0]
+            nz_vals = X[nonzero_indices]
+            order = np.argsort(-nz_vals)  # largest first
+            split_sources = nonzero_indices[order]
+
+            split_any = False
+
+            for src in split_sources:
+                if nnz >= target_nonzeros:
+                    break
+
+                src_val = X[src]
+                if src_val <= 1:
+                    continue  # not enough to split
+
+                # Choose a zero index with largest remaining capacity
+                remaining_capacity_zero = (N_bar - X)[zero_with_capacity]
+                if len(remaining_capacity_zero) == 0:
+                    break
+
+                best_zero_idx = zero_with_capacity[np.argmax(remaining_capacity_zero)]
+
+                capacity_left = N_bar[best_zero_idx] - X[best_zero_idx]
+                if capacity_left <= 0:
+                    zero_with_capacity = zero_with_capacity[zero_with_capacity != best_zero_idx]
+                    continue
+
+                # Move at most half of src_val, but not more than capacity_left, and at least 1
+                move = min(src_val // 2, capacity_left)
+                if move <= 0:
+                    continue
+
+                # Perform split
+                X[src] -= move
+                X[best_zero_idx] += move
+
+                nnz += 1
+                split_any = True
+
+                # best_zero_idx is no longer zero
+                zero_with_capacity = zero_with_capacity[zero_with_capacity != best_zero_idx]
+
+                if len(zero_with_capacity) == 0:
+                    break
+
+            if not split_any:
+                # No way to create new nonzeros given capacities
+                break
+
+    return X
+
+
 def get_range_key(d, num_plants):
     last_key = None
     max_upper = float("-inf")
@@ -101,8 +225,6 @@ def get_range_key(d, num_plants):
 
     # If no match found, return the tuple with highest upper bound
     return last_key
-
-
 
 
 def _set_beta_binomial_params(contamination_config, consignment,rng=None):
@@ -140,28 +262,6 @@ def _set_beta_binomial_params(contamination_config, consignment,rng=None):
     key = get_range_key(param_dict, num_plants)
     beta_binomial_params = param_dict[key] if key is not None else param_dict["default"]
 
-    # # Get the J parameter (number of groups) needed for contaminating via beta binomial
-    # if consignment.get('num_sample_units') is None:
-    #     if consignment.get('sample_units') is None:
-    #         warnings.warn(
-    #             "Attempting to set the 'J' (number of groups/sample units on the consignment)"
-    #             " beta binomial parameters in the '_set_beta_binomial_params' function"
-    #             " of the contamination.py module and no sample unit information was found (i.e., no 'num_sample_units'"
-    #             " or 'sample_units' attribute in the consignment object).  Default value found from the generation of"
-    #             " Clarke input values function being used.",
-    #             UserWarning
-    #         )
-    #     else:
-    #         beta_binomial_params['J'] = len(consignment.get('sample_units'))
-    # else:
-    #     beta_binomial_params['J'] = consignment.get('num_sample_units')
-    #
-    # # Get the N_bar parameter (number of units per group) needed for contaminating via beta binomial
-    # num_sample_units = beta_binomial_params['J']
-    # beta_binomial_params['N_bar'] = int(num_plants / num_sample_units)
-
-    #########################################################################################################
-    #########################################################################################################
     # Get J and actual N values per sample unit
     all_sample_unit_objects = []
     for inspection_unit in consignment.inspection_units:
@@ -173,14 +273,9 @@ def _set_beta_binomial_params(contamination_config, consignment,rng=None):
 
     beta_binomial_params['J'] = len(all_sample_unit_objects)
 
-    # Use actual plant counts per sample unit instead of average
+    # Use actual plant counts per sample unit
     actual_N = np.array([len(su.plants) for su in all_sample_unit_objects])
-    beta_binomial_params['N_bar'] = actual_N  # Array of actual counts, not average
-    #########################################################################################################
-    #########################################################################################################
-
-
-
+    beta_binomial_params['N_bar'] = actual_N  # Array of plant unit counts
 
     # Get theta parameter
     if beta_binomial_params['theta'] is None:
@@ -289,9 +384,7 @@ def add_contaminant_beta_binomial(beta_binomial_config, rng=None):
     # Seed random number generator
     rng = np.random.default_rng() if rng is None else np.random.default_rng(rng)
 
-
-    #############################################################
-    # 1) p_i ~ Beta(alpha, beta), shape (I,)
+    # Sample from beta p_i ~ Beta(alpha, beta), shape (I,)
     p_i = rng.beta(alpha, beta)
 
     if np.isinf(theta):
@@ -308,8 +401,6 @@ def add_contaminant_beta_binomial(beta_binomial_config, rng=None):
 
     # Draw X_ij from Binomial(N_bar, p_ij) for each of the J cells
     X = rng.binomial(N_bar, p_ij)
-
-    ################################################################
 
 
     # Apply clustering
@@ -338,157 +429,10 @@ def add_contaminant_beta_binomial(beta_binomial_config, rng=None):
                 target = rng.choice(nonzero_idx)
                 X[target] += val
 
-
+        # Check if any overflow exists, and if so, apply heuristic approach to
+        if np.any(X > N_bar):
+            X = heuristic_adjust_nonzeros(rng, X, N_bar, len(nonzero_idx))
     return X
-
-
-def contaminate_units_by_group(contaminated_plants, plant_indices):
-    contaminated_plants = np.asarray(contaminated_plants).ravel()
-
-    # Group by inspection unit, but store *indices*, not tuples
-    by_inspection_unit = defaultdict(list)
-    for idx, t in enumerate(plant_indices):
-        a, b, c = t
-        by_inspection_unit[a].append(idx)
-
-    sampled_indices_global = []
-    rng = np.random.default_rng()
-
-    for inspect_unit, count in enumerate(contaminated_plants):
-        count = int(count)
-        if count > 0:
-            group = by_inspection_unit[inspect_unit]  # list of indices into plant_indices
-            if len(group) == 0:
-                continue
-            n = min(count, len(group))
-            chosen_local = rng.choice(len(group), size=n, replace=False)
-            sampled_indices_global.extend(group[i] for i in chosen_local)
-
-    return sampled_indices_global
-
-#######################################################################
-## END Updated New Functions for Fitting Distributions with RBS data ##
-#######################################################################
-
-# This function is not used or working, consider updating or removing.
-def add_contaminant_to_random_inspection_unit(config, consignment, contamination_rate=None):
-    """Add contaminant to consignment
-
-    Assuming a list of inspection_units with the non-contaminated inspection_units set to False.
-
-    Each sample_unit (inspection_unit) in inspection_units (list) is set to True if a contaminant is
-    there, False otherwise.
-
-    :param config: ``random_inspection_unit`` config dictionary
-    :param consignment: Consignment to contaminate
-    :param contamination_rate: ``contamination_rate`` config dictionary
-    """
-    contaminant_probability = config["probability"]
-    contaminant_ratio = config["ratio"]
-    if random.random() >= contaminant_probability:
-        return
-    for inspection_unit in consignment.inspection_units:
-        if random.random() < contaminant_ratio:
-            in_inspection_unit = config.get("in_inspection_unit_arrangement", "all")
-            if in_inspection_unit == "first":
-                # simply put one contaminant to first sample_unit in the inspection_unit
-                inspection_unit.included_units[0] = 1
-                # Plant contamination
-                if hasattr(inspection_unit, 'included_unit_objects'):
-                    inspection_unit.included_unit_objects[0].plants.fill(1)
-                    inspection_unit.included_units[0] = inspection_unit.included_unit_objects[0].plants.sum()
-            elif in_inspection_unit == "all":
-                inspection_unit.included_units.fill(1)
-                # Plant contamination
-                if hasattr(inspection_unit, 'included_unit_objects'):
-                    for samp_index in range(inspection_unit.num_sample_units):
-                        if hasattr(inspection_unit.included_unit_objects[samp_index], 'plants'):
-                            inspection_unit.included_unit_objects[samp_index].plants.fill(1)
-                            inspection_unit.included_units[samp_index] = inspection_unit.included_unit_objects[samp_index].plants.sum()
-            elif in_inspection_unit == "one_random":
-                index = np.random.choice(inspection_unit.num_sample_units - 1)
-                inspection_unit.included_units[index] = 1
-                # Plant contamination
-                if hasattr(inspection_unit, 'included_unit_objects'):
-                    inspection_unit.included_unit_objects[index].plants.fill(1)
-                    inspection_unit.included_units[index] = inspection_unit.included_unit_objects[index].plants.sum()
-            elif in_inspection_unit == "random":
-                if not contamination_rate:
-                    raise ValueError(
-                        "contamination_rate must be set if arrangement is random"
-                    )
-                num_contaminated_sample_units = num_sample_units_to_contaminate(
-                    contamination_rate, inspection_unit.num_sample_units
-                )
-                if num_contaminated_sample_units == 0:
-                    continue
-                indexes = np.random.choice(
-                    inspection_unit.num_sample_units, num_contaminated_sample_units, replace=False
-                )
-                np.put(inspection_unit.included_units, indexes, 1)
-                # Plant contamination
-                if hasattr(inspection_unit, 'included_unit_objects'):
-                    for idx in indexes:
-                        if hasattr(inspection_unit.included_unit_objects[idx], 'plants'):
-                            inspection_unit.included_unit_objects[idx].plants.fill(1)
-                            inspection_unit.included_units[idx] = inspection_unit.included_unit_objects[idx].plants.sum()
-
-# modify to include clarke parameters -
-def get_contamination_rate(config):
-    """Get contamination rate.
-
-    Config is the ``contamination_rate`` dictionary.
-    """
-    distribution = config["distribution"]
-    if distribution == "fixed_value":
-        return config["value"]
-    if distribution in ["beta_binomial", "beta-binomial"]:
-        params = config.get("beta_binomial_parameters", {})
-        alpha = float(params['default'].get("alpha", 0))
-        beta = float(params['default'].get("beta", 0))
-        denom = alpha + beta
-        return 0.0 if denom <= 0 else alpha / denom
-    if distribution == "beta":
-        parameters = config["parameters"]
-        if isinstance(parameters, Mapping):
-            param1 = parameters["a"]
-            param2 = parameters["b"]
-        else:
-            param1, param2 = parameters
-        return float(stats.beta.rvs(param1, param2, size=1))
-    raise RuntimeError(f"Unknown contamination rate distribution: {distribution}")
-
-
-
-def num_units_to_contaminate(config, num_units):
-    """Return number of plant units to be contaminated
-    Rounds up or down to nearest integer.
-
-    Config is the ``contamination_rate`` dictionary.
-    """
-    contamination_rate = get_contamination_rate(config)
-    contaminated_units = round(num_units * contamination_rate)
-    return contaminated_units
-
-def num_sample_units_to_contaminate(config, num_sample_units):
-    """Return number of sample_units to be contaminated
-    Rounds up or down to nearest integer.
-
-    Config is the ``contamination_rate`` dictionary.
-    """
-    contamination_rate = get_contamination_rate(config)
-    contaminated_sample_units = round(num_sample_units * contamination_rate)
-    return contaminated_sample_units
-
-
-def num_inspection_units_to_contaminate(config, num_inspection_units):
-    """Return number of inspection_units to be contaminated as float.
-
-    Config is the ``contamination_rate`` dictionary.
-    """
-    contamination_rate = get_contamination_rate(config)
-    contaminated_inspection_units = num_inspection_units * contamination_rate
-    return contaminated_inspection_units
 
 
 def synchronize_contamination_arrays_from_plants(consignment):
@@ -522,8 +466,226 @@ def synchronize_contamination_arrays_from_plants(consignment):
                     consignment.plants[global_plant_idx:end_idx] = plant_values[:write_n]
                 global_plant_idx += n_plants
 
+def num_units_to_contaminate(config, num_units):
+    """Return number of plant units to be contaminated
+    Rounds up or down to nearest integer.
 
-def add_contaminant_uniform_random(config, consignment,rng=None):
+    Config is the ``contamination_rate`` dictionary.
+    """
+    contamination_rate = get_contamination_rate(config)
+    contaminated_units = round(num_units * contamination_rate)
+    return contaminated_units
+
+#######################################################################
+## END Updated New Functions for Fitting Distributions with RBS data ##
+#######################################################################
+
+# This function is not used or working, consider updating or removing.
+def add_contaminant_to_random_box(config, consignment, contamination_rate=None):
+    """Add contaminant to consignment
+
+    Assuming a list of boxes with the non-contaminated boxes set to False.
+
+    Each item (box) in boxes (list) is set to True if a contaminant is
+    there, False otherwise.
+
+    :param config: ``random_box`` config dictionary
+    :param consignment: Consignment to contaminate
+    :param contamination_rate: ``contamination_rate`` config dictionary
+    """
+    contaminant_probability = config["probability"]
+    contaminant_ratio = config["ratio"]
+    if random.random() >= contaminant_probability:
+        return
+    for box in consignment.boxes:
+        if random.random() < contaminant_ratio:
+            in_box = config.get("in_box_arrangement", "all")
+            if in_box == "first":
+                # simply put one contaminant to first item in the box
+                box.items[0] = 1
+            elif in_box == "all":
+                box.items.fill(1)
+            elif in_box == "one_random":
+                index = np.random.choice(box.num_items - 1)
+                box.items[index] = 1
+            elif in_box == "random":
+                if not contamination_rate:
+                    raise ValueError(
+                        "contamination_rate must be set if arrangement is random"
+                    )
+                num_contaminated_items = num_items_to_contaminate(
+                    contamination_rate, box.num_items
+                )
+                if num_contaminated_items == 0:
+                    continue
+                indexes = np.random.choice(
+                    box.num_items, num_contaminated_items, replace=False
+                )
+                np.put(box.items, indexes, 1)
+
+
+def get_contamination_rate(config):
+    """Get contamination rate.
+
+    Config is the ``contamination_rate`` dictionary.
+    """
+    distribution = config["distribution"]
+    if distribution == "fixed_value":
+        return config["value"]
+    elif distribution == "beta":
+        parameters = config["parameters"]
+        if isinstance(parameters, Mapping):
+            param1 = parameters["a"]
+            param2 = parameters["b"]
+        else:
+            param1, param2 = parameters
+        return float(stats.beta.rvs(param1, param2, size=1))
+    elif distribution in ["beta_binomial", "beta-binomial"]:
+        params = config.get("beta_binomial_parameters", {})
+        alpha = float(params['default'].get("alpha", 0))
+        beta = float(params['default'].get("beta", 0))
+        denom = alpha + beta
+        return 0.0 if denom <= 0 else alpha / denom
+    raise RuntimeError(f"Unknown contamination rate distribution: {distribution}")
+
+
+
+def num_items_to_contaminate(config, num_items):
+    """Return number of items to be contaminated
+    Rounds up or down to nearest integer.
+
+    Config is the ``contamination_rate`` dictionary.
+    """
+    contamination_rate = get_contamination_rate(config)
+    contaminated_items = round(num_items * contamination_rate)
+    return contaminated_items
+
+def num_boxes_to_contaminate(config, num_boxes):
+    """Return number of boxes to be contaminated as float.
+
+    Config is the ``contamination_rate`` dictionary.
+    """
+    contamination_rate = get_contamination_rate(config)
+    contaminated_boxes = num_boxes * contamination_rate
+    return contaminated_boxes
+
+
+def add_contaminant_uniform_random(config, consignment, rng=None):
+    """Add contaminants to consignment using uniform random distribution
+
+    Contamination rate is determined using the ``contamination_rate`` config key.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+    contamination_unit = config["contamination_unit"]
+    if contamination_unit in ["box", "boxes"]:
+        contaminated_boxes = num_boxes_to_contaminate(
+            config["contamination_rate"], consignment.num_boxes
+        )
+        if contaminated_boxes == 0.0:
+            return
+        box_indexes = np.random.choice(
+            consignment.num_boxes, math.ceil(contaminated_boxes), replace=False
+        )
+        # Contaminate full boxes except for last one
+        for box_index in box_indexes[:-1]:
+            consignment.boxes[box_index].items.fill(1)
+        # Use remainder of contaminated_boxes to partially contaminate
+        # last box if needed
+        partial_box_proportion = math.modf(contaminated_boxes)[0]
+        # If contaminated_boxes is whole number, contaminate full box
+        if partial_box_proportion == 0.0:
+            partial_box_proportion = 1
+        partial_box_contaminated_stems = round(
+            consignment.boxes[box_indexes[-1]].num_items * partial_box_proportion
+        )
+        consignment.boxes[box_indexes[-1]].items[0:partial_box_contaminated_stems].fill(
+            1
+        )
+        # Check if correct number of boxes contaminated, should be rounded up
+        # contaminated_boxes, or may be rounded down contaminated_boxes
+        # if no stems were contaminated in last partial box
+        assert np.count_nonzero(consignment.boxes) in (
+            math.ceil(contaminated_boxes),
+            math.floor(contaminated_boxes),
+        )
+    elif contamination_unit in ["item", "items"]:
+        contaminated_items = num_items_to_contaminate(
+            config["contamination_rate"], consignment.num_items
+        )
+        if contaminated_items == 0:
+            return
+        item_indexes = np.random.choice(
+            consignment.num_items, contaminated_items, replace=False
+        )
+        np.put(consignment.items, item_indexes, 1)
+        assert np.count_nonzero(consignment.items) == contaminated_items
+
+    elif contamination_unit in ["plant", "plants"]:
+        # Contaminate plants directly per inspection unit
+        if config["contamination_rate"]['distribution'] == 'beta-binomial':
+            beta_binomial_params = _set_beta_binomial_params(config, consignment)
+            contaminated_plants = np.asarray(add_contaminant_beta_binomial(beta_binomial_params), dtype=int).ravel()
+            #print(f"      contam: random | plants beta-binomial -> total contaminated plants {int(np.sum(contaminated_plants))} of {consignment.num_plants}")
+            if np.all(contaminated_plants == 0):
+                return
+        else:
+            # Fallback fixed-rate contamination across all plants
+            total_plants = sum(len(su.plants) for iu in consignment.inspection_units for su in iu.included_unit_objects)
+            contaminated_items = num_items_to_contaminate(
+                config["contamination_rate"], total_plants
+            )
+            contaminated_plants = np.zeros(total_plants, dtype=int)
+            if contaminated_items > 0:
+                # Distribute proportionally by plant counts per inspection unit
+                unit_sizes = [sum(len(su.plants) for su in iu.included_unit_objects) for iu in consignment.inspection_units]
+                total_size = sum(unit_sizes)
+                for idx, size in enumerate(unit_sizes):
+                    share = int(round(contaminated_items * size / total_size)) if total_size else 0
+                    contaminated_plants[idx] = min(share, size)
+            if contaminated_plants.sum() == 0:
+                return
+
+        # Apply contamination per SAMPLE UNIT
+        if len(contaminated_plants) != len(consignment.sample_units):
+            print(f"WARNING: contaminated_plants length ({len(contaminated_plants)}) "
+                  f"!= sample_units length ({len(consignment.sample_units)})")
+
+        for inspection_unit in consignment.inspection_units:
+            for sample_unit in inspection_unit.included_unit_objects:
+                if contaminated_plants[sample_unit.id] <= 0:
+                    continue
+                # If more contaminated plants than exist, then contaminate entire sample unit
+                if  contaminated_plants[sample_unit.id] > sample_unit.num_plants:
+                    contaminated_plants[sample_unit.id] = sample_unit.num_plants
+
+                # Randomly select k plants to contaminate in this sample unit
+                chosen_indices = rng.choice(sample_unit.num_plants, size=contaminated_plants[sample_unit.id], replace=False)
+                sample_unit.plants[chosen_indices] = 1
+
+        # Update consignment.sample_units to sum of contaminated plants
+        sample_unit_counter = 0
+        for inspection_unit in consignment.inspection_units:
+            for sample_unit_object in inspection_unit.included_unit_objects:
+                consignment.sample_units[sample_unit_counter] = sample_unit_object.plants.sum()
+                sample_unit_counter += 1
+
+        # Verify contamination count
+        total_contaminated = sum(
+            (sample_unit_object.plants == 1).sum()
+            for inspection_unit in consignment.inspection_units
+            for sample_unit_object in inspection_unit.included_unit_objects
+        )
+
+        expected = int(np.sum(contaminated_plants))
+        if total_contaminated != expected:
+            print(f"WARNING: Contaminated plant count mismatch. Expected {expected}, got {total_contaminated}.")
+    else:
+        raise RuntimeError(f"Unknown contamination unit: {contamination_unit}")
+
+
+
+def add_contaminant_uniform_random_old(config, consignment,rng=None):
     """Add contaminants to consignment using uniform random distribution
 
     Contamination rate is determined using the ``contamination_rate`` config key.
@@ -647,57 +809,64 @@ def add_contaminant_uniform_random(config, consignment,rng=None):
         raise RuntimeError(f"Unknown contamination unit: {contamination_unit}")
 
 
-def _contaminated_sample_units_to_cluster_sizes(
-    contaminated_sample_units, contaminated_units_per_cluster
+
+def _contaminated_items_to_cluster_sizes(
+    contaminated_items, contaminated_units_per_cluster
 ):
-    """Get list of cluster sizes for a given number of contaminated sample_units
+    """Get list of cluster sizes for a given number of contaminated items
 
     The size of each cluster is limited by contaminated_units_per_cluster.
     """
-    if contaminated_sample_units > contaminated_units_per_cluster:
+    if contaminated_items > contaminated_units_per_cluster:
         # Split into n clusters so that n-1 clusters have the max size and
-        # the last one has the remaining sample_units.
-        sum_sample_units = 0
+        # the last one has the remaining items.
+        # Alternative would be sth like:
+        # round(contaminated_items/contaminated_units_per_cluster)
+        sum_items = 0
         cluster_sizes = []
-        while sum_sample_units < contaminated_sample_units - contaminated_units_per_cluster:
-            sum_sample_units += contaminated_units_per_cluster
+        while sum_items < contaminated_items - contaminated_units_per_cluster:
+            sum_items += contaminated_units_per_cluster
             cluster_sizes.append(contaminated_units_per_cluster)
-        # add remaining sample_units
-        cluster_sizes.append(contaminated_sample_units - sum_sample_units)
-        sum_sample_units += contaminated_sample_units - sum_sample_units
-        assert sum_sample_units == contaminated_sample_units
+        # add remaining items
+        cluster_sizes.append(contaminated_items - sum_items)
+        sum_items += contaminated_items - sum_items
+        assert sum_items == contaminated_items
     else:
-        cluster_sizes = [contaminated_sample_units]
+        cluster_sizes = [contaminated_items]
     return cluster_sizes
 
 
-def _contaminated_inspection_units_to_cluster_sizes(contaminated_inspection_units, contaminated_units_per_cluster):
-    """Get list of cluster sizes for a given number of contaminated sample_units
+
+def _contaminated_boxes_to_cluster_sizes(
+    contaminated_boxes, contaminated_units_per_cluster
+):
+    """Get list of cluster sizes for a given number of contaminated items
 
     The size of each cluster is limited by contaminated_units_per_cluster.
     """
-    contaminated_inspection_units = math.ceil(contaminated_inspection_units)
-    if contaminated_inspection_units > contaminated_units_per_cluster:
+    contaminated_boxes = math.ceil(contaminated_boxes)
+    if contaminated_boxes > contaminated_units_per_cluster:
         # Split into n clusters so that n-1 clusters have the max size and
-        # the last one has the remaining sample_units.
-        sum_inspection_units = 0
+        # the last one has the remaining items.
+        sum_boxes = 0
         cluster_sizes = []
-        while sum_inspection_units < contaminated_inspection_units - contaminated_units_per_cluster:
-            sum_inspection_units += contaminated_units_per_cluster
+        while sum_boxes < contaminated_boxes - contaminated_units_per_cluster:
+            sum_boxes += contaminated_units_per_cluster
             cluster_sizes.append(contaminated_units_per_cluster)
-        # add last cluster with remaining contaminated inspection_units
-        cluster_sizes.append(contaminated_inspection_units - sum_inspection_units)
-        sum_inspection_units += contaminated_inspection_units - sum_inspection_units
-        assert sum_inspection_units == contaminated_inspection_units
+        # add last cluster with remaining contaminated boxes
+        cluster_sizes.append(contaminated_boxes - sum_boxes)
+        sum_boxes += contaminated_boxes - sum_boxes
+        assert sum_boxes == contaminated_boxes
     else:
-        cluster_sizes = [math.ceil(contaminated_inspection_units)]
+        cluster_sizes = [math.ceil(contaminated_boxes)]
     return cluster_sizes
+
 
 
 def choose_strata_for_clusters(num_units, cluster_width, num_clusters):
-    """Divide array of sample_units or inspection_units into strata wide enough for clusters
+    """Divide array of items or boxes into strata wide enough for clusters
     so that they do not overlap. If array is not equally divisible by cluster_width,
-    create one smaller stratum that can be used for a smaller cluster if needed.
+    create one smaller strata that can be used for a smaller cluster if needed.
     This is important for very high contamination rates that require nearly all units
     to be contaminated.
     Randomly select strata to place contaminant clusters. If contamination rate is
@@ -705,8 +874,8 @@ def choose_strata_for_clusters(num_units, cluster_width, num_clusters):
     remainder and only select from strata wide enough to contain full sized cluster.
     Return strata selected to contaminate with clusters.
 
-    num_units: number of inspection_units or sample_units in consignment
-    cluster_width: size of cluster in terms of inspection_units or units
+    num_units: number of boxes or items in consignment
+    cluster_width: size of cluster in terms of boxes or units
     num_clusters: number of clusters to contaminate
     """
     # Round up so that one smaller remainder stratum is included
@@ -716,7 +885,7 @@ def choose_strata_for_clusters(num_units, cluster_width, num_clusters):
         raise ValueError(
             """Cannot avoid overlapping clusters. Increase
             contaminated_units_per_cluster
-            or decrease cluster_sample_unit_width (if using sample_unit contamination_unit)"""
+            or decrease cluster_item_width (if using item contamination_unit)"""
         )
     # If all strata are needed, all strata are selected for clusters
     if num_clusters == num_strata:
@@ -736,29 +905,33 @@ def choose_strata_for_clusters(num_units, cluster_width, num_clusters):
     return cluster_strata
 
 
-def add_contaminant_clusters_to_inspection_units(config, consignment):
-    """Add contaminant clusters to inspection_units in a consignment"""
-    contaminated_units_per_cluster = config["clustered"]["contaminated_units_per_cluster"]
-    num_inspection_units = consignment.num_inspection_units
-    contaminated_inspection_units = num_inspection_units_to_contaminate(
-        config["contamination_rate"], num_inspection_units
+def add_contaminant_clusters_to_boxes(config, consignment):
+    """Add contaminant clusters to boxes in a consignment"""
+    contaminated_units_per_cluster = config["clustered"][
+        "contaminated_units_per_cluster"
+    ]
+    num_boxes = consignment.num_boxes
+    contaminated_boxes = num_boxes_to_contaminate(
+        config["contamination_rate"], num_boxes
     )
-    if contaminated_inspection_units == 0:
+    if contaminated_boxes == 0:
         return
-    cluster_sizes = _contaminated_inspection_units_to_cluster_sizes(
-        contaminated_inspection_units, contaminated_units_per_cluster
+    cluster_sizes = _contaminated_boxes_to_cluster_sizes(
+        contaminated_boxes, contaminated_units_per_cluster
     )
     cluster_strata = choose_strata_for_clusters(
-        num_inspection_units, contaminated_units_per_cluster, len(cluster_sizes)
+        num_boxes, contaminated_units_per_cluster, len(cluster_sizes)
     )
-    # Mark contaminated sample_units in all contaminated inspection_units (full and partial)
+    # Contaminate full boxes in all clusters except the last one
     for index, cluster_size in enumerate(cluster_sizes[:-1]):
+        # Find starting index of strata (cluster width * strata index)
         cluster_start = contaminated_units_per_cluster * cluster_strata[index]
         cluster_indexes = np.arange(
             start=cluster_start, stop=cluster_start + cluster_size
         )
         for cluster_index in cluster_indexes:
-            consignment.inspection_units[cluster_index].included_units.fill(1)
+            consignment.boxes[cluster_index].items.fill(1)
+    # In last box of last cluster, contaminate partial box if needed
     cluster_start = (
         contaminated_units_per_cluster * cluster_strata[len(cluster_sizes) - 1]
     )
@@ -766,105 +939,57 @@ def add_contaminant_clusters_to_inspection_units(config, consignment):
         start=cluster_start, stop=cluster_start + cluster_sizes[-1]
     )
     for cluster_index in cluster_indexes[:-1]:
-        consignment.inspection_units[cluster_index].included_units.fill(1)
-    partial_inspection_unit_proportion = math.modf(contaminated_inspection_units)[0]
-    if partial_inspection_unit_proportion == 0.0:
-        partial_inspection_unit_proportion = 1
-    partial_inspection_unit_contaminated_stems = round(
-        consignment.inspection_units[cluster_indexes[-1]].num_sample_units * partial_inspection_unit_proportion
+        consignment.boxes[cluster_index].items.fill(1)
+    # Use remainder of contaminated_boxes to partially contaminate last box
+    partial_box_proportion = math.modf(contaminated_boxes)[0]
+    # If contaminated_boxes is whole number, contaminate full box
+    if partial_box_proportion == 0.0:
+        partial_box_proportion = 1
+    partial_box_contaminated_stems = round(
+        consignment.boxes[cluster_indexes[-1]].num_items * partial_box_proportion
     )
-    consignment.inspection_units[cluster_indexes[-1]].sample_units[0:partial_inspection_unit_contaminated_stems].fill(1)
-
-    # Pooled plant-level contamination for all contaminated sample_units in all contaminated inspection_units
-    if consignment.num_plants is not None:
-        perc_plants_contaminated = config["clustered"]["percentage_plants_contaminated"]
-        plant_tuples = []  # (inspection_unit_idx, samp_index, plant_idx)
-        # Collect all contaminated sample_units in all contaminated inspection_units
-        # Full contaminated inspection_units (all except last cluster inspection_unit if partial)
-        for index, cluster_size in enumerate(cluster_sizes[:-1]):
-            cluster_start = contaminated_units_per_cluster * cluster_strata[index]
-            cluster_indexes = np.arange(start=cluster_start, stop=cluster_start + cluster_size)
-            for cluster_index in cluster_indexes:
-                for samp_index in range(consignment.inspection_units[cluster_index].num_sample_units):
-                    sample_unit_object = consignment.inspection_units[cluster_index].included_unit_objects[samp_index]
-                    num_plants = len(sample_unit_object.plants)
-                    for plant_idx in range(num_plants):
-                        plant_tuples.append((cluster_index, samp_index, plant_idx))
-        # Partial inspection_unit (last cluster inspection_unit, possibly partial)
-        cluster_start = contaminated_units_per_cluster * cluster_strata[len(cluster_sizes) - 1]
-        cluster_indexes = np.arange(start=cluster_start, stop=cluster_start + cluster_sizes[-1])
-        for cluster_index in cluster_indexes[:-1]:
-            for samp_index in range(consignment.inspection_units[cluster_index].num_sample_units):
-                sample__unit_object_object = consignment.inspection_units[cluster_index].sample__unit_objects_objects[samp_index]
-                num_plants = len(sample__unit_object_object.plants)
-                for plant_idx in range(num_plants):
-                    plant_tuples.append((cluster_index, samp_index, plant_idx))
-        # Partial inspection_unit: only the contaminated sample_units
-        partial_inspection_unit_proportion = math.modf(contaminated_inspection_units)[0]
-        if partial_inspection_unit_proportion == 0.0:
-            partial_inspection_unit_proportion = 1
-        partial_inspection_unit_contaminated_stems = round(
-            consignment.inspection_units[cluster_indexes[-1]].num_sample_units * partial_inspection_unit_proportion
-        )
-        for samp_index in range(partial_inspection_unit_contaminated_stems):
-            sample_unit_object = consignment.inspection_units[cluster_indexes[-1]].included_unit_objects[samp_index]
-            num_plants = len(sample_unit_object.plants)
-            for plant_idx in range(num_plants):
-                plant_tuples.append((cluster_indexes[-1], samp_index, plant_idx))
-        total_plants = len(plant_tuples)
-        num_contaminated_plants = max(1, round(total_plants * perc_plants_contaminated))
-        # Set all plants in all contaminated sample_units to 0 first
-        for inspection_unit_idx, samp_index, plant_idx in plant_tuples:
-            consignment.inspection_units[inspection_unit_idx].included_unit_objects[samp_index].plants[plant_idx] = 0
-        # Randomly contaminate the required number of plants across all pooled plants
-        contaminated_plant_indices = np.random.choice(total_plants, num_contaminated_plants, replace=False)
-        for idx in contaminated_plant_indices:
-            inspection_unit_idx, samp_index, plant_idx = plant_tuples[idx]
-            consignment.inspection_units[inspection_unit_idx].included_unit_objects[samp_index].plants[plant_idx] = 1
-        # Update sample_units array to sum of contaminated plants per sample_unit
-        for inspection_unit_idx, inspection_unit in enumerate(consignment.inspection_units):
-            for samp_index, sample_unit_object in enumerate(inspection_unit.included_unit_objects):
-                consignment.inspection_units[inspection_unit_idx].included_units[samp_index] = sample_unit_object.plants.sum()
-
-    # Check if correct number of inspection_units contaminated, should be rounded up
-    # contaminated_inspection_units, or may be rounded down contaminated_inspection_units
-    # if no stems were contaminated in last partial inspection_unit
-    
-    assert np.count_nonzero(consignment.inspection_units) in (
-        math.ceil(contaminated_inspection_units),
-        math.ceil(contaminated_inspection_units) - 1,
+    consignment.boxes[cluster_indexes[-1]].items[0:partial_box_contaminated_stems].fill(
+        1
+    )
+    # Check if correct number of boxes contaminated, should be rounded up
+    # contaminated_boxes, or may be rounded down contaminated_boxes
+    # if no stems were contaminated in last partial box
+    assert np.count_nonzero(consignment.boxes) in (
+        math.ceil(contaminated_boxes),
+        math.ceil(contaminated_boxes) - 1,
     )
 
+def add_contaminant_clusters_to_items_with_subset_clustering(config, consignment):
+    """Add contaminant cluster to items in a consignment using a single parameter
 
-def add_contaminant_clusters_to_sample_units_with_subset_clustering(config, consignment):
-    """Add contaminant cluster to sample_units in a consignment using a single parameter
-
-    Clustering equal to 0 means all sample_units in the consignment can be contaminated with
+    Clustering equal to 0 means all items in the consignment can be contaminated with
     equal probability, i.e., the cluster spreads over the whole consignment. Clustering
-    equal to 1 means that all sample_units in the cluster are contaminated. The size of the
+    equal to 1 means that all items in the cluster are contaminated. The size of the
     cluster is then directly determined by the contamination rate.
     If the cluster would spread over the end of the consignment, we put the extra part
     of the cluster at the beginning of the consignment.
     """
     clustering = config["clustered"]["value"]
-    num_of_contaminated_sample_units = num_sample_units_to_contaminate(
-        config["contamination_rate"], consignment.num_sample_units
+    num_of_contaminated_items = num_items_to_contaminate(
+        config["contamination_rate"], consignment.num_items
     )
-    if num_of_contaminated_sample_units == 0:
+    if num_of_contaminated_items == 0:
         return
-    subset_size = round(consignment.num_sample_units * (1 - clustering))
-    subset_size = max(subset_size, num_of_contaminated_sample_units)
+    subset_size = round(consignment.num_items * (1 - clustering))
+    subset_size = max(subset_size, num_of_contaminated_items)
     start_index2 = None
     end_index2 = None
-    if subset_size == consignment.num_sample_units:
+    if subset_size == consignment.num_items:
         start_index = 0
-        end_index = consignment.num_sample_units
+        end_index = consignment.num_items
     else:
-        start_index = np.random.randint(0, consignment.num_sample_units)
-        if start_index + subset_size > consignment.num_sample_units:
+        # Place the beginning of the cluster anywhere,
+        # but put the overhang at the beginning.
+        start_index = np.random.randint(0, consignment.num_items)
+        if start_index + subset_size > consignment.num_items:
             start_index2 = 0
-            end_index2 = subset_size - (consignment.num_sample_units - start_index)
-            end_index = consignment.num_sample_units
+            end_index2 = subset_size - (consignment.num_items - start_index)
+            end_index = consignment.num_items
             assert (end_index - start_index) + (
                 end_index2 - start_index2
             ) == subset_size
@@ -880,83 +1005,56 @@ def add_contaminant_clusters_to_sample_units_with_subset_clustering(config, cons
     assert len(potential_indexes) == subset_size
     indexes = np.random.choice(
         potential_indexes,
-        num_of_contaminated_sample_units,
+        num_of_contaminated_items,
         replace=False,
     )
-    consignment.sample_units[indexes] = 1
-    # Contaminate all plants in the sample unit (sample_unit) for every contaminated sample_unit
-    if consignment.num_plants is not None:
-        # Gather all plant indices (as tuples: (sample_unit_index, inspection_unit_idx, sample_unit_idx, plant_idx)) for selected sample_units
-        plant_tuples = []
-        for sample_unit_index in indexes:
-            inspection_unit_idx, sample_unit_idx = consignment.get_inspection_unit_and_sample_unit_index(sample_unit_index)
-            num_plants = len(consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants)
-            for plant_idx in range(num_plants):
-                plant_tuples.append((sample_unit_index, inspection_unit_idx, sample_unit_idx, plant_idx))
-        total_plants = len(plant_tuples)
-        perc_plants_contaminated = config["clustered"]["percentage_plants_contaminated"]
-        num_contaminated_plants = max(1, round(total_plants * perc_plants_contaminated))
-        contaminated_plant_indices = np.random.choice(total_plants, num_contaminated_plants, replace=False)
-        # Set all plants in selected sample_units to 0 first
-        for sample_unit_index in indexes:
-            inspection_unit_idx, sample_unit_idx = consignment.get_inspection_unit_and_sample_unit_index(sample_unit_index)
-            consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants.fill(0)
-        # Set contaminated plants
-        for idx in contaminated_plant_indices:
-            sample_unit_index, inspection_unit_idx, sample_unit_idx, plant_idx = plant_tuples[idx]
-            consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants[plant_idx] = 1
-        # Update sample_units array for each sample_unit
-        for sample_unit_index in indexes:
-            inspection_unit_idx, sample_unit_idx = consignment.get_inspection_unit_and_sample_unit_index(sample_unit_index)
-            consignment.inspection_units[inspection_unit_idx].included_units[sample_unit_idx] = consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants.sum()
+    consignment.items[indexes] = 1
+    assert np.count_nonzero(consignment.items) == num_of_contaminated_items
 
-    assert np.count_nonzero(consignment.sample_units) == num_of_contaminated_sample_units
-
-
-def add_contaminant_clusters_to_sample_units(config, consignment):
-    """Add contaminant clusters to sample_units in a consignment"""
-    contaminated_units_per_cluster = config["clustered"]["contaminated_units_per_cluster"]
-    num_sample_units = consignment.num_sample_units
-    contaminated_sample_units = num_sample_units_to_contaminate(
-        config["contamination_rate"], num_sample_units
+def add_contaminant_clusters_to_items(config, consignment):
+    """Add contaminant clusters to items in a consignment"""
+    contaminated_units_per_cluster = config["clustered"][
+        "contaminated_units_per_cluster"
+    ]
+    num_items = consignment.num_items
+    contaminated_items = num_items_to_contaminate(
+        config["contamination_rate"], num_items
     )
-    if contaminated_sample_units == 0:
+    if contaminated_items == 0:
         return
-    cluster_sizes = _contaminated_sample_units_to_cluster_sizes(
-        contaminated_sample_units, contaminated_units_per_cluster
+    cluster_sizes = _contaminated_items_to_cluster_sizes(
+        contaminated_items, contaminated_units_per_cluster
     )
     cluster_indexes = []
     distribution = config["clustered"]["distribution"]
     if distribution == "random":
-        # Handle backward compatibility for cluster width terminology
-        cluster_sample_unit_width = config["clustered"]["random"].get("cluster_sample_unit_width", 
-                                                                       config["clustered"]["random"].get("cluster_item_width", 1))
-        if cluster_sample_unit_width < contaminated_units_per_cluster:
+        cluster_item_width = config["clustered"]["random"]["cluster_item_width"]
+        if cluster_item_width < contaminated_units_per_cluster:
             raise ValueError(
-                f"Maximum cluster width, currently {cluster_sample_unit_width}, needs"
+                f"Maximum cluster width, currently {cluster_item_width}, needs"
                 " to be at least as large as contaminated_units_per_cluster"
                 " (currently {contaminated_units_per_cluster})"
             )
-        # cluster can't be wider/longer than the current list of sample_units
-        cluster_sample_unit_width = min(cluster_sample_unit_width, num_sample_units)
+        # cluster can't be wider/longer than the current list of items
+        cluster_item_width = min(cluster_item_width, num_items)
         cluster_strata = choose_strata_for_clusters(
-            num_sample_units, cluster_sample_unit_width, len(cluster_sizes)
+            num_items, cluster_item_width, len(cluster_sizes)
         )
         for index, cluster_size in enumerate(cluster_sizes):
-            cluster_start = cluster_sample_unit_width * cluster_strata[index]
-            # Use smaller cluster width if placing sample_units in smaller remainder stratum
+            cluster_start = cluster_item_width * cluster_strata[index]
+            # Use smaller cluster width if placing items in smaller remainder stratum
             cluster_width = min(
-                cluster_sample_unit_width, (consignment.num_sample_units - cluster_start)
+                cluster_item_width, (consignment.num_items - cluster_start)
             )
             assert (
                 cluster_width >= cluster_size
-            ), "Not enough sample_units available to contaminate in selected cluster stratum."
+            ), "Not enough items available to contaminate in selected cluster stratum."
             cluster = np.random.choice(cluster_width, cluster_size, replace=False)
             cluster += cluster_start
             cluster_indexes.extend(list(cluster))
     elif distribution == "continuous":
         cluster_strata = choose_strata_for_clusters(
-            num_sample_units, contaminated_units_per_cluster, len(cluster_sizes)
+            num_items, contaminated_units_per_cluster, len(cluster_sizes)
         )
         for index, cluster_size in enumerate(cluster_sizes):
             cluster = np.arange(cluster_size)
@@ -966,126 +1064,35 @@ def add_contaminant_clusters_to_sample_units(config, consignment):
     else:
         raise RuntimeError(f"Unknown cluster distribution: {distribution}")
     cluster_indexes = np.array(cluster_indexes, dtype=np.int64)
-    assert np.min(cluster_indexes) >= 0, "Cluster values need to be valid indices"
-    assert np.max(cluster_indexes) < num_sample_units
-    np.put(consignment.sample_units, cluster_indexes, 1)
-    if consignment.num_plants is not None:
-        # Gather all plant indices (as tuples: (sample_unit_index, inspection_unit_idx, sample_unit_idx, plant_idx)) for selected sample_units
-        plant_tuples = []
-        for sample_unit_index in cluster_indexes:
-            inspection_unit_idx, sample_unit_idx = consignment.get_inspection_unit_and_sample_unit_index(sample_unit_index)
-            num_plants = len(consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants)
-            for plant_idx in range(num_plants):
-                plant_tuples.append((sample_unit_index, inspection_unit_idx, sample_unit_idx, plant_idx))
-        total_plants = len(plant_tuples)
-        perc_plants_contaminated = config["clustered"]["percentage_plants_contaminated"]
-        num_contaminated_plants = max(1, round(total_plants * perc_plants_contaminated))
-        contaminated_plant_indices = np.random.choice(total_plants, num_contaminated_plants, replace=False)
-        # Set all plants in selected sample_units to 0 first
-        for sample_unit_index in cluster_indexes:
-            inspection_unit_idx, sample_unit_idx = consignment.get_inspection_unit_and_sample_unit_index(sample_unit_index)
-            consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants.fill(0)
-        # Set contaminated plants
-        for idx in contaminated_plant_indices:
-            sample_unit_index, inspection_unit_idx, sample_unit_idx, plant_idx = plant_tuples[idx]
-            consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants[plant_idx] = 1
-        # Update sample_units array for each sample_unit
-        for sample_unit_index in cluster_indexes:
-            inspection_unit_idx, sample_unit_idx = consignment.get_inspection_unit_and_sample_unit_index(sample_unit_index)
-            consignment.inspection_units[inspection_unit_idx].included_units[sample_unit_idx] = consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants.sum()
-        # For plant-level contamination, the assertion is more flexible since some sample_units
-        # may end up with zero contaminated plants due to the probabilistic nature
-        actual_contaminated = np.count_nonzero(consignment.sample_units)
-        assert actual_contaminated <= contaminated_sample_units, f"Expected at most {contaminated_sample_units} contaminated sample_units, got {actual_contaminated}"
-    else:
-        assert np.count_nonzero(consignment.sample_units) == contaminated_sample_units
-
+    assert min(cluster_indexes) >= 0, "Cluster values need to be valid indices"
+    assert max(cluster_indexes) < num_items
+    np.put(consignment.items, cluster_indexes, 1)
+    assert np.count_nonzero(consignment.items) == contaminated_items
 
 def add_contaminant_clusters(config, consignment):
     """Add contaminant clusters to consignment
 
-    Sample_unit (separately or in inspection_units) with contaminant in *consignment* evaluate
+    Item (separately or in boxes) with contaminant in *consignment* evaluate
     to True after running this function.
-    This function does not touch the not sample_units not selected for contamination.
+    This function does not touch the not items not selected for contamination.
     However, they are expected to be zero.
     """
     contamination_unit = config["contamination_unit"]
-    if contamination_unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
+    if contamination_unit in ["box", "boxes"]:
         if config["clustered"]["distribution"] == "single":
             raise RuntimeError(
-                "clustering distribution 'single' is not supported for inspection_units"
+                "clustering distribution 'single' is not supported for boxes"
             )
-        add_contaminant_clusters_to_inspection_units(config, consignment)
-    elif contamination_unit in ["sample_unit", "sample_units", "item", "items"]:
+        add_contaminant_clusters_to_boxes(config, consignment)
+    elif contamination_unit in ["item", "items"]:
         if config["clustered"]["distribution"] == "single":
-            add_contaminant_clusters_to_sample_units_with_subset_clustering(
+            add_contaminant_clusters_to_items_with_subset_clustering(
                 config, consignment
             )
         else:
-            add_contaminant_clusters_to_sample_units(config, consignment)
-    elif contamination_unit in ["plant", "plants"]:
-        if config["clustered"]["distribution"] == "single":
-            raise RuntimeError(
-                "clustering distribution 'single' is not supported for plants"
-            )
-        else:
-            raise RuntimeError(
-                "clustering distribution for plants is not yet implemented"
-            )
+            add_contaminant_clusters_to_items(config, consignment)
     else:
         raise RuntimeError(f"Unknown contamination unit: {contamination_unit}")
-
-
-def _apply_pooled_plant_level_contamination(consignment, sample_unit_indexes, percentage):
-    """
-    Helper to apply pooled plant-level contamination across a set of sample_units.
-    sample_unit_indexes: list of sample_unit indices (for sample_unit-level) or (inspection_unit_idx, samp_index) tuples (for inspection_unit-level)
-    percentage: float, fraction of plants to contaminate
-    """
-    if not sample_unit_indexes:
-        return
-    # Ensure sample_unit_indexes is a list
-    sample_unit_indexes = list(sample_unit_indexes)
-    # Robustly check if sample_unit_indexes are tuples (inspection_unit-level) or ints (sample_unit-level)
-    first_elem = sample_unit_indexes[0]
-    is_tuple = isinstance(first_elem, tuple)
-    plant_tuples = []
-    if is_tuple:
-        # inspection_unit-level: sample_unit_indexes are (inspection_unit_idx, samp_index) tuples
-        for inspection_unit_idx, samp_index in sample_unit_indexes:
-            sample_unit_object = consignment.inspection_units[inspection_unit_idx].included_unit_objects[samp_index]
-            num_plants = len(sample_unit_object.plants)
-            for plant_idx in range(num_plants):
-                plant_tuples.append((None, inspection_unit_idx, samp_index, plant_idx))
-    else:
-        # sample_unit-level: sample_unit_indexes are sample_unit indices (int or numpy int)
-        for sample_unit_index in sample_unit_indexes:
-            inspection_unit_idx, sample_unit_idx = consignment.get_inspection_unit_and_sample_unit_index(int(sample_unit_index))
-            sample_unit_object = consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx]
-            num_plants = len(sample_unit_object.plants)
-            for plant_idx in range(num_plants):
-                plant_tuples.append((sample_unit_index, inspection_unit_idx, sample_unit_idx, plant_idx))
-    total_plants = len(plant_tuples)
-    if total_plants == 0:
-        return
-    num_contaminated_plants = max(1, round(total_plants * percentage))
-    # Set all plants in all contaminated sample_units to 0 first
-    for _, inspection_unit_idx, sample_unit_idx, plant_idx in plant_tuples:
-        consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants[plant_idx] = 0
-    contaminated_plant_indices = np.random.choice(total_plants, num_contaminated_plants, replace=False)
-    for idx in contaminated_plant_indices:
-        _, inspection_unit_idx, sample_unit_idx, plant_idx = plant_tuples[idx]
-        consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants[plant_idx] = 1
-    # Update sample_units array to sum of contaminated plants per sample_unit
-    if not is_tuple:
-        # sample_unit-level
-        for sample_unit_index in sample_unit_indexes:
-            inspection_unit_idx, sample_unit_idx = consignment.get_inspection_unit_and_sample_unit_index(int(sample_unit_index))
-            consignment.inspection_units[inspection_unit_idx].included_units[sample_unit_idx] = consignment.inspection_units[inspection_unit_idx].included_unit_objects[sample_unit_idx].plants.sum()
-    else:
-        # inspection_unit-level
-        for inspection_unit_idx, samp_index in sample_unit_indexes:
-            consignment.inspection_units[inspection_unit_idx].included_units[samp_index] = consignment.inspection_units[inspection_unit_idx].included_unit_objects[samp_index].plants.sum()
 
 
 def consignment_matches_selection_rule(rule, consignment):
@@ -1108,9 +1115,9 @@ def consignment_matches_selection_rule(rule, consignment):
     end_date = rule.get("end_date")
     # YAML converts to date, but JSON and other load config methods do not.
     if start_date and isinstance(start_date, str):
-        start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+        start_date = datetime.strptime(start_date, "%Y-%m-%d")
     if end_date and isinstance(end_date, str):
-        end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+        end_date = datetime.strptime(end_date, "%Y-%m-%d")
     if not start_date and not end_date:
         return True
     elif start_date and consignment.date < start_date:
@@ -1121,64 +1128,132 @@ def consignment_matches_selection_rule(rule, consignment):
 
 
 def get_contamination_config_for_consignment(config, consignment):
-    """Return configuration for contamination for a given consignment"""
-    contamination_config = config["contamination"]
-    consignments_config = contamination_config.get("consignments")
-    if not consignments_config:
-        return contamination_config
-    for name, selection_and_config in consignments_config.sample_units():
-        selection_rule = selection_and_config["selection"]
-        if consignment_matches_selection_rule(selection_rule, consignment):
-            # We found matching configuration.
-            # Now, we update contamination configuration by this specific one.
-            specific_config = selection_and_config["config"]
-            # Create a copy we can modify.
-            specific_contamination_config = copy.deepcopy(contamination_config)
-            update_nested_dict_by_dict(specific_contamination_config, specific_config)
-            return specific_contamination_config
-    # No matching configuration found, use the original one.
-    return contamination_config
+    """Get contamination configuration for specific consignment
+
+    If the *config* contains consignment-specific settings under
+    the consignments key, contamination configuration is selected
+    based on the specified rules. If the consignment properties match
+    the selection rules or if it passes the probability challenge,
+    consignment-specific configuration is returned.
+
+    If there is contamination key associated with the consignment settings,
+    the associated value is returned as the consignment-specific configuration.
+    If there is also a use_contamination_defaults key with value set to true,
+    the top-level contamination configuration is used as the basis for the
+    consignment-specific configuration and the values under the contamination key
+    are used to modify or enhance the top-level config.
+
+    If there is no contamination key, the consignment-specific configuration is the
+    top-level contamination configuration.
+
+    If the consignment properties do not match
+    the selection rules or if it does not pass the probability challenge,
+    None is returned.
+
+    If the *config* does not contain consignment-specific settings under
+    the consignments key, the function always returns a the provided
+    *config*.
+
+    In all cases, a copy the config dictionary is returned.
+    """
+    contaminated_consignments = config.get("consignments")
+    if not contaminated_consignments:
+        # No consignment-specific info, all consignments use the same config.
+        return config.copy()
+    # Consignment-specific input provided, create the right config for the consignment
+    # if the consignment is configured to be contaminated.
+    for item in contaminated_consignments:
+        if consignment_matches_selection_rule(rule=item, consignment=consignment):
+            # The consignment matches the selection rule. Now test if we should
+            # contaminate this specific consignment.
+            probability = item.get("probability")
+            if probability is None or random.random() < probability:
+                # This specific consignment should contaminated.
+                consignment_specific_config = item.get("contamination")
+                if not consignment_specific_config:
+                    # If missing or empty, use the global/default one.
+                    consignment_specific_config = config.copy()
+                    del consignment_specific_config["consignments"]
+                elif item.get("use_contamination_defaults"):
+                    # There is specifc config, but the global/main contamination
+                    # config should be used as the bases for the consignment-specific
+                    # config.
+                    default_values = config.copy()
+                    del default_values["consignments"]
+                    update_nested_dict_by_dict(
+                        default_values, consignment_specific_config
+                    )
+                    consignment_specific_config = default_values
+                else:
+                    # In all other cases, we return a copy, so let's do for the
+                    # straightforward case too.
+                    consignment_specific_config = consignment_specific_config.copy()
+                return consignment_specific_config
+            else:
+                # Only the first consignment rule is matched.
+                break
+    # Consignment not selected for contamination based on selection rules.
+    return None
 
 
-def get_contaminant_function(config,rng=None):
-    """Based on config, return function to contaminate a consignment."""
-    contamination_config = get_contamination_config_for_consignment(config, consignment=None)
-    arrangement = contamination_config["arrangement"]
-    if rng is None:
-        rng = np.random.default_rng()
-    if arrangement == "random_inspection_unit":
+def create_contaminant_function(config):
+    """Create a function based on the contamination config
 
-        def add_contaminant(consignment):
-            print("      contam: arrangement=random_inspection_unit")
-            specific_contamination_config = get_contamination_config_for_consignment(
-                config, consignment
-            )
-            return add_contaminant_to_random_inspection_unit(
-                specific_contamination_config["random_inspection_unit"],
-                consignment,
-                contamination_rate=specific_contamination_config.get("contamination_rate"),
+    An arrangement key must be provided to specify which function should be used.
+    """
+    arrangement = config.get("arrangement")
+    if arrangement == "random_box":
+
+        def add_contaminant_function(consignment):
+            return add_contaminant_to_random_box(
+                config=config["random_box"],
+                consignment=consignment,
+                contamination_rate=config["contamination_rate"],
             )
 
     elif arrangement == "random":
 
-        def add_contaminant(consignment):
-            #print("      contam: arrangement=random")
-            specific_contamination_config = get_contamination_config_for_consignment(
-                config, consignment
+        def add_contaminant_function(consignment):
+            return add_contaminant_uniform_random(
+                config=config, consignment=consignment
             )
-            return add_contaminant_uniform_random(specific_contamination_config, consignment,rng)
 
     elif arrangement == "clustered":
 
-        def add_contaminant(consignment):
-            print("      contam: arrangement=clustered")
-            specific_contamination_config = get_contamination_config_for_consignment(
-                config, consignment
-            )
-            return add_contaminant_clusters(specific_contamination_config, consignment)
+        def add_contaminant_function(consignment):
+            return add_contaminant_clusters(config=config, consignment=consignment)
+
+    elif arrangement is None:
+        raise RuntimeError("Contaminant arrangement must be set")
     else:
         raise RuntimeError(f"Unknown contaminant arrangement: {arrangement}")
-    return add_contaminant
+    return add_contaminant_function
 
+def get_contaminant_function(config):
+    """Get function for adding contaminant to a consignment based on configuration"""
+    if "consignments" in config["contamination"]:
+        # If there is config for individual consignments, we define a new function
+        # which first picks the right config based on its consignment parameter, then
+        # creates an add contaminant function based on this config, and then it calls
+        # the function with the consignment.
 
+        def add_contaminant_function(consignment):
+            """Picks config for the consignment and then call the specific function"""
+            consignment_specific_config = get_contamination_config_for_consignment(
+                config["contamination"], consignment
+            )
+            if not consignment_specific_config:
+                # Do not contaminate this consignment.
+                # No modification to the existing consignment provided as a parameter
+                # and returning None (as all the add contaiminant functions do).
+                return None
+            contaminant_function = create_contaminant_function(
+                consignment_specific_config
+            )
+            return contaminant_function(consignment)
 
+        return add_contaminant_function
+
+    # If there is config for individual consignments, we just create the function with
+    # the default settings.
+    return create_contaminant_function(config["contamination"])
