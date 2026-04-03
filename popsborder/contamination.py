@@ -32,7 +32,7 @@ Modifications:
 
 - 10/28/2025:  Modified the following functions (Joseph Agor)
     - add_contaminant_uniform_random():
-        * Added functionality to use the beta-binomial model from Clarke et. al. 2023 paper for plant units
+        * Added functionality to use the beta-binomial model from Clark et. al. 2023 paper for plant units
     - get_contaminant_function():
         * Updated to include ability to contaminate using the beta-binomial approach
         * Embedded logic from previously existing create_contaminant_function() into this function
@@ -225,8 +225,6 @@ def get_range_key(d, num_plants):
 
     # If no match found, return the tuple with highest upper bound
     return last_key
-
-
 
 
 def _set_beta_binomial_params(contamination_config, consignment,rng=None):
