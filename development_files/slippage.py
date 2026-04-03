@@ -92,10 +92,10 @@ def main():
         config["consignment"]["input_file"]["file_name"] = "development_files/slippage_data/Synthetic_PIS_SampleQuantity.csv"
 
     # # Pull in the VariableCreator object to use R code to create engineered columns
-    synth_data = create_engineered_features(
-        synth_data=synth_data,
-        producer_group_mapping=producer_group_mapping
-    )
+    # synth_data = create_engineered_features(
+    #     synth_data=synth_data,
+    #     producer_group_mapping=producer_group_mapping
+    # )
 
     synth_data = construct_risk_units(config=config, data=synth_data)
     synth_data.to_parquet(data_dir / "Synthetic_PIS_SampleQuantity.parquet", compression='snappy', index=False)
@@ -122,40 +122,40 @@ def main():
     # #############################################################
     #
     # ### Generate clarke inputs via input data
-    inputs_by_quantity = gen_clarke_model_inputs(df_pis_data)
-    #
-    # # Run clarke model
-    res = {}
-    print(f'\nNow Executing Clarke Model Based on Quantities')
-    for (lower, upper), inputs in inputs_by_quantity.items():
-        print(f'   Calculating for Quantity Range:  {(lower, upper)}')
-        res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
-                                        inputs.b,
-                                        inputs.B,
-                                        inputs.Nbar,
-                                        inputs.freq,
-                                        inputs.theta,
-                                        inputs.R,
-                                        inputs.start_val,
-                                        inputs.se)
+    # inputs_by_quantity = gen_clarke_model_inputs(df_pis_data)
+    # #
+    # # # Run clarke model
+    # res = {}
+    # print(f'\nNow Executing Clarke Model Based on Quantities')
+    # for (lower, upper), inputs in inputs_by_quantity.items():
+    #     print(f'   Calculating for Quantity Range:  {(lower, upper)}')
+    #     res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
+    #                                     inputs.b,
+    #                                     inputs.B,
+    #                                     inputs.Nbar,
+    #                                     inputs.freq,
+    #                                     inputs.theta,
+    #                                     inputs.R,
+    #                                     inputs.start_val,
+    #                                     inputs.se)
 
     # Setting values for testing
-    # res = {}
-    # inputs_by_quantity = {}
-    # for key in [(-0.001, 10.0),
-    #             (10.0, 50.0),
-    #             (50.0, 150.0),
-    #             (150.0, 300.0),
-    #             (300.0, 579.0),
-    #             (579.0, 1000.0)]:
-    #     inputs_by_quantity[key] = {'theta': np.inf, 'B': 200}
-        # res[key] = {
-        #     'alpha': random.uniform(0.01, 0.25),
-        #     "beta": random.uniform(2, 8),
-        #     'mu': 0.0,
-        #     'rho': 0.0,
-        #     'D': 0.0
-        # }
+    res = {}
+    inputs_by_quantity = {}
+    for key in [(-0.001, 10.0),
+                (10.0, 50.0),
+                (50.0, 150.0),
+                (150.0, 300.0),
+                (300.0, 579.0),
+                (579.0, 1000.0)]:
+        inputs_by_quantity[key] = {'theta': np.inf, 'B': 200}
+        res[key] = {
+            'alpha': random.uniform(0.01, 0.25),
+            "beta": random.uniform(2, 8),
+            'mu': 0.0,
+            'rho': 0.0,
+            'D': 0.0
+        }
 
     print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
 
@@ -215,13 +215,13 @@ def main():
             scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/mu"] = res[key]['mu']
             scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/rho"] = res[key]['rho']
             scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/D"] = res[key]['D']
-            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[key].theta
-            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = inputs_by_quantity[
-                key].B
-            # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[
-                # key]['theta']
+            # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[key].theta
             # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = inputs_by_quantity[
-                # key]['B']
+            #     key].B
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[
+                key]['theta']
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = inputs_by_quantity[
+                key]['B']
 
     ####################################################################
     ####################################################################
@@ -336,7 +336,7 @@ def main():
     synth_data.to_parquet(data_dir / "Synthetic_Base_Use.parquet", compression='snappy', index=False)
     synth_data.to_csv(data_dir / "Synthetic_Base_Use.csv", index=False)
 
-    config["consignment"]["input_file"]["file_name"] = "slippage_data/Synthetic_Base_Use.csv"
+    config["consignment"]["input_file"]["file_name"] = "development_files/slippage_data/Synthetic_Base_Use.csv"
 
     ##################################################################
     ##################################################################
