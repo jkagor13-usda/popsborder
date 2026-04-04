@@ -57,7 +57,7 @@ class ClarkeModelInputs:
 
 
 
-def _get_b_B_nbar_ty_freq_inputs(df_pis_data_filtered: pd.DataFrame):
+def get_inputs(df_pis_data_filtered: pd.DataFrame):
     print("   Determining Inputs 'b', 'B', 'Nbar', 'ty, and 'freq'")
 
     # ---- Required columns ----
@@ -232,6 +232,6 @@ def gen_clarke_model_inputs(
     """
     # Function to generate b, B, and Nbar input parameters
     print(f"Determining All Clarke Model Required Inputs")
-    clarke_inputs_by_quantity = _get_b_B_nbar_ty_freq_inputs(df_pis_data)
+    clarke_inputs_by_quantity = get_inputs(df_pis_data)
 
     return clarke_inputs_by_quantity
