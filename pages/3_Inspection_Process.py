@@ -97,14 +97,14 @@ def _style_policy_dataframe(df: pd.DataFrame):
     confidence_col = _first_matching_column(df, ["Confidence Levels", "Confidence Level"])
     styled_df = df.style
     if compliance_col:
-        styled_df = styled_df.applymap(_compliance_cell_style, subset=[compliance_col])
+        styled_df = styled_df.map(_compliance_cell_style, subset=[compliance_col])
     if detection_col:
-        styled_df = styled_df.applymap(
+        styled_df = styled_df.map(
             lambda v: _numeric_heat_style(v, "31, 119, 180"),
             subset=[detection_col],
         )
     if confidence_col:
-        styled_df = styled_df.applymap(
+        styled_df = styled_df.map(
             lambda v: _numeric_heat_style(v, "76, 149, 108"),
             subset=[confidence_col],
         )
