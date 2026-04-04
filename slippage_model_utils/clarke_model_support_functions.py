@@ -18,6 +18,7 @@ from collections import defaultdict
 
 from dataclasses import dataclass, asdict
 from typing import List, Tuple, Optional
+from slippage_model_utils.references import REQUIRED_FIELDS_CLARK_INPUT_GENERATION
 
 
 @dataclass
@@ -61,14 +62,7 @@ def _get_b_B_nbar_ty_freq_inputs(df_pis_data_filtered: pd.DataFrame):
     print("   Determining Inputs 'b', 'B', 'Nbar', 'ty, and 'freq'")
 
     # ---- Required columns ----
-    required_cols = [
-        "INSPECTION_ID",
-        "RISK_UNIT",
-        "action",
-        "TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT",
-        "REQUIRED_NUMBER_OF_BOXES",
-        "QUANTITY",
-    ]
+    required_cols = REQUIRED_FIELDS_CLARK_INPUT_GENERATION
     missing = [c for c in required_cols if c not in df_pis_data_filtered.columns]
     if missing:
         raise KeyError(f"Missing required columns: {missing}")
@@ -139,7 +133,7 @@ def _get_b_B_nbar_ty_freq_inputs(df_pis_data_filtered: pd.DataFrame):
         count+=1
 
         clarke_inputs = ClarkeModelInputs.default()
-        g_unique = g.drop_duplicates(subset=["INSPECTION_ID", "RISK_UNIT"], keep="first")
+        g_unique = g.drop_duplicates(subset=["INSPECTION_NUMBER", "RISK_UNIT"], keep="first")
         # Get B and b for the quantile group
         B = round(g_unique['TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT'].mean(), 0)
         b = round(g_unique['REQUIRED_NUMBER_OF_BOXES'].max(), 0)
@@ -147,7 +141,7 @@ def _get_b_B_nbar_ty_freq_inputs(df_pis_data_filtered: pd.DataFrame):
         # Get Nbar for the quantile group
         result = (
             g
-            .groupby(["INSPECTION_ID", "RISK_UNIT"], as_index=False)
+            .groupby(["INSPECTION_NUMBER", "RISK_UNIT"], as_index=False)
             .agg(
                 total_quantity=("QUANTITY", "sum"),
                 total_sampling_units=("TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT", "first"),
@@ -162,7 +156,7 @@ def _get_b_B_nbar_ty_freq_inputs(df_pis_data_filtered: pd.DataFrame):
 
         # Calulcate ty and freq
         groups_having_action = []
-        for (insp_id, ru), g_sub in g.groupby(["INSPECTION_ID", "RISK_UNIT"], sort=False):
+        for (insp_id, ru), g_sub in g.groupby(["INSPECTION_NUMBER", "RISK_UNIT"], sort=False):
             action_vals = g_sub["action"].dropna().unique()
             if len(action_vals) == 1:
                 action_out = int(action_vals[0])
@@ -219,7 +213,7 @@ def gen_clarke_model_inputs(
 
     INPUTS
     df_pis_data:        Pandas Dataframe with columns:
-                        - INSPECTION_ID (Unique consignment/shipment ID)
+                        - INSPECTION_NUMBER (Unique consignment/shipment ID)
                         - RISK_UNIT (Risk Unit/Calculator Entry corresponding to that inspection unit/commodity line)
                         - action (0/1 per inspection unit/commodity line)
                         - TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT (How many sampling units corresponding to that risk unit)

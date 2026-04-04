@@ -336,7 +336,7 @@ def main():
     synth_data.to_parquet(data_dir / "Synthetic_Base_Use.parquet", compression='snappy', index=False)
     synth_data.to_csv(data_dir / "Synthetic_Base_Use.csv", index=False)
 
-    config["consignment"]["input_file"]["file_name"] = "slippage_data/Synthetic_Base_Use.csv"
+    config["consignment"]["input_file"]["file_name"] = "development_files/slippage_data/Synthetic_Base_Use.csv"
 
     ##################################################################
     ##################################################################

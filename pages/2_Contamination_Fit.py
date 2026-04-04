@@ -108,7 +108,7 @@ def _save_param_set_fall_back(name: str, alpha: float, beta: float, theta: float
     st.session_state["last_saved_param_set"] = name
     return name
 
-def _save_param_set(name: str, res: Dict[Tuple, Any], inputs_by_quantity: Dict[Any,Any]) -> str:
+def _save_param_set_fit(name: str, res: Dict[Tuple, Any], inputs_by_quantity: Dict[Any,Any]) -> str:
     store = _read_param_store()
     if not name:
         name = _next_param_name(store)
@@ -129,6 +129,18 @@ def _save_param_set(name: str, res: Dict[Tuple, Any], inputs_by_quantity: Dict[A
     st.session_state["last_saved_param_set"] = name
     return name
 
+
+def _save_param_set_assign(name: str, alpha: float, beta: float, theta: float, sample_unit_rate: Optional[float] = None) -> str:
+    store = _read_param_store()
+    if not name:
+        name = _next_param_name(store)
+    entry = {"alpha": alpha, "beta": beta, "theta": theta}
+    if sample_unit_rate is not None:
+        entry["sample_unit_contamination_rate"] = sample_unit_rate
+    store[name] = entry
+    _write_param_store(store)
+    st.session_state["last_saved_param_set"] = name
+    return name
 
 def calculate_beta_binomial_params_old(
         sample_unit_rate: float,
@@ -455,7 +467,7 @@ with fit_tab:
     can_save_fitted_parameters = fit_to_show is not None and bool(name_input.strip())
     if st.button("Save fitted parameters", key="save_fit_params", disabled=not can_save_fitted_parameters):
         if fit_to_show is not None:
-            saved_name = _save_param_set(
+            saved_name = _save_param_set_fit(
                 name=name_input or _next_param_name(_read_param_store()),
                 res=fit_to_show,
                 inputs_by_quantity=inputs_by_quantity
@@ -638,7 +650,7 @@ with assign_tab:
             key="save_manual_params_sample_rate",
             disabled=not can_save_manual_sample_rate,
         ):
-            saved_name = _save_param_set(
+            saved_name = _save_param_set_assign(
                 manual_name or _next_param_name(_read_param_store()),
                 adj_alpha,
                 adj_beta,
@@ -694,7 +706,7 @@ with assign_tab:
             key="save_manual_params_alpha_beta",
             disabled=not can_save_manual_alpha_beta,
         ):
-            saved_name = _save_param_set(
+            saved_name = _save_param_set_assign(
                 manual_name or _next_param_name(_read_param_store()),
                 alpha_val,
                 beta_val,

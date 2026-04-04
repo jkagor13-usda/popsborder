@@ -76,6 +76,7 @@ import re
 from typing import Optional, Union
 from scipy import stats
 from popsborder.inspections import construct_risk_units
+from slippage_model_utils.references import GENERATOR_TARGET_COLUMNS
 
 warnings.filterwarnings('ignore')
 
@@ -1398,56 +1399,30 @@ class SyntheticConsignmentDataGenerator:
         """
         if self.input_data is None or len(self.input_data) == 0:
             raise ValueError("No usable input data loaded. Please provide a non-empty input_data_file.")
-        
-        method = sampling_method
+
         # Define columns to use for sampling
-        available_cols = self.input_data.columns.tolist()
-        target_cols = [col for col in available_cols if col in [
-            'INSPECTION_NUMBER',
-            'COMMODITY_COMMON_NAME',
-            'COUNTRY_OF_ORIGIN_NAME',
-            'PRODUCER_NAME',
-            'PROPAGATIVE_MATERIAL_TYPE',
-            'QUANTITY',
-            'BROKER_NAME',
-            'INSPECTION_LOCATION_NAME',
-            'PATHWAY',
-            'SHIPPER_NAME',
-            'TAXONOMY_ORDER',
-            'TAXONOMY_FAMILY',
-            'TAXONOMY_GENUS',
-            'TAXONOMY_SPECIES',
-            'action',
-            'RISK_UNIT',
-            'TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT',
-            'SAMPLING_UNITS_FOR_INSPECTION_UNIT',
-            'REQUIRED_NUMBER_OF_BOXES',
-            'IMPORTER_NAME',
-            'GENUS_NAME',
-            'COMMODITY_DISPLAY_NAME',
-            'COMMODITY_HOST_TYPE',
-        ]]
+        target_cols = GENERATOR_TARGET_COLUMNS
         
         if not target_cols:
             # Fallback to all available columns
-            target_cols = available_cols
+            target_cols = self.input_data.columns.tolist()
         
         # print(f"Using sampling method: {method}")
         # print(f"Sampling columns: {target_cols}")
         
-        if method == "naive":
+        if sampling_method == "naive":
             synthetic_data = self.multinomial_sample(
                 self.input_data, target_cols, n_consignments, random_state=42
             )
-        elif method == "sequential":
+        elif sampling_method == "sequential":
             synthetic_data = self.sequential_multinomial_sample(
                 self.input_data, target_cols, n_consignments, random_state=42
             )
-        elif method == "gmm": # Experimental
+        elif sampling_method == "gmm": # Experimental
             synthetic_data = self.gmm_sample(
                 self.input_data, target_cols, n_consignments, random_state=42
             )
-        elif method == "gaussian_copula":
+        elif sampling_method == "gaussian_copula":
             synthetic_data = self.gaussian_copula_sample(
                 self.input_data, target_cols, n_consignments, random_state=42
             )
