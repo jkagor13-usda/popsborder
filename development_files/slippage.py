@@ -11,8 +11,6 @@ import random
 from datetime import datetime
 import hashlib
 
-from PyInstaller.utils.conftest import data_dir
-
 # Import functions from popsborder
 import sys
 _repo_root = Path(__file__).resolve().parents[1]
@@ -97,10 +95,10 @@ def main():
         config["consignment"]["input_file"]["file_name"] = "development_files/slippage_data/Synthetic_PIS_SampleQuantity.csv"
 
     # # Pull in the VariableCreator object to use R code to create engineered columns
-    # synth_data = create_engineered_features(
-    #     synth_data=synth_data,
-    #     producer_group_mapping=producer_group_mapping
-    # )
+    synth_data = create_engineered_features(
+        synth_data=synth_data,
+        producer_group_mapping=producer_group_mapping
+    )
 
     synth_data = construct_risk_units(config=config, data=synth_data)
     synth_data.to_parquet(data_dir / "Synthetic_PIS_SampleQuantity.parquet", compression='snappy', index=False)
@@ -121,46 +119,42 @@ def main():
 
     # # Load in PIS Data
     df_pis_data = pd.read_csv(pis_data_updated)
+
+    ### Generate clarke inputs via input data
+    inputs_by_quantity = gen_clarke_model_inputs(df_pis_data)
     #
-    # #############################################################
-    # ##### TODO: Replace this block with the appropriate data ####
-    # #############################################################
-    #
-    # ### Generate clarke inputs via input data
-    # inputs_by_quantity = gen_clarke_model_inputs(df_pis_data)
-    # #
-    # # # Run clarke model
-    # res = {}
-    # print(f'\nNow Executing Clarke Model Based on Quantities')
-    # for (lower, upper), inputs in inputs_by_quantity.items():
-    #     print(f'   Calculating for Quantity Range:  {(lower, upper)}')
-    #     res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
-    #                                     inputs.b,
-    #                                     inputs.B,
-    #                                     inputs.Nbar,
-    #                                     inputs.freq,
-    #                                     inputs.theta,
-    #                                     inputs.R,
-    #                                     inputs.start_val,
-    #                                     inputs.se)
+    # # Run clarke model
+    res = {}
+    print(f'\nNow Executing Clarke Model Based on Quantities')
+    for (lower, upper), inputs in inputs_by_quantity.items():
+        print(f'   Calculating for Quantity Range:  {(lower, upper)}')
+        res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
+                                        inputs.b,
+                                        inputs.B,
+                                        inputs.Nbar,
+                                        inputs.freq,
+                                        inputs.theta,
+                                        inputs.R,
+                                        inputs.start_val,
+                                        inputs.se)
 
     # Setting values for testing
-    res = {}
-    inputs_by_quantity = {}
-    for key in [(-0.001, 10.0),
-                (10.0, 50.0),
-                (50.0, 150.0),
-                (150.0, 300.0),
-                (300.0, 579.0),
-                (579.0, 1000.0)]:
-        inputs_by_quantity[key] = {'theta': np.inf, 'B': 200}
-        res[key] = {
-            'alpha': random.uniform(0.01, 0.25),
-            "beta": random.uniform(2, 8),
-            'mu': 0.0,
-            'rho': 0.0,
-            'D': 0.0
-        }
+    # res = {}
+    # inputs_by_quantity = {}
+    # for key in [(-0.001, 10.0),
+    #             (10.0, 50.0),
+    #             (50.0, 150.0),
+    #             (150.0, 300.0),
+    #             (300.0, 579.0),
+    #             (579.0, 1000.0)]:
+    #     inputs_by_quantity[key] = {'theta': np.inf, 'B': 200}
+    #     res[key] = {
+    #         'alpha': random.uniform(0.01, 0.25),
+    #         "beta": random.uniform(2, 8),
+    #         'mu': 0.0,
+    #         'rho': 0.0,
+    #         'D': 0.0
+    #     }
 
     print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
 
@@ -177,10 +171,6 @@ def main():
         print(f'   For quantities ranging in {(lower, upper)}:')
         print(f'      α={alpha:.4f}, β={beta:.4f} | '
               f'Mean={mean:.2f}, SD={std_dev:.2f} (N={n})')
-        # print(f'      Theta (from inputs) = {results.theta}')
-        # print('\n      Full Clarke model result payload:')
-        # for k, v in results.items():
-        #     print(f'   {k}: {v}')
         print('')
 
 
@@ -204,29 +194,21 @@ def main():
     # a list of dictionaries) and replace with the updated fitted
     # contamination parameters
     for scenario in scenarios:
-        #scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = res["alpha"]
-        #scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] =  res["beta"]
-        #scenario["contamination/contamination_rate/beta_binomial_parameters/alpha"] = 0.194628
-        #scenario["contamination/contamination_rate/beta_binomial_parameters/beta"] = 4.1 #20.12345
-        #scenario["contamination/contamination_rate/beta_binomial_parameters/theta"] = inputs.theta
-        #scenario["contamination/contamination_rate/value"] = None
-        #scenario["contamination/contamination_rate/value"] = 1.23456
-        #scenario[f"contamination/arrangement"] = "clustered"
 
-        # Setting actual paramters vaues
+        # Setting actual parameters values
         for key in res.keys():
             scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/alpha"] = res[key]['alpha']
             scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/beta"] = res[key]['beta']
             scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/mu"] = res[key]['mu']
             scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/rho"] = res[key]['rho']
             scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/D"] = res[key]['D']
-            # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[key].theta
-            # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = inputs_by_quantity[
-            #     key].B
-            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[
-                key]['theta']
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[key].theta
             scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = inputs_by_quantity[
-                key]['B']
+                key].B
+            # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[
+            #     key]['theta']
+            # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = inputs_by_quantity[
+            #     key]['B']
 
     ####################################################################
     ####################################################################
