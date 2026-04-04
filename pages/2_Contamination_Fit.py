@@ -57,7 +57,7 @@ def _beta_pdf(alpha: float, beta: float, num_points: int = 200) -> pd.DataFrame:
     xs = np.linspace(eps, 1 - eps, num_points)
     log_norm = math.lgamma(alpha + beta) - math.lgamma(alpha) - math.lgamma(beta)
     ys = np.exp(log_norm + (alpha - 1) * np.log(xs) + (beta - 1) * np.log(1 - xs))
-    area = np.trapz(ys, xs)
+    area = np.trapezoid(ys, xs)
     if area > 0:
         ys = ys / area
     return pd.DataFrame({"prevalence": xs, "density": ys})
@@ -110,7 +110,7 @@ def _save_param_set_fall_back(name: str, alpha: float, beta: float, theta: float
     return name
 
 
-def _save_param_set(name: str, res: Dict[Tuple, Any], inputs_by_quantity: Dict[Any, Any]) -> str:
+def _save_param_set_fit(name: str, res: Dict[Tuple, Any], inputs_by_quantity: Dict[Any, Any]) -> str:
     store = _read_param_store()
     if not name:
         name = _next_param_name(store)
@@ -130,6 +130,19 @@ def _save_param_set(name: str, res: Dict[Tuple, Any], inputs_by_quantity: Dict[A
     _write_param_store(store)
     st.session_state["last_saved_param_set"] = name
     return name
+
+def _save_param_set_assign(name: str, alpha: float, beta: float, theta: float, sample_unit_rate: Optional[float] = None) -> str:
+    store = _read_param_store()
+    if not name:
+        name = _next_param_name(store)
+    entry = {"alpha": alpha, "beta": beta, "theta": theta}
+    if sample_unit_rate is not None:
+        entry["sample_unit_contamination_rate"] = sample_unit_rate
+    store[name] = entry
+    _write_param_store(store)
+    st.session_state["last_saved_param_set"] = name
+    return name
+
 
 
 def calculate_beta_binomial_params(
@@ -340,7 +353,7 @@ def _save_current_fit(
     name_input: str,
 ) -> None:
     if fit_to_show is not None and inputs_by_quantity is not None:
-        saved_name = _save_param_set(
+        saved_name = _save_param_set_fit(
             name=name_input or _next_param_name(_read_param_store()),
             res=fit_to_show,
             inputs_by_quantity=inputs_by_quantity,
@@ -638,7 +651,7 @@ with assign_tab:
             key="save_manual_params_sample_rate",
             disabled=not bool(manual_name.strip()),
         ):
-            saved_name = _save_param_set(
+            saved_name = _save_param_set_assign(
                 manual_name or _next_param_name(_read_param_store()),
                 adj_alpha,
                 adj_beta,
@@ -692,7 +705,7 @@ with assign_tab:
             key="save_manual_params_alpha_beta",
             disabled=not bool(manual_name.strip()),
         ):
-            saved_name = _save_param_set(
+            saved_name = _save_param_set_assign(
                 manual_name or _next_param_name(_read_param_store()),
                 alpha_val,
                 beta_val,
