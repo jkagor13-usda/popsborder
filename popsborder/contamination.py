@@ -24,9 +24,9 @@ Modifications:
     - add_contaminant_beta_binomial(): Vectorized sampling functon for Beta-Binomial distribution
     - get_range_key(): Function that finds the parameters based on what range the quantities fall into
     - set_beta_binomial_params():  Function that sets the beta-binomial parameters needed based on the main config file.
-
-- 10/28/2025:  Modified the following functions
-
+    - heuristic_adjust_nonzeros(): Heuristically adjust the number of nonzero entries in an allocation vector.
+    - synchronize_contamination_arrays_from_plants(): Synchronize sample-unit and plant arrays to match plant-level contamination truth.
+    - num_units_to_contaminate(): Estimates number of units to contaminate given a contamination rate ina configuration
 """
 from pyasn1.type.namedtype import OptionalNamedType
 
@@ -68,55 +68,97 @@ from scipy import stats
 from .inputs import update_nested_dict_by_dict
 import warnings
 import ast
-from typing import Any, Dict, Mapping, MutableMapping, Optional
+from typing import Any, Dict, Optional, Union
 from popsborder.consignments import Consignment
 from numpy.random import Generator
+
+# Seed random number generator
+rng = np.random.default_rng()
 
 #############################################
 ## START:  APL Added New Support Functions ##
 #############################################
 
-def heuristic_adjust_nonzeros(rng, x, n_bar, target_nonzeros, max_iters=1000):
-    x = x.copy()
+def heuristic_adjust_nonzeros(
+    x: np.ndarray,
+    n_bar: np.ndarray,
+    target: int,
+    max_iters: int = 1000,
+) -> np.ndarray:
+    """
+    Heuristically adjust the number of nonzero entries in an allocation vector.
+
+    This function attempts to modify the vector `x` so that the number of
+    nonzero entries is close to `target`, while respecting capacity
+    constraints given by `n_bar`. It does this by repeatedly:
+      - merging allocations (reducing the number of non-zeros) when there are
+        too many nonzero entries, and
+      - splitting allocations (increasing the number of non-zeros) when there
+        are too few nonzero entries.
+
+    The algorithm stops when the relative difference between the current
+    number of non-zeros and `target` is within 5%, or when the
+    maximum number of iterations is reached, or when no further feasible
+    merges/splits are possible.
+
+    INPUTS
+    x: numpy.ndarray
+        One-dimensional array of nonnegative integer allocations.
+        This array is copied internally and not modified in-place.
+    n_bar: numpy.ndarray
+        One-dimensional array of capacity constraints for each position in `x`.
+        Must be the same length as `x`. The allocation at each position will
+        not exceed the corresponding capacity in `n_bar`.
+    target: int
+        Desired number of nonzero entries in the adjusted allocation vector.
+    max_iters: int, optional
+        Maximum number of heuristic adjustment iterations (default is 1000).
+
+    OUTPUTS
+    x_adjusted: numpy.ndarray
+        One-dimensional array of the same shape as `x` representing the
+        adjusted allocations after the heuristic procedure.
+    """
+    x_adjusted = x.copy()
     total = x.sum()
 
     for i in range(max_iters):
-        nonzero_indices = np.nonzero(x)[0]
+        nonzero_indices = np.nonzero(x_adjusted)[0]
         nnz = len(nonzero_indices)
 
         # Handle degenerate case
-        if target_nonzeros == 0:
-            x[:] = 0
+        if target == 0:
+            x_adjusted[:] = 0
             break
 
         # Relative difference from target
-        rel_diff = abs(nnz - target_nonzeros) / target_nonzeros
+        rel_diff = abs(nnz - target) / target
 
         # Termination criterion (within 5% relative difference of the target clustering)
         if rel_diff < 0.05:
             break
 
-        if nnz > target_nonzeros:
+        if nnz > target:
             # CASE 1: Too many nonzero indices so merge some
-            # Sort nonzeros by X value ascending (smallest first)
-            nz_vals = x[nonzero_indices]
+            # Sort nonzeros by x_adjusted value ascending (smallest first)
+            nz_vals = x_adjusted[nonzero_indices]
             order = np.argsort(nz_vals)
             sorted_indices = nonzero_indices[order]
 
             merged_any = False
 
             for idx in sorted_indices:
-                # Recompute nnz cheaply: we will zero idx if we merge
-                if nnz <= target_nonzeros:
+                # Recompute nnz cheaply: zero idx if we merge
+                if nnz <= target:
                     break
 
-                val = x[idx]
+                val = x_adjusted[idx]
                 if val == 0:
                     continue
 
                 # Prefer targets with larger remaining capacity
-                remaining_capacity = n_bar - x
-                candidates = np.where((remaining_capacity >= val) & (np.arange(len(x)) != idx))[0]
+                remaining_capacity = n_bar - x_adjusted
+                candidates = np.where((remaining_capacity >= val) & (np.arange(len(x_adjusted)) != idx))[0]
 
                 if len(candidates) == 0:
                     continue
@@ -126,8 +168,8 @@ def heuristic_adjust_nonzeros(rng, x, n_bar, target_nonzeros, max_iters=1000):
                 best_idx = candidates[np.argmax(cand_cap)]
 
                 # Merge: move all mass from idx to best_idx
-                x[best_idx] += val
-                x[idx] = 0
+                x_adjusted[best_idx] += val
+                x_adjusted[idx] = 0
                 nnz -= 1
                 merged_any = True
 
@@ -138,37 +180,37 @@ def heuristic_adjust_nonzeros(rng, x, n_bar, target_nonzeros, max_iters=1000):
         else:
             # CASE 2: Too Few nonzero indices split larger ones into multiple
             # Indices that are currently zero but have capacity > 0
-            zero_indices = np.where(x == 0)[0]
+            zero_indices = np.where(x_adjusted == 0)[0]
             zero_with_capacity = zero_indices[n_bar[zero_indices] > 0]
 
             if len(zero_with_capacity) == 0:
                 # No place to create new nonzeros
                 break
 
-            # Candidates to split from: nonzero indices sorted by descending X
-            nonzero_indices = np.nonzero(x)[0]
-            nz_vals = x[nonzero_indices]
+            # Candidates to split from: nonzero indices sorted by descending x_adjusted
+            nonzero_indices = np.nonzero(x_adjusted)[0]
+            nz_vals = x_adjusted[nonzero_indices]
             order = np.argsort(-nz_vals)  # largest first
             split_sources = nonzero_indices[order]
 
             split_any = False
 
             for src in split_sources:
-                if nnz >= target_nonzeros:
+                if nnz >= target:
                     break
 
-                src_val = x[src]
+                src_val = x_adjusted[src]
                 if src_val <= 1:
                     continue  # not enough to split
 
                 # Choose a zero index with largest remaining capacity
-                remaining_capacity_zero = (n_bar - x)[zero_with_capacity]
+                remaining_capacity_zero = (n_bar - x_adjusted)[zero_with_capacity]
                 if len(remaining_capacity_zero) == 0:
                     break
 
                 best_zero_idx = zero_with_capacity[np.argmax(remaining_capacity_zero)]
 
-                capacity_left = n_bar[best_zero_idx] - x[best_zero_idx]
+                capacity_left = n_bar[best_zero_idx] - x_adjusted[best_zero_idx]
                 if capacity_left <= 0:
                     zero_with_capacity = zero_with_capacity[zero_with_capacity != best_zero_idx]
                     continue
@@ -179,8 +221,8 @@ def heuristic_adjust_nonzeros(rng, x, n_bar, target_nonzeros, max_iters=1000):
                     continue
 
                 # Perform split
-                x[src] -= move
-                x[best_zero_idx] += move
+                x_adjusted[src] -= move
+                x_adjusted[best_zero_idx] += move
 
                 nnz += 1
                 split_any = True
@@ -193,10 +235,40 @@ def heuristic_adjust_nonzeros(rng, x, n_bar, target_nonzeros, max_iters=1000):
                 # No way to create new nonzeros given capacities
                 break
 
-    return x
+    return x_adjusted
 
 
-def get_range_key(d, num_plants):
+def get_range_key(
+    d: Dict[str, object],
+    num_plants: Union[int, float],
+) -> Optional[str]:
+    """
+    Function that finds the parameters based on what range the quantities fall into
+
+    The dictionary `d` is expected to have some keys that are string
+    representations of 2‑tuples, e.g. "(0, 10)", "(10, 20)", etc.
+    Each such key defines a half-open interval `(lower, upper]`. This
+    function finds the range key whose interval satisfies:
+
+        lower < num_plants <= upper
+
+    If no such range matches, it returns the key whose interval has the
+    highest upper bound. If there are no tuple-like keys at all, it
+    returns None.
+
+    INPUTS
+    d: dict
+        Dictionary whose keys may include strings that can be parsed as
+        2‑tuples using `ast.literal_eval`, e.g. "(0, 10)".
+    num_plants: int or float
+        Number of plants used to determine which range key to select.
+
+    OUTPUTS
+    range_key: str or None
+        The key in `d` whose associated interval contains `num_plants`,
+        or, if no interval matches, the key with the highest upper bound.
+        Returns None if no suitable tuple-like keys are found.
+    """
     last_key = None
     max_upper = float("-inf")
 
@@ -218,10 +290,9 @@ def get_range_key(d, num_plants):
 
 
 def set_beta_binomial_params(
-        contamination_config: Mapping[str, Any],
-        consignment: Consignment,
-        rng: Optional[Generator]=None
-)-> MutableMapping[str, Any]:
+        contamination_config: Dict[str, Any],
+        consignment: Consignment
+)-> Dict[str, Any]:
     """
     Function to set all appropriate beta-binomial parameters based on plant quantity on the consignment.
 
@@ -232,8 +303,6 @@ def set_beta_binomial_params(
     OUTPUTS
     config_beta_binomial:  dictionary with beta-binomial parameters
     """
-    if rng is None:
-        rng = np.random.default_rng()
     beta_binomial_params = {}
     # Get the number of plants on the consignment
     if consignment.get('num_plants') is None:
@@ -283,32 +352,44 @@ def set_beta_binomial_params(
 
     return beta_binomial_params
 
-def add_contaminant_beta_binomial(beta_binomial_config, rng=None):
+
+
+def add_contaminant_beta_binomial(
+    beta_binomial_config: Dict[str, Any]
+) -> np.ndarray:
     """
-    Args:
-        beta_binomial_config:  Dictionary with the following beta-binomial parameters as keys:
-                               alpha: float
-                               beta : float
-                               theta : float or array-like
-                                       - scalar (shared for all i,j), may be np.inf
-                                       - shape (I,), (I,1), (1,J), or (I,J) (broadcastable). Entries may be np.inf.
-                               Nbar : int or array-like
-                                      - scalar or broadcastable to (I,J)
-                               J : int
-                               p: clustering parameter (0 implying not clustered at all and 1 meaning "fully clustered")
+    Draw contaminant counts per sample unit from a simple beta-binomial model,
+    with optional clustering adjustment.
 
-        rng: numpy.random.Generator or None
-             If None, creates a new unseeded generator.
-    Returns:
-        X: Vector with number of infected units (plants) per group (sample unit)
+    INPUTS
+    beta_binomial_config: dict
+        Dictionary with the following beta-binomial parameters as keys:
+            alpha : float
+                Shape parameter of the Beta prior for the group-level
+                contamination probability.
+            beta : float
+                Shape parameter of the Beta prior for the group-level
+                contamination probability.
+            theta : float or array-like
+                Precision/dispersion parameter for the Beta distribution of
+                cell-level probabilities. Here used as a scalar. May be
+                ``np.inf`` to indicate no additional dispersion (i.e.,
+                cell-level probabilities equal the group-level probability).
+            N_bar : int or array-like
+                Number of plants (trials) per cell (sample unit). May be a
+                scalar or array broadcastable to length ``J``.
+            J : int
+                Number of cells (sample units) to simulate.
+            p : float
+                Clustering parameter between 0 and 1. ``0`` implies no
+                clustering adjustment; ``1`` implies “fully clustered”
+                (all contamination collapsed into as few cells as allowed
+                by capacities).
 
-    Vectorized sampler for:
-        p_i ~ Beta(alpha, beta)                          (size I)
-        p_ij | p_i ~ Beta(theta * p_i, theta*(1-p_i))    (size I x J)
-        X_ij | p_ij ~ Binomial(Nbar, p_ij)               (size I x J)
-
-    Special handling:
-        If theta == np.inf at any position, we set p_ij = p_i there.
+    OUTPUTS
+    X : numpy.ndarray
+        One-dimensional array of length ``J`` containing the number of
+        infected units (plants) per group (sample unit).
     """
     alpha = beta_binomial_config["alpha"]
     beta = beta_binomial_config["beta"]
@@ -316,9 +397,6 @@ def add_contaminant_beta_binomial(beta_binomial_config, rng=None):
     N_bar = beta_binomial_config["N_bar"]
     I = 1
     J = beta_binomial_config['J']
-
-    # Seed random number generator
-    rng = np.random.default_rng() if rng is None else np.random.default_rng(rng)
 
     # Sample from beta p_i ~ Beta(alpha, beta), shape (I,)
     p_i = rng.beta(alpha, beta)
@@ -368,12 +446,20 @@ def add_contaminant_beta_binomial(beta_binomial_config, rng=None):
         # Check if any overflow exists, and if so, apply heuristic approach to realloacte but match the desired
         # clustering
         if np.any(X > N_bar):
-            X = heuristic_adjust_nonzeros(rng, X, N_bar, len(nonzero_idx))
+            X = heuristic_adjust_nonzeros(X, N_bar, len(nonzero_idx))
     return X
 
 
-def synchronize_contamination_arrays_from_plants(consignment):
-    """Synchronize sample-unit and plant arrays to match plant-level contamination truth."""
+def synchronize_contamination_arrays_from_plants(consignment: Consignment) -> None:
+    """
+    Synchronize sample-unit and plant arrays to match plant-level contamination truth.
+
+    INPUTS
+    consignment: Consignment object
+
+    OUTPUTS
+    None
+    """
     if not hasattr(consignment, "inspection_units"):
         return
 
@@ -403,11 +489,18 @@ def synchronize_contamination_arrays_from_plants(consignment):
                     consignment.plants[global_plant_idx:end_idx] = plant_values[:write_n]
                 global_plant_idx += n_plants
 
-def num_units_to_contaminate(config, num_units):
+def num_units_to_contaminate(
+        config: Dict[str, Any],
+        num_units: Union[int, float],
+)->Union[int, float]:
     """Return number of plant units to be contaminated
     Rounds up or down to nearest integer.
 
-    Config is the ``contamination_rate`` dictionary.
+    INPUTS
+    config: Dictionary containing a ``contamination_rate`` value
+
+    OUTPUTS
+    contaminated_units: Number of units contaminated
     """
     contamination_rate = get_contamination_rate(config)
     contaminated_units = round(num_units * contamination_rate)
@@ -507,13 +600,11 @@ def num_boxes_to_contaminate(config, num_boxes):
     return contaminated_boxes
 
 
-def add_contaminant_uniform_random(config, consignment, rng=None):
+def add_contaminant_uniform_random(config, consignment):
     """Add contaminants to consignment using uniform random distribution
 
     Contamination rate is determined using the ``contamination_rate`` config key.
     """
-    if rng is None:
-        rng = np.random.default_rng()
     contamination_unit = config["contamination_unit"]
     if contamination_unit in ["box", "boxes"]:
         contaminated_boxes = num_boxes_to_contaminate(
