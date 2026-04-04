@@ -29,6 +29,7 @@ from gui.slippage_ui import (
     set_paths,
     set_synthetic_options,
 )
+from slippage_model_utils.references import GENERATOR_TARGET_COLUMNS
 
 
 TMP_DIR = Path("tmp")
@@ -431,6 +432,8 @@ saved_tab, ingest_tab, producer_grouping_tab, manual_tab= st.tabs(
 )
 
 with ingest_tab:
+    if "data_updated" not in st.session_state:
+        st.session_state["data_updated"] = False
 
     pis_df: Optional[pd.DataFrame] = state.get("pis_data")
     rbs_df: Optional[pd.DataFrame] = state.get("pending_rbs_upload")
@@ -447,8 +450,53 @@ with ingest_tab:
     )
     if rbs_upload is not None:
         rbs_df = pd.read_csv(rbs_upload)
-        state["pending_rbs_upload"] = rbs_df
-        st.success(f"Loaded {len(rbs_df):,} RBS records. Save below to persist to tmp/consignments.")
+
+        # Reset flag on new upload
+        st.session_state["data_updated"] = False
+
+        # Perform column check
+        required_cols = set(GENERATOR_TARGET_COLUMNS)
+        missing_cols = [col for col in required_cols if col not in rbs_df.columns]
+
+        if missing_cols and not st.session_state["data_updated"]:
+            st.error(
+                f"The following required columns are missing from your file: {', '.join(missing_cols)}"
+            )
+
+            # Initialize mapping dictionary for session persistence
+            if "col_mapping" not in st.session_state:
+                st.session_state["col_mapping"] = {}
+
+            # Collect user mapping for each missing column
+            for missing in missing_cols:
+                st.session_state["col_mapping"][missing] = st.selectbox(
+                    f"Select a column from your data to use for required '{missing}':",
+                    options=[""] + list(rbs_df.columns),
+                    key=f"map_{missing}"
+                )
+
+            # Check if all mappings are filled
+            mappings_ready = all(st.session_state["col_mapping"][miss] for miss in missing_cols)
+
+            if not mappings_ready:
+                st.warning("You must select a column for each missing required field OR add the column to your data and reupload.")
+
+            update_clicked = st.button("Update Data Fields/Columns")
+
+            if update_clicked and mappings_ready:
+                # Rename columns according to the mapping
+                for missing, found in st.session_state["col_mapping"].items():
+                    rbs_df.rename(columns={found: missing}, inplace=True)
+                state["pending_rbs_upload"] = rbs_df
+
+                # mark error as resolved
+                st.session_state["data_updated"] = True
+
+                st.success(f"Columns updated and data ready to save or use. "
+                           f"Loaded {len(rbs_df):,} RBS records. Save below to persist to tmp/consignments.")
+            elif update_clicked and not mappings_ready:
+                st.error("Please provide a mapping for all missing columns before updating.")
+
     if rbs_df is not None and not rbs_df.empty:
         st.dataframe(rbs_df.head(25), use_container_width=True, height=300)
         _render_consignment_summary(rbs_df, include_info_message=True)

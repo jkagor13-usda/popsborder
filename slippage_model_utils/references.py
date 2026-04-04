@@ -61,6 +61,54 @@ Backward Compatibility:
 from difflib import get_close_matches
 from typing import List, Dict, Set
 
+
+
+#####################################################
+######## SYNTHETIC DATA GENERATOR REFERENCES ########
+#####################################################
+
+GENERATOR_TARGET_COLUMNS = [
+            'INSPECTION_NUMBER',
+            'COMMODITY_COMMON_NAME',
+            'COUNTRY_OF_ORIGIN_NAME',
+            'PRODUCER_NAME',
+            'PROPAGATIVE_MATERIAL_TYPE',
+            'QUANTITY',
+            'BROKER_NAME',
+            'INSPECTION_LOCATION_NAME',
+            'PATHWAY',
+            'SHIPPER_NAME',
+            'TAXONOMY_ORDER',
+            'TAXONOMY_FAMILY',
+            'TAXONOMY_GENUS',
+            'TAXONOMY_SPECIES',
+            'action',
+            'RISK_UNIT',
+            'TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT',
+            'SAMPLING_UNITS_FOR_INSPECTION_UNIT',
+            'REQUIRED_NUMBER_OF_BOXES',
+            'IMPORTER_NAME',
+            'GENUS_NAME',
+            'COMMODITY_DISPLAY_NAME',
+        ]
+
+
+
+#################################################
+######## CONTAMINATION MODULE REFERENCES ########
+#################################################
+
+
+REQUIRED_FIELDS_CLARK_INPUT_GENERATION = [
+        "INSPECTION_NUMBER",
+        "RISK_UNIT",
+        "action",
+        "TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT",
+        "REQUIRED_NUMBER_OF_BOXES",
+        "QUANTITY",
+    ]
+
+
 country_of_origin_names = {
     'Origin', 'origin', 'Origin Location Country Name', 'Origin Location Name',
     'Origin Name', 'Country Name', 'Country',

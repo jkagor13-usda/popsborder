@@ -95,7 +95,6 @@ def _next_param_name(store: dict, base: str = "contamination_param_set") -> str:
         idx += 1
     return f"{base}_{idx}"
 
-
 def _save_param_set_fall_back(name: str, alpha: float, beta: float, theta: float, sample_unit_rate: Optional[float] = None) -> str:
     store = _read_param_store()
     name = 'FALL_BACK_CONTAMINATION_PARAMETERS'
@@ -109,8 +108,7 @@ def _save_param_set_fall_back(name: str, alpha: float, beta: float, theta: float
     st.session_state["last_saved_param_set"] = name
     return name
 
-
-def _save_param_set_fit(name: str, res: Dict[Tuple, Any], inputs_by_quantity: Dict[Any, Any]) -> str:
+def _save_param_set_fit(name: str, res: Dict[Tuple, Any], inputs_by_quantity: Dict[Any,Any]) -> str:
     store = _read_param_store()
     if not name:
         name = _next_param_name(store)
@@ -131,6 +129,7 @@ def _save_param_set_fit(name: str, res: Dict[Tuple, Any], inputs_by_quantity: Di
     st.session_state["last_saved_param_set"] = name
     return name
 
+
 def _save_param_set_assign(name: str, alpha: float, beta: float, theta: float, sample_unit_rate: Optional[float] = None) -> str:
     store = _read_param_store()
     if not name:
@@ -142,7 +141,6 @@ def _save_param_set_assign(name: str, alpha: float, beta: float, theta: float, s
     _write_param_store(store)
     st.session_state["last_saved_param_set"] = name
     return name
-
 
 
 def calculate_beta_binomial_params(
