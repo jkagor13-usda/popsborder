@@ -4,11 +4,8 @@
 
 """
 Modifications:
-- 10/3/2025: Modified following functions (Gary Lin)
+- Updated 4/3/2026: Modified following functions (Gary Lin)
     - add_contaminant_uniform_random():
-        * Added backward compatibility for contamination_unit parameter
-        * Maps old terminology: "box"/"boxes" -> "inspection_unit", "item"/"items" -> "sample_unit"
-        * Enhanced to support both inspection_unit and sample_unit level contamination
         * Added plant-level contamination support with pooled contamination methodology
 
     - add_contaminant_clusters():
@@ -16,27 +13,22 @@ Modifications:
         * Supports legacy "box"/"item" terminology while using new "inspection_unit"/"sample_unit" internally
         * Enhanced clustering algorithms for hierarchical contamination patterns
 
-    - add_contaminant_clusters_to_sample_units():
-        * Added backward compatibility for cluster_sample_unit_width (formerly cluster_item_width)
-        * Updated to handle both old and new terminology in clustering configuration
-        * Enhanced plant-level contamination with percentage-based pooled contamination
-    - num_items_to_contaminate(): renamed to num_sample_units_to_contaminate()
-    - num_boxes_to_contaminate(): renamed to num_inspection_units_to_contaminate()
-
-- 10/28/2025: Added the following support function for new data-driven contamination procedure (Joseph Agor)
-    - add_contaminant_beta_binomial_for_groups(): Beta-binomial contamination sampler where each 'group' is an inspection unit
-    - add_contaminant_beta_binomial(): Vectorized sampling functon for Beta-Binomial distribution
-    - contaminate_units_by_group(): Function to add contaminants to different "groups"
-    - get_range_key(): Function that finds the parameters based on what range the quantities fall into
-    - _set_beta_binomial_params():  Function that sets the beta-binomial parameters needed based on the main config file.
-
-- 10/28/2025:  Modified the following functions (Joseph Agor)
     - add_contaminant_uniform_random():
-        * Added functionality to use the beta-binomial model from Clark et. al. 2023 paper for plant units
+        * Added functionality to use the beta-binomial model from Clark et. al 2023 paper for plant units
+
     - get_contaminant_function():
         * Updated to include ability to contaminate using the beta-binomial approach
         * Embedded logic from previously existing create_contaminant_function() into this function
+
+- Updated 4/3/2026: Added the following support function for new data-driven contamination procedure (Joseph Agor)
+    - add_contaminant_beta_binomial(): Vectorized sampling functon for Beta-Binomial distribution
+    - get_range_key(): Function that finds the parameters based on what range the quantities fall into
+    - set_beta_binomial_params():  Function that sets the beta-binomial parameters needed based on the main config file.
+
+- 10/28/2025:  Modified the following functions
+
 """
+from pyasn1.type.namedtype import OptionalNamedType
 
 # This program is free software; you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
@@ -76,25 +68,25 @@ from scipy import stats
 from .inputs import update_nested_dict_by_dict
 import warnings
 import ast
+from typing import Any, Dict, Mapping, MutableMapping, Optional
+from popsborder.consignments import Consignment
+from numpy.random import Generator
 
+#############################################
+## START:  APL Added New Support Functions ##
+#############################################
 
-##########################################################################
-## START: Updated New Functions for Fitting Distributions with RBS data ##
-##########################################################################
-
-def heuristic_adjust_nonzeros(rng, X, N_bar, target_nonzeros, max_iters=1000):
-    X = X.copy()
-    total = X.sum()
+def heuristic_adjust_nonzeros(rng, x, n_bar, target_nonzeros, max_iters=1000):
+    x = x.copy()
+    total = x.sum()
 
     for i in range(max_iters):
-        print(f'Heuristic iteration {i+1} out of {max_iters}')
-
-        nonzero_indices = np.nonzero(X)[0]
+        nonzero_indices = np.nonzero(x)[0]
         nnz = len(nonzero_indices)
 
         # Handle degenerate case
         if target_nonzeros == 0:
-            X[:] = 0
+            x[:] = 0
             break
 
         # Relative difference from target
@@ -107,7 +99,7 @@ def heuristic_adjust_nonzeros(rng, X, N_bar, target_nonzeros, max_iters=1000):
         if nnz > target_nonzeros:
             # CASE 1: Too many nonzero indices so merge some
             # Sort nonzeros by X value ascending (smallest first)
-            nz_vals = X[nonzero_indices]
+            nz_vals = x[nonzero_indices]
             order = np.argsort(nz_vals)
             sorted_indices = nonzero_indices[order]
 
@@ -118,13 +110,13 @@ def heuristic_adjust_nonzeros(rng, X, N_bar, target_nonzeros, max_iters=1000):
                 if nnz <= target_nonzeros:
                     break
 
-                val = X[idx]
+                val = x[idx]
                 if val == 0:
                     continue
 
                 # Prefer targets with larger remaining capacity
-                remaining_capacity = N_bar - X
-                candidates = np.where((remaining_capacity >= val) & (np.arange(len(X)) != idx))[0]
+                remaining_capacity = n_bar - x
+                candidates = np.where((remaining_capacity >= val) & (np.arange(len(x)) != idx))[0]
 
                 if len(candidates) == 0:
                     continue
@@ -134,8 +126,8 @@ def heuristic_adjust_nonzeros(rng, X, N_bar, target_nonzeros, max_iters=1000):
                 best_idx = candidates[np.argmax(cand_cap)]
 
                 # Merge: move all mass from idx to best_idx
-                X[best_idx] += val
-                X[idx] = 0
+                x[best_idx] += val
+                x[idx] = 0
                 nnz -= 1
                 merged_any = True
 
@@ -146,16 +138,16 @@ def heuristic_adjust_nonzeros(rng, X, N_bar, target_nonzeros, max_iters=1000):
         else:
             # CASE 2: Too Few nonzero indices split larger ones into multiple
             # Indices that are currently zero but have capacity > 0
-            zero_indices = np.where(X == 0)[0]
-            zero_with_capacity = zero_indices[N_bar[zero_indices] > 0]
+            zero_indices = np.where(x == 0)[0]
+            zero_with_capacity = zero_indices[n_bar[zero_indices] > 0]
 
             if len(zero_with_capacity) == 0:
                 # No place to create new nonzeros
                 break
 
             # Candidates to split from: nonzero indices sorted by descending X
-            nonzero_indices = np.nonzero(X)[0]
-            nz_vals = X[nonzero_indices]
+            nonzero_indices = np.nonzero(x)[0]
+            nz_vals = x[nonzero_indices]
             order = np.argsort(-nz_vals)  # largest first
             split_sources = nonzero_indices[order]
 
@@ -165,18 +157,18 @@ def heuristic_adjust_nonzeros(rng, X, N_bar, target_nonzeros, max_iters=1000):
                 if nnz >= target_nonzeros:
                     break
 
-                src_val = X[src]
+                src_val = x[src]
                 if src_val <= 1:
                     continue  # not enough to split
 
                 # Choose a zero index with largest remaining capacity
-                remaining_capacity_zero = (N_bar - X)[zero_with_capacity]
+                remaining_capacity_zero = (n_bar - x)[zero_with_capacity]
                 if len(remaining_capacity_zero) == 0:
                     break
 
                 best_zero_idx = zero_with_capacity[np.argmax(remaining_capacity_zero)]
 
-                capacity_left = N_bar[best_zero_idx] - X[best_zero_idx]
+                capacity_left = n_bar[best_zero_idx] - x[best_zero_idx]
                 if capacity_left <= 0:
                     zero_with_capacity = zero_with_capacity[zero_with_capacity != best_zero_idx]
                     continue
@@ -187,13 +179,11 @@ def heuristic_adjust_nonzeros(rng, X, N_bar, target_nonzeros, max_iters=1000):
                     continue
 
                 # Perform split
-                X[src] -= move
-                X[best_zero_idx] += move
+                x[src] -= move
+                x[best_zero_idx] += move
 
                 nnz += 1
                 split_any = True
-
-                # best_zero_idx is no longer zero
                 zero_with_capacity = zero_with_capacity[zero_with_capacity != best_zero_idx]
 
                 if len(zero_with_capacity) == 0:
@@ -203,7 +193,7 @@ def heuristic_adjust_nonzeros(rng, X, N_bar, target_nonzeros, max_iters=1000):
                 # No way to create new nonzeros given capacities
                 break
 
-    return X
+    return x
 
 
 def get_range_key(d, num_plants):
@@ -227,7 +217,11 @@ def get_range_key(d, num_plants):
     return last_key
 
 
-def _set_beta_binomial_params(contamination_config, consignment,rng=None):
+def set_beta_binomial_params(
+        contamination_config: Mapping[str, Any],
+        consignment: Consignment,
+        rng: Optional[Generator]=None
+)-> MutableMapping[str, Any]:
     """
     Function to set all appropriate beta-binomial parameters based on plant quantity on the consignment.
 
@@ -245,7 +239,7 @@ def _set_beta_binomial_params(contamination_config, consignment,rng=None):
     if consignment.get('num_plants') is None:
         if consignment.get('plants') is None:
             warnings.warn(
-                "Attempting to set the beta binomial parameters in the '_set_beta_binomial_params' function"
+                "Attempting to set the beta binomial parameters in the 'set_beta_binomial_params' function"
                              " of the contamination.py module and no plant information was found (i.e., no 'num_plants'"
                              " or 'plants' attribute in the consignment object).  Default values are being set"
                 " for parameters that will not reflect any data used for training.",
@@ -274,8 +268,8 @@ def _set_beta_binomial_params(contamination_config, consignment,rng=None):
     beta_binomial_params['J'] = len(all_sample_unit_objects)
 
     # Use actual plant counts per sample unit
-    actual_N = np.array([len(su.plants) for su in all_sample_unit_objects])
-    beta_binomial_params['N_bar'] = actual_N  # Array of plant unit counts
+    actual_n = np.array([len(su.plants) for su in all_sample_unit_objects])
+    beta_binomial_params['N_bar'] = actual_n  # Array of plant unit counts
 
     # Get theta parameter
     if beta_binomial_params['theta'] is None:
@@ -288,64 +282,6 @@ def _set_beta_binomial_params(contamination_config, consignment,rng=None):
         beta_binomial_params['p'] = 1-param_dict.get('default').get('p')
 
     return beta_binomial_params
-
-
-def add_contaminant_beta_binomial_for_groups(config, group_sizes, rng=None):
-    """
-    Beta-binomial contamination sampler where each 'group' is an inspection unit.
-
-    group_sizes: array-like, shape (J,)
-        Number of plants available in each inspection unit j.
-    Returns:
-        contaminated_plants: shape (J,)
-        Number of contaminated plants in group j, guaranteed <= group_sizes[j].
-    """
-    group_sizes = np.asarray(group_sizes, dtype=int)
-    J = group_sizes.shape[0]
-    I = 1  # one p_i for the entire consignment (or whatever your model is)
-
-    beta_binomial_config = config["beta_binomial_parameters"]
-    alpha = beta_binomial_config["alpha"]
-    beta = beta_binomial_config["beta"]
-    theta = beta_binomial_config["theta"]
-
-    # Seed RNG
-    rng = np.random.default_rng()
-
-    # 1) p_i ~ Beta(alpha, beta), shape (I,)
-    p_i = rng.beta(alpha, beta, size=I)  # shape (1,)
-
-    # 2) Broadcast theta to (I, J)
-    theta = np.asarray(theta)
-    if theta.ndim == 0:
-        theta_ij = np.full((I, J), theta, dtype=float)
-    elif theta.shape == (I,):
-        theta_ij = np.repeat(theta[:, None], J, axis=1)
-    elif theta.shape in [(I, 1), (1, J), (I, J)]:
-        theta_ij = np.broadcast_to(theta, (I, J)).astype(float)
-    else:
-        theta_ij = np.broadcast_to(theta, (I, J)).astype(float)
-
-    # 3) p_ij | p_i
-    p_ij = np.broadcast_to(p_i[:, None], (I, J)).copy()
-    finite_mask = np.isfinite(theta_ij)
-
-    if np.any(finite_mask):
-        a_ij = theta_ij * p_i[:, None]
-        b_ij = theta_ij * (1.0 - p_i[:, None])
-
-        a = a_ij[finite_mask]
-        b = b_ij[finite_mask]
-
-        p_ij[finite_mask] = rng.beta(a, b)
-
-    # 4) X_ij | p_ij ~ Binomial(N_ij, p_ij),
-    #    but now N_ij is the actual number of plants in each inspection unit.
-    N_ij = group_sizes.reshape(1, J)  # shape (1, J)
-    X = rng.binomial(N_ij, p_ij)
-    contaminated_plants = X[0]  # shape (J,)
-
-    return contaminated_plants
 
 def add_contaminant_beta_binomial(beta_binomial_config, rng=None):
     """
@@ -429,7 +365,8 @@ def add_contaminant_beta_binomial(beta_binomial_config, rng=None):
                 target = rng.choice(nonzero_idx)
                 X[target] += val
 
-        # Check if any overflow exists, and if so, apply heuristic approach to
+        # Check if any overflow exists, and if so, apply heuristic approach to realloacte but match the desired
+        # clustering
         if np.any(X > N_bar):
             X = heuristic_adjust_nonzeros(rng, X, N_bar, len(nonzero_idx))
     return X
@@ -476,9 +413,9 @@ def num_units_to_contaminate(config, num_units):
     contaminated_units = round(num_units * contamination_rate)
     return contaminated_units
 
-#######################################################################
-## END Updated New Functions for Fitting Distributions with RBS data ##
-#######################################################################
+###########################################
+## END:  APL Added New Support Functions ##
+###########################################
 
 # This function is not used or working, consider updating or removing.
 def add_contaminant_to_random_box(config, consignment, contamination_rate=None):
@@ -624,7 +561,7 @@ def add_contaminant_uniform_random(config, consignment, rng=None):
     elif contamination_unit in ["plant", "plants"]:
         # Contaminate plants directly per inspection unit
         if config["contamination_rate"]['distribution'] == 'beta-binomial':
-            beta_binomial_params = _set_beta_binomial_params(config, consignment)
+            beta_binomial_params = set_beta_binomial_params(config, consignment)
             contaminated_plants = np.asarray(add_contaminant_beta_binomial(beta_binomial_params), dtype=int).ravel()
             #print(f"      contam: random | plants beta-binomial -> total contaminated plants {int(np.sum(contaminated_plants))} of {consignment.num_plants}")
             if np.all(contaminated_plants == 0):
@@ -662,131 +599,6 @@ def add_contaminant_uniform_random(config, consignment, rng=None):
                 # Randomly select k plants to contaminate in this sample unit
                 chosen_indices = rng.choice(sample_unit.num_plants, size=contaminated_plants[sample_unit.id], replace=False)
                 sample_unit.plants[chosen_indices] = 1
-
-        # Update consignment.sample_units to sum of contaminated plants
-        sample_unit_counter = 0
-        for inspection_unit in consignment.inspection_units:
-            for sample_unit_object in inspection_unit.included_unit_objects:
-                consignment.sample_units[sample_unit_counter] = sample_unit_object.plants.sum()
-                sample_unit_counter += 1
-
-        # Verify contamination count
-        total_contaminated = sum(
-            (sample_unit_object.plants == 1).sum()
-            for inspection_unit in consignment.inspection_units
-            for sample_unit_object in inspection_unit.included_unit_objects
-        )
-
-        expected = int(np.sum(contaminated_plants))
-        if total_contaminated != expected:
-            print(f"WARNING: Contaminated plant count mismatch. Expected {expected}, got {total_contaminated}.")
-    else:
-        raise RuntimeError(f"Unknown contamination unit: {contamination_unit}")
-
-
-
-def add_contaminant_uniform_random_old(config, consignment,rng=None):
-    """Add contaminants to consignment using uniform random distribution
-
-    Contamination rate is determined using the ``contamination_rate`` config key.
-    """
-    if rng is None:
-        rng = np.random.default_rng()
-    contamination_unit = config["contamination_unit"]
-
-    if contamination_unit in ["box", "boxes"]:
-        contaminated_boxes = num_units_to_contaminate(
-            config["contamination_rate"], consignment.num_inspection_units
-        )
-        if contaminated_boxes == 0.0:
-            return
-        box_indexes = np.random.choice(
-            consignment.num_inspection_units, math.ceil(contaminated_boxes), replace=False
-        )
-        # Contaminate full boxes except for last one
-        for box_index in box_indexes[:-1]:
-            consignment.inspection_units[box_index].items.fill(1)
-        # Use remainder of contaminated_boxes to partially contaminate
-        # last box if needed
-        partial_box_proportion = math.modf(contaminated_boxes)[0]
-        # If contaminated_boxes is whole number, contaminate full box
-        if partial_box_proportion == 0.0:
-            partial_box_proportion = 1
-        partial_box_contaminated_stems = round(
-            consignment.inspection_units[box_indexes[-1]].num_items * partial_box_proportion
-        )
-        consignment.inspection_units[box_indexes[-1]].items[0:partial_box_contaminated_stems].fill(
-            1
-        )
-        # Check if correct number of boxes contaminated, should be rounded up
-        # contaminated_boxes, or may be rounded down contaminated_boxes
-        # if no stems were contaminated in last partial box
-        assert np.count_nonzero(consignment.inspection_units) in (
-            math.ceil(contaminated_boxes),
-            math.floor(contaminated_boxes),
-        )
-    elif contamination_unit in ["item", "items"]:
-        contaminated_items = num_units_to_contaminate(
-            config["contamination_rate"], consignment.num_plants
-        )
-        if contaminated_items == 0:
-            return
-        item_indexes = np.random.choice(
-            consignment.num_plants, contaminated_items, replace=False
-        )
-        np.put(consignment.plants, item_indexes, 1)
-        assert np.count_nonzero(consignment.plants) == contaminated_items
-    elif contamination_unit in ["plant", "plants"]:
-        # Contaminate plants directly per inspection unit
-        if config["contamination_rate"]['distribution'] == 'beta-binomial':
-            beta_binomial_params = _set_beta_binomial_params(config, consignment,rng)
-            contaminated_plants = np.asarray(add_contaminant_beta_binomial(beta_binomial_params, rng), dtype=int).ravel()
-            #print(f"      contam: random | plants beta-binomial -> total contaminated plants {int(np.sum(contaminated_plants))} of {consignment.num_plants}")
-            if np.all(contaminated_plants == 0):
-                return
-        else:
-            # Fallback fixed-rate contamination across all plants
-            total_plants = sum(len(su.plants) for iu in consignment.inspection_units for su in iu.included_unit_objects)
-            contaminated_total = num_units_to_contaminate(config["contamination_rate"], total_plants)
-            contaminated_plants = np.zeros(total_plants, dtype=int)
-            if contaminated_total > 0:
-                # Distribute proportionally by plant counts per inspection unit
-                unit_sizes = [sum(len(su.plants) for su in iu.included_unit_objects) for iu in consignment.inspection_units]
-                total_size = sum(unit_sizes)
-                for idx, size in enumerate(unit_sizes):
-                    share = int(round(contaminated_total * size / total_size)) if total_size else 0
-                    contaminated_plants[idx] = min(share, size)
-            if contaminated_plants.sum() == 0:
-                return
-
-        # Apply contamination per SAMPLE UNIT
-        if len(contaminated_plants) != len(consignment.sample_units):
-            print(f"WARNING: contaminated_plants length ({len(contaminated_plants)}) "
-                  f"!= sample_units length ({len(consignment.sample_units)})")
-
-        # Flatten all sample unit objects into a list matching contaminated_plants order
-        all_sample_unit_objects = []
-        for inspection_unit in consignment.inspection_units:
-            all_sample_unit_objects.extend(inspection_unit.included_unit_objects)
-
-        # Apply contamination to each sample unit
-        for su_idx, (su_obj, k) in enumerate(zip(all_sample_unit_objects, contaminated_plants)):
-            k = int(k)
-            if k <= 0:
-                continue
-
-            num_plants_in_su = len(su_obj.plants)
-            if num_plants_in_su <= 0:
-                if k > 0:
-                    print(f"WARNING: Sample unit {su_idx} has {k} contaminated plants but 0 total plants")
-                continue
-
-            # Can't contaminate more plants than exist
-            k = min(k, num_plants_in_su)
-
-            # Randomly select k plants to contaminate in this sample unit
-            chosen_indices = rng.choice(num_plants_in_su, size=k, replace=False)
-            su_obj.plants[chosen_indices] = 1
 
         # Update consignment.sample_units to sum of contaminated plants
         sample_unit_counter = 0
