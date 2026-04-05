@@ -247,18 +247,40 @@ def fit_contamination_distribution(
         raise ValueError("Fitting failed: generating of Clark inputs has failed.  Check input data.")
 
     res = {}
+    # Defaults for if/when parameters for alpha/beta are both zero
+    k = 10_000
+    default_alpha = 0.02 * k  # 200
+    default_beta = 0.98 * k  # 9800
     print(f'\nNow Executing Clarke Model Based on Quantities')
     for (lower, upper), inputs in inputs_by_quantity.items():
         print(f'   Calculating for Quantity Range:  {(lower, upper)}')
-        res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
-                                                        inputs.b,
-                                                        inputs.B,
-                                                        inputs.Nbar,
-                                                        inputs.freq,
-                                                        inputs.theta,
-                                                        inputs.R,
-                                                        inputs.start_val,
-                                                        inputs.se)
+        params = run_clarke_bb_group_model(
+            inputs.ty,
+            inputs.b,
+            inputs.B,
+            inputs.Nbar,
+            inputs.freq,
+            inputs.theta,
+            inputs.R,
+            inputs.start_val,
+            inputs.se,
+        )
+
+        alpha = params.get("alpha", 0)
+        beta = params.get("beta", 0)
+
+        if alpha == 0 and beta == 0:
+            # warn user
+            print(
+                f"   WARNING: Fitted alpha and beta were zero for range {(lower, upper)}; "
+                f"defaulting to Beta(alpha={default_alpha}, beta={default_beta}) "
+                f"(mean ≈ 0.02).\n"
+            )
+            # override
+            params["alpha"] = default_alpha
+            params["beta"] = default_beta
+
+        res[(lower, upper)] = params
 
     return res, pis_df, inputs_by_quantity
 
