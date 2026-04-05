@@ -62,44 +62,32 @@ def get_inputs(df_pis_data_filtered: pd.DataFrame):
     print("   Determining Inputs 'b', 'B', 'Nbar', 'ty, and 'freq'")
 
     # ---- Required columns ----
-    print(f'Test1')
     required_cols = REQUIRED_FIELDS_CLARK_INPUT_GENERATION
     missing = [c for c in required_cols if c not in df_pis_data_filtered.columns]
     if missing:
         raise KeyError(f"Missing required columns: {missing}")
-    print(f'Test2')
     # Filter upper bound of outliers from IQR method
     Q1 = df_pis_data_filtered["TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT"].quantile(0.25)
-    print(f'Test2.1')
     Q3 = df_pis_data_filtered["TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT"].quantile(0.75)
-    print(f'Test2.2')
     IQR = Q3 - Q1
-    print(f'Test2.3')
     upper_bound = Q3 + 1.5 * IQR
-    print(f'Test2.4')
     df_pis_data_filtered = df_pis_data_filtered[
         (df_pis_data_filtered["TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT"] >= 0.0) &
         (df_pis_data_filtered["TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT"] <= upper_bound)]
-    print(f'Test2.5')
     Q1 = df_pis_data_filtered["REQUIRED_NUMBER_OF_BOXES"].quantile(0.25)
     Q3 = df_pis_data_filtered["REQUIRED_NUMBER_OF_BOXES"].quantile(0.75)
     IQR = Q3 - Q1
-    print(f'Test2.6')
     upper_bound = Q3 + 1.5 * IQR
     df_pis_data_filtered = df_pis_data_filtered[
         (df_pis_data_filtered["REQUIRED_NUMBER_OF_BOXES"] >= 0.0) &
         (df_pis_data_filtered[
              "REQUIRED_NUMBER_OF_BOXES"] <= upper_bound)]
-    print(f'Test2.7')
     Q1 = df_pis_data_filtered["QUANTITY"].quantile(0.25)
     Q3 = df_pis_data_filtered["QUANTITY"].quantile(0.75)
     IQR = Q3 - Q1
-    print(f'Test2.8')
     upper_bound = Q3 + 1.5 * IQR
-    print(f'Test2.9')
     df_pis_data_filtered_no_outliers = df_pis_data_filtered[(df_pis_data_filtered["QUANTITY"] >= 0.0) &
                                                                 (df_pis_data_filtered["QUANTITY"] <= upper_bound)]
-    print(f'Test3')
     # Ensure numeric where needed
     df = df_pis_data_filtered_no_outliers.copy()
     df["TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT"] = pd.to_numeric(
@@ -120,11 +108,9 @@ def get_inputs(df_pis_data_filtered: pd.DataFrame):
         q=10,
         labels=labels
     )
-    print(f'Test4')
     grouped_pairs_quantity = df.groupby("sampling_unit_decile_quantity", observed=True)
 
     num_groups = grouped_pairs_quantity.ngroups
-    print(f'Test5')
     clarke_inputs_by_quantity = {}
     count = 1
     for q, g in grouped_pairs_quantity:
@@ -197,7 +183,6 @@ def get_inputs(df_pis_data_filtered: pd.DataFrame):
         clarke_inputs.freq = freq
         clarke_inputs.B = B
         clarke_inputs_by_quantity[q] = clarke_inputs
-    print(f'Test6')
     # Return the calculated parameters
     return clarke_inputs_by_quantity
 
