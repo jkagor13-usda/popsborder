@@ -16,7 +16,7 @@ suppress_optional_dependency_warnings()
 
 import pandas as pd
 import streamlit as st
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Iterable
 from scipy.stats import betabinom
 
 from gui.models import init_state
@@ -285,23 +285,46 @@ def _render_pis_summary(pis_df: pd.DataFrame) -> None:
         st.caption(f"Total plant units: {int(total_plants):,}")
 
 
-def _fit_summary_lines(fit: Dict[Tuple, Any], n: int = 1000) -> list[str]:
+def _fit_summary_lines(
+        fit: Dict[tuple, Any],
+        warnings: Iterable[tuple[Tuple, str]] = (),
+        n: int = 1000
+) -> list[str]:
+    # Map key -> warning text for quick lookup
+    warning_map: Dict[Tuple, list[str]] = {}
+    for key, msg in warnings:
+        warning_map.setdefault(key, []).append(msg)
     message_lines = ["**FIT SUCCESSFUL:**\n\nFINAL CLARK MODEL BETA-BINOMIAL PARAMETERS:\n"]
     for (lower, upper), results in fit.items():
         alpha = results["alpha"]
         beta = results["beta"]
+
         if alpha + beta == 0:
             mean = -1
             std_dev = -1
         else:
             mean = n * alpha / (alpha + beta)
-            variance = (n * alpha * beta * (alpha + beta + n)) / ((alpha + beta) ** 2 * (alpha + beta + 1))
+            variance = (n * alpha * beta * (alpha + beta + n)) / (
+                (alpha + beta) ** 2 * (alpha + beta + 1)
+            )
             std_dev = variance ** 0.5
-        message_lines.append(
-            f"For quantities ranging in `{(lower, upper)}`:\n"
-            f"    \u03b1 = {alpha:.4f}, \u03b2 = {beta:.4f}\n"
-            f"    Mean = {mean:.2f}, SD = {std_dev:.2f} (N = {n})\n"
-        )
+            warning = ""
+
+        # Base summary line
+        block = [
+            f"For quantities ranging in `({lower}, {upper})`:\n"
+            f"    α = {alpha:.4f}, β = {beta:.4f}\n"
+            f"    Mean = {mean:.2f}, SD = {std_dev:.2f} (N = {n})"
+        ]
+
+        # Attach any warnings for this key
+        if (lower, upper) in warning_map:
+            for w in warning_map[(lower, upper)]:
+                block.append(f"    \nWARNING: {w}")
+
+        # Blank line between blocks
+        message_lines.append("\n".join(block) + "\n")
+
     return message_lines
 
 
@@ -468,10 +491,14 @@ with fit_tab:
                 st.error("Upload PIS data and select an RBS file before fitting.")
             else:
                 try:
-                    fit, pis_df, inputs_by_quantity = fit_contamination_distribution(paths.pis_data)
+                    fit, pis_df, inputs_by_quantity, warnings = fit_contamination_distribution(paths.pis_data)
                     slippage_state["fit"] = fit
                     slippage_state["inputs_by_quantity"] = inputs_by_quantity
-                    st.success("\n".join(_fit_summary_lines(fit)))
+                    st.success("\n".join(_fit_summary_lines(fit, warnings)))
+
+                    # Display and additional warnings
+                    # for w in warnings:
+                    #     st.warning(w)
 
 
 

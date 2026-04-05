@@ -228,7 +228,7 @@ def _infer_num_consignments(consignment_path: Optional[Path]) -> int:
 
 def fit_contamination_distribution(
     pis_data_path: Path,
-) -> Tuple[Dict[Tuple,Any], pd.DataFrame, Dict[Any, Any]]:
+) -> Tuple[Dict[Tuple,Any], pd.DataFrame, Dict[Any, Any], list[tuple[tuple, str]]]:
     """Fit contamination parameters using the Clarke beta-binomial model."""
     if pis_data_path is None or not Path(pis_data_path).exists():
         raise FileNotFoundError("PIS action data not provided. Upload on Page 2 - Contamination Fit.")
@@ -247,6 +247,7 @@ def fit_contamination_distribution(
         raise ValueError("Fitting failed: generating of Clark inputs has failed.  Check input data.")
 
     res = {}
+    warnings: list[tuple[tuple, str]] = []
     # Defaults for if/when parameters for alpha/beta are both zero
     k = 10_000
     default_alpha = 0.02 * k  # 200
@@ -270,19 +271,21 @@ def fit_contamination_distribution(
         beta = params.get("beta", 0)
 
         if alpha == 0 and beta == 0:
-            # warn user
-            print(
-                f"   WARNING: Fitted alpha and beta were zero for range {(lower, upper)}; "
-                f"defaulting to Beta(alpha={default_alpha}, beta={default_beta}) "
-                f"(mean ≈ 0.02).\n"
+            # Create a warning message
+            warning_msg = (
+                f"Fitted alpha and beta were zero for quantity range {(lower, upper)}; "
+                f"values displayed above are defaults "
+                f"for a mean rate ≈ 0.02 and 95% CI = [0.0175,0.0229]."
             )
+            warnings.append(((lower, upper), warning_msg))
+
             # override
             params["alpha"] = default_alpha
             params["beta"] = default_beta
 
         res[(lower, upper)] = params
 
-    return res, pis_df, inputs_by_quantity
+    return res, pis_df, inputs_by_quantity, warnings
 
 
 
