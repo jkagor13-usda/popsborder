@@ -94,15 +94,15 @@ def main():
         synth_out_path = data_dir / "Synthetic_PIS_SampleQuantity.csv"
         config["consignment"]["input_file"]["file_name"] = "development_files/slippage_data/Synthetic_PIS_SampleQuantity.csv"
 
-    # # # Pull in the VariableCreator object to use R code to create engineered columns
-    # synth_data = create_engineered_features(
-    #     synth_data=synth_data,
-    #     producer_group_mapping=producer_group_mapping
-    # )
-    #
-    # synth_data = construct_risk_units(config=config, data=synth_data)
-    # synth_data.to_parquet(data_dir / "Synthetic_PIS_SampleQuantity.parquet", compression='snappy', index=False)
-    # synth_data.to_csv(synth_out_path)
+    # # Pull in the VariableCreator object to use R code to create engineered columns
+    synth_data = create_engineered_features(
+        synth_data=synth_data,
+        producer_group_mapping=producer_group_mapping
+    )
+
+    synth_data = construct_risk_units(config=config, data=synth_data)
+    synth_data.to_parquet(data_dir / "Synthetic_PIS_SampleQuantity.parquet", compression='snappy', index=False)
+    synth_data.to_csv(synth_out_path)
 
 
 
@@ -118,7 +118,6 @@ def main():
     ####################
 
     # # Load in PIS Data
-    pis_data_updated = Path(r'C:\Users\agorjk1\PycharmProjects\plant-inspection-station-simulation\tmp\consignments\source\Generated1_seed_rbs.csv')
     df_pis_data = pd.read_csv(pis_data_updated)
 
     ### Generate clarke inputs via input data
