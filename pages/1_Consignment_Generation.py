@@ -470,7 +470,7 @@ with ingest_tab:
             # Collect user mapping for each missing column
             for missing in missing_cols:
                 st.session_state["col_mapping"][missing] = st.selectbox(
-                    f"Select a column from your data to use for required '{missing}':",
+                    f"Please choose a column from your uploaded data for required field '{missing}':",
                     options=[""] + list(rbs_df.columns),
                     key=f"map_{missing}"
                 )
@@ -496,6 +496,10 @@ with ingest_tab:
                            f"Loaded {len(rbs_df):,} RBS records. Save below to persist to tmp/consignments.")
             elif update_clicked and not mappings_ready:
                 st.error("Please provide a mapping for all missing columns before updating.")
+
+        else:
+            state["pending_rbs_upload"] = rbs_df
+            st.success(f"Loaded {len(rbs_df):,} RBS records. Save below to persist to tmp/consignments.")
 
     if rbs_df is not None and not rbs_df.empty:
         st.dataframe(rbs_df.head(25), use_container_width=True, height=300)
