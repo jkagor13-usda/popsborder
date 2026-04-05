@@ -94,15 +94,15 @@ def main():
         synth_out_path = data_dir / "Synthetic_PIS_SampleQuantity.csv"
         config["consignment"]["input_file"]["file_name"] = "development_files/slippage_data/Synthetic_PIS_SampleQuantity.csv"
 
-    # # Pull in the VariableCreator object to use R code to create engineered columns
-    synth_data = create_engineered_features(
-        synth_data=synth_data,
-        producer_group_mapping=producer_group_mapping
-    )
-
-    synth_data = construct_risk_units(config=config, data=synth_data)
-    synth_data.to_parquet(data_dir / "Synthetic_PIS_SampleQuantity.parquet", compression='snappy', index=False)
-    synth_data.to_csv(synth_out_path)
+    # # # Pull in the VariableCreator object to use R code to create engineered columns
+    # synth_data = create_engineered_features(
+    #     synth_data=synth_data,
+    #     producer_group_mapping=producer_group_mapping
+    # )
+    #
+    # synth_data = construct_risk_units(config=config, data=synth_data)
+    # synth_data.to_parquet(data_dir / "Synthetic_PIS_SampleQuantity.parquet", compression='snappy', index=False)
+    # synth_data.to_csv(synth_out_path)
 
 
 
@@ -118,6 +118,7 @@ def main():
     ####################
 
     # # Load in PIS Data
+    pis_data_updated = Path(r'C:\Users\agorjk1\PycharmProjects\plant-inspection-station-simulation\tmp\consignments\source\Generated1_seed_rbs.csv')
     df_pis_data = pd.read_csv(pis_data_updated)
 
     ### Generate clarke inputs via input data
@@ -125,18 +126,51 @@ def main():
     #
     # # Run clarke model
     res = {}
+
+    # Defaults for if/when parameters for alpha/beta are both zero
+    k = 10_000  # adjust upward/downward to change concentration
+    default_alpha = 0.02 * k  # 200
+    default_beta = 0.98 * k  # 9800
     print(f'\nNow Executing Clarke Model Based on Quantities')
     for (lower, upper), inputs in inputs_by_quantity.items():
         print(f'   Calculating for Quantity Range:  {(lower, upper)}')
-        res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
-                                        inputs.b,
-                                        inputs.B,
-                                        inputs.Nbar,
-                                        inputs.freq,
-                                        inputs.theta,
-                                        inputs.R,
-                                        inputs.start_val,
-                                        inputs.se)
+        params = run_clarke_bb_group_model(
+            inputs.ty,
+            inputs.b,
+            inputs.B,
+            inputs.Nbar,
+            inputs.freq,
+            inputs.theta,
+            inputs.R,
+            inputs.start_val,
+            inputs.se,
+        )
+
+        alpha = params.get("alpha", 0)
+        beta = params.get("beta", 0)
+
+        if alpha == 0 and beta == 0:
+            # warn user
+            print(
+                f"   WARNING: Fitted alpha and beta were zero for range {(lower, upper)}; "
+                f"defaulting to Beta(alpha={default_alpha}, beta={default_beta}) "
+                f"(mean ~ 0.02 and 95% CI of [0.0173, 0.0227]).\n"
+            )
+            # override
+            params["alpha"] = default_alpha
+            params["beta"] = default_beta
+
+        res[(lower, upper)] = params
+
+
+
+    # for key, params in res.items():
+    #     alpha = params.get("alpha", 0)
+    #     beta = params.get("beta", 0)
+    #
+    #     if alpha == 0 and beta == 0:
+    #         params["alpha"] = default_alpha
+    #         params["beta"] = default_beta
 
     # Setting values for testing
     # res = {}
