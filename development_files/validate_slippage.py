@@ -81,14 +81,14 @@ def main():
         #     synthetic_data_generator.input_data["INSPECTION_NUMBER"].isin(included_inspection_nums)]
         synth_data.loc[:, 'Row_ID'] = 'CR-' + (synth_data.index + 1).astype(str)
         synth_out_path = data_dir / "Historical_PIS_SampleQuantity.csv"
-        config["consignment"]["input_file"]["file_name"] = "slippage_data/Historical_PIS_SampleQuantity.csv"
+        config["consignment"]["input_file"]["file_name"] = str(synth_out_path)
     else:
         synth_data = synthetic_data_generator.generate_from_input_data(
             n_consignments=num_consignments_to_simulate,
             sampling_method="sequential"
         )
         synth_out_path = data_dir / "Synthetic_PIS_SampleQuantity.csv"
-        config["consignment"]["input_file"]["file_name"] = "slippage_data/Synthetic_PIS_SampleQuantity.csv"
+        config["consignment"]["input_file"]["file_name"] = str(synth_out_path)
 
     # # Pull in the VariableCreator object to use R code to create engineered columns
     # creator = VariableCreator()
@@ -125,9 +125,9 @@ def main():
     #############################################################
 
     ## Generate clarke inputs via input data
-    #inputs_by_quantity = gen_clarke_model_inputs(df_pis_train_data)
+    inputs_by_quantity = gen_clarke_model_inputs(df_pis_train_data)
 
-    inputs_by_quantity = gen_clarke_model_inputs(df_pis_test_data)
+    #inputs_by_quantity = gen_clarke_model_inputs(df_pis_test_data)
 
     # Run clarke model
     res = {}
@@ -182,8 +182,8 @@ def main():
         print('')
 
     # Update original parameters of config
-    config['contamination']['contamination_rate']['parameters'][0] = 0.194628
-    config['contamination']['contamination_rate']['parameters'][1] = 4.7609372
+    # config['contamination']['contamination_rate']['parameters'][0] = 0.194628
+    # config['contamination']['contamination_rate']['parameters'][1] = 4.7609372
 
 
     ####################################################################
@@ -204,10 +204,6 @@ def main():
         mapping_filepath=compliance_mapping_to_detection_confidence
     )
 
-    # Generate a temporary consignment that will be generated during simulation
-    consignment_generator = get_consignment_generator(config)
-    temp_consignment = consignment_generator.generate_consignment()
-
     # Normalize RBS variables against RiskUnit attributes
     updated, mapping2, unmapped2 = normalize_rbs_variables_using_risk_unit_config(
         compliance_table['rbs_variables']
@@ -217,13 +213,13 @@ def main():
     compliance_table['rbs_variables'] = updated
 
     # Output files
-    compliance_lookup_pkl = default_paths.compliance_dir() / 'compliance_lookup_final.pkl'
+    compliance_lookup_pkl = data_dir / 'compliance_lookup_final.pkl'
 
     # Now use these throughout your code
     with open(compliance_lookup_pkl, 'wb') as f:
         pickle.dump(compliance_table, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    config["inspection"]["compliance_table"]['file_name'] = 'compliance_lookup_final.pkl'
+    config["inspection"]["compliance_table"]['file_name'] = data_dir / 'compliance_lookup_final.pkl'
 
     ##################################################################
     ##################################################################
@@ -281,7 +277,7 @@ def main():
 
     # Run one scenario analysis simulation
     detailed_bool = True
-    num_replications = 50
+    num_replications = 240
     scenario_results_raw = run_scenarios(
         config=config,
         scenario_table=scenarios,
@@ -307,11 +303,11 @@ def main():
     for val_group_fields in sets_of_val_fields:
         temp_start = time.time()
         if len(val_group_fields) == 0:
-            output_dir = DefaultPaths().validation_output_dir() / f"test_for_Clark_no_clustering_overall_{run_ts}"
+            output_dir = DefaultPaths().validation_output_dir() / f"validation_updated_overall_{run_ts}"
             output_dir.mkdir(exist_ok=True)
         else:
             folder_name = '_'.join(val_group_fields)
-            output_dir = DefaultPaths().validation_output_dir() / f"test_for_Clark_no_clustering_{folder_name}_{run_ts}"
+            output_dir = DefaultPaths().validation_output_dir() / f"validation_updated_{folder_name}_{run_ts}"
             output_dir.mkdir(exist_ok=True)
 
         # List available simulation runs
