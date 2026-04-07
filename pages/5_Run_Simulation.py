@@ -1,5 +1,6 @@
 # © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
+import math
 from pathlib import Path
 from typing import Optional
 
@@ -186,6 +187,200 @@ def _maybe_warning_for_replications(all_runs_df: Optional[pd.DataFrame]) -> bool
             )
             return True
     return False
+
+
+def _unique_non_empty_values(df: Optional[pd.DataFrame], column: str) -> list[str]:
+    if df is None or df.empty or column not in df.columns:
+        return []
+    values = []
+    for value in df[column].dropna().tolist():
+        text = str(value).strip()
+        if text and text.lower() != "nan":
+            values.append(text)
+    return sorted(set(values))
+
+
+def _format_list_preview(values: list[str], *, max_items: int = 5) -> str:
+    if not values:
+        return "n/a"
+    if len(values) <= max_items:
+        return ", ".join(values)
+    return f"{', '.join(values[:max_items])}, +{len(values) - max_items} more"
+
+
+def _format_detail_number(value) -> str:
+    coerced = _coerce_numeric_like(value)
+    if coerced is None:
+        return "n/a"
+    if isinstance(coerced, float):
+        if math.isinf(coerced):
+            return "inf"
+        return f"{coerced:.4f}"
+    return str(coerced)
+
+
+def _load_param_snapshot(output_dir: Optional[Path]) -> dict:
+    if output_dir is None:
+        return {}
+    candidate_paths = [
+        output_dir / "contamination_parameter_sets.json",
+        output_dir.parent / "contamination_parameter_sets.json",
+    ]
+    snapshot_path = next((path for path in candidate_paths if path.exists()), None)
+    if snapshot_path is None:
+        return {}
+    try:
+        import json  # pylint: disable=import-outside-toplevel
+
+        return json.loads(snapshot_path.read_text(encoding="utf-8"))
+    except Exception:  # pylint: disable=broad-except
+        return {}
+
+
+def _coerce_numeric_like(value):
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    text = str(value).strip().lower()
+    if text in {"", "nan", "none"}:
+        return None
+    if text in {"inf", "infinity"}:
+        return float("inf")
+    try:
+        return float(text)
+    except Exception:  # pylint: disable=broad-except
+        return text
+
+
+def _values_match(left, right) -> bool:
+    left_value = _coerce_numeric_like(left)
+    right_value = _coerce_numeric_like(right)
+    if left_value is None or right_value is None:
+        return False
+    if isinstance(left_value, float) and isinstance(right_value, float):
+        if math.isinf(left_value) and math.isinf(right_value):
+            return True
+        return abs(left_value - right_value) < 1e-12
+    return left_value == right_value
+
+
+def _find_matching_param_set(param_store: dict, scenario_row: pd.Series) -> str:
+    alpha_cols = [col for col in scenario_row.index if col.endswith("/alpha")]
+    beta_cols = [col for col in scenario_row.index if col.endswith("/beta")]
+    theta_cols = [col for col in scenario_row.index if col.endswith("/theta")]
+    if not alpha_cols or not beta_cols:
+        return ""
+
+    alpha_values = [scenario_row[col] for col in alpha_cols if pd.notna(scenario_row[col])]
+    beta_values = [scenario_row[col] for col in beta_cols if pd.notna(scenario_row[col])]
+    theta_values = [scenario_row[col] for col in theta_cols if pd.notna(scenario_row[col])]
+
+    for param_name, param_value in param_store.items():
+        if not isinstance(param_value, dict):
+            continue
+        if {"alpha", "beta"}.issubset(param_value.keys()):
+            if any(_values_match(param_value.get("alpha"), value) for value in alpha_values) and any(
+                _values_match(param_value.get("beta"), value) for value in beta_values
+            ):
+                theta_value = param_value.get("theta")
+                if not theta_values or any(_values_match(theta_value, value) for value in theta_values):
+                    return str(param_name)
+        elif param_value:
+            nested_values = [entry for entry in param_value.values() if isinstance(entry, dict)]
+            if not nested_values:
+                continue
+            if any(
+                any(_values_match(entry.get("alpha"), value) for value in alpha_values)
+                and any(_values_match(entry.get("beta"), value) for value in beta_values)
+                for entry in nested_values
+            ):
+                return str(param_name)
+    return ""
+
+
+def _format_param_details(param_store: dict, param_name: str) -> str:
+    if not param_name:
+        return "n/a"
+    param_value = param_store.get(param_name)
+    if not isinstance(param_value, dict):
+        return param_name
+
+    if {"alpha", "beta"}.issubset(param_value.keys()):
+        theta_value = param_value.get("theta")
+        avg_rate = param_value.get("average_contamination_rate")
+        if avg_rate in (None, ""):
+            raw_rate = param_value.get("sample_unit_contamination_rate")
+            if raw_rate not in (None, ""):
+                try:
+                    avg_rate = float(raw_rate) * 100.0
+                except Exception:  # pylint: disable=broad-except
+                    avg_rate = None
+        details = [
+            f"alpha={_format_detail_number(param_value.get('alpha'))}",
+            f"beta={_format_detail_number(param_value.get('beta'))}",
+            f"theta={_format_detail_number(theta_value)}",
+        ]
+        if avg_rate not in (None, ""):
+            details.append(f"avg contamination rate={float(avg_rate):.2f}%")
+        return f"{param_name} ({', '.join(details)})"
+
+    nested_entries = [entry for entry in param_value.values() if isinstance(entry, dict)]
+    if nested_entries:
+        first_entry = nested_entries[0]
+        theta_value = first_entry.get("theta")
+        avg_rate = first_entry.get("average_contamination_rate")
+        if avg_rate in (None, ""):
+            raw_rate = first_entry.get("mu")
+            if raw_rate not in (None, ""):
+                try:
+                    avg_rate = float(raw_rate) * 100.0
+                except Exception:  # pylint: disable=broad-except
+                    avg_rate = None
+        details = [
+            f"alpha={_format_detail_number(first_entry.get('alpha'))}",
+            f"beta={_format_detail_number(first_entry.get('beta'))}",
+            f"theta={_format_detail_number(theta_value)}",
+        ]
+        if avg_rate not in (None, ""):
+            details.append(f"avg contamination rate={float(avg_rate):.2f}%")
+        if len(nested_entries) > 1:
+            details.append(f"{len(nested_entries)} ranges")
+        return f"{param_name} ({', '.join(details)})"
+
+    return param_name
+
+
+def _render_run_details(results_df: pd.DataFrame, all_runs_df: Optional[pd.DataFrame]) -> None:
+    output_dir = Path(state["run_output_dir"]) if state.get("run_output_dir") else None
+    scenario_table_path = output_dir.parent / "scenario_table.csv" if output_dir is not None else None
+    param_store = _load_param_snapshot(output_dir)
+
+    scenario_rows = []
+    scenario_source = None
+    if scenario_table_path is not None and scenario_table_path.exists():
+        try:
+            scenario_source = pd.read_csv(scenario_table_path)
+        except Exception:  # pylint: disable=broad-except
+            scenario_source = None
+    if scenario_source is None or scenario_source.empty:
+        scenario_source = results_df
+
+    for _, row in scenario_source.iterrows():
+        param_name = _find_matching_param_set(param_store, row)
+        scenario_rows.append(
+            {
+                "Scenario label": row.get("name", "n/a"),
+                "Consignment (RBS) file": Path(str(row.get("consignment/input_file/file_name", "n/a"))).name,
+                "Contamination parameter set": _format_param_details(param_store, param_name),
+                "RBS compliance policy name": Path(str(row.get("inspection/compliance_table/file_name", "n/a"))).name,
+            }
+        )
+
+    with st.expander("Run details", expanded=False):
+        render_labeled_help(
+            "Run details",
+            "Shows the saved Page 4 scenario setup used for the current run.",
+        )
+        st.dataframe(pd.DataFrame(scenario_rows), use_container_width=True, hide_index=True)
 
 
 def _render_consignments_visual(
@@ -485,17 +680,65 @@ run_placeholder = st.empty()
 if st.session_state.get("_trigger_run_pipeline"):
     st.session_state["_trigger_run_pipeline"] = False
     exp_dir = state.pop("run_request_experiment", None)
-    with st.spinner("Running slippage pipeline..."):
+    with run_placeholder.container():
+        progress_status = st.markdown("**Starting simulation**")
+        progress_percent = st.markdown("### **0%**")
+        overall_progress_bar = st.progress(0)
+        last_progress_details = {}
+
+        def _update_progress(percent: int, message: str, details: Optional[dict] = None) -> None:
+            safe_percent = max(0, min(100, int(percent)))
+            details = details or {}
+            last_progress_details.clear()
+            last_progress_details.update(details)
+            replications_completed = int(details.get("replications_completed", 0) or 0)
+            replications_total = int(details.get("replications_total", 0) or 0)
+            shipments_processed = int(details.get("shipments_processed", 0) or 0)
+            shipments_total = int(details.get("shipments_total", 0) or 0)
+            progress_label = f"{message} ({safe_percent}%)"
+            if replications_total > 0 or shipments_total > 0:
+                progress_parts = []
+                if replications_total > 0:
+                    progress_parts.append(
+                        f"Replications {replications_completed:,}/{replications_total:,}"
+                    )
+                if shipments_total > 0:
+                    progress_parts.append(
+                        f"Shipments {shipments_processed:,}/{shipments_total:,}"
+                    )
+                progress_label = f"{message} | {' | '.join(progress_parts)}"
+            overall_progress_bar.progress(safe_percent)
+            progress_status.markdown(f"**{progress_label}**")
+            progress_percent.markdown(f"### **{safe_percent}%**")
+
         try:
             st.info(f"Running experiment at: {exp_dir}")
-            results = run_pipeline(exp_dir)
+            _update_progress(0, "Starting simulation", {})
+            results = run_pipeline(exp_dir, progress_callback=_update_progress)
             state["run_error"] = None
             state.pop("run_error_message", None)
+            _update_progress(100, "Simulation complete", last_progress_details)
             st.success("Pipeline finished.")
         except Exception as exc:  # pylint: disable=broad-except
             state["run_error"] = exc
             detail = getattr(exc, "stderr", None) or getattr(exc, "output", None)
             state["run_error_message"] = f"{exc}\n{detail}" if detail else str(exc)
+            failure_label = "Simulation failed (100%)"
+            if last_progress_details:
+                replications_completed = int(last_progress_details.get("replications_completed", 0) or 0)
+                replications_total = int(last_progress_details.get("replications_total", 0) or 0)
+                shipments_processed = int(last_progress_details.get("shipments_processed", 0) or 0)
+                shipments_total = int(last_progress_details.get("shipments_total", 0) or 0)
+                progress_parts = []
+                if replications_total > 0:
+                    progress_parts.append(f"Replications {replications_completed:,}/{replications_total:,}")
+                if shipments_total > 0:
+                    progress_parts.append(f"Shipments {shipments_processed:,}/{shipments_total:,}")
+                if progress_parts:
+                    failure_label = f"Simulation failed | {' | '.join(progress_parts)}"
+            overall_progress_bar.progress(100)
+            progress_status.markdown(f"**{failure_label}**")
+            progress_percent.markdown("### **100%**")
 
 if run_error:
     msg = state.get("run_error_message") or str(run_error)
@@ -542,18 +785,24 @@ if saved_output_dir:
         f"Files: {output_file_names}."
     )
 
+_render_run_details(results_df, all_runs_df)
+
 render_labeled_help(
-    "Overall summary",
+    "Run summary",
     "Summarizes how many scenarios were run, the total inspections performed, and the mean slipped plant units aggregated across the scenario results.",
 )
 summary = results_df.copy()
+scenario_count = len(summary)
+total_inspections = int(summary["num_inspections"].sum()) if "num_inspections" in summary.columns else 0
+shipments_per_replication = int(state.get("num_consignments") or 0)
 
-kpi_cols = st.columns(3)
+kpi_cols = st.columns(5)
 replications_per_scenario = 0
 if all_runs_df is not None and "replication" in all_runs_df.columns:
     replications_per_scenario = int(all_runs_df.groupby("name")["replication"].nunique().min())
 elif state.get("engine_options", {}).get("num_simulations") is not None:
     replications_per_scenario = int(state["engine_options"]["num_simulations"])
+total_shipments_run = scenario_count * replications_per_scenario * shipments_per_replication if shipments_per_replication else 0
 with kpi_cols[0]:
     render_metric_card("Scenarios", f"{len(summary):,}", "Number of scenarios included in the current results.")
 with kpi_cols[1]:
@@ -564,9 +813,21 @@ with kpi_cols[1]:
     )
 with kpi_cols[2]:
     render_metric_card(
-        "Total consignments simulated",
-        f"{int(summary['num_inspections'].sum()):,}",
+        "Shipments per replication",
+        f"{shipments_per_replication:,}",
+        "Configured number of consignments processed in each replication.",
+    )
+with kpi_cols[3]:
+    render_metric_card(
+        "Inspected consignments",
+        f"{total_inspections:,}",
         "Total number of consignments inspected across the displayed scenario results.",
+    )
+with kpi_cols[4]:
+    render_metric_card(
+        "Total shipments run",
+        f"{total_shipments_run:,}",
+        "Estimated total consignments processed across all scenarios and replications.",
     )
 
 simulation_summary_source = results_df.copy()
