@@ -922,3 +922,96 @@ class RVariableCreator:
             raise ValueError(f"Expected DataFrame, got {type(result_df)}")
 
         raise ValueError(f"No 'result_df' in result: {result.keys()}")
+
+    def generate_producer_top_strata_features(
+        self,
+        df: pd.DataFrame,
+        max_strat_count: int = -1,
+        min_action_rate: float = -1.0,
+        min_records: int = -1,
+        use_parquet: bool = True,
+        timeout_sec: float = 120.0,
+    ) -> pd.DataFrame:
+        """
+        Add PRODUCER_GROUP_TOP based on PRODUCER_GROUP_NAME1 and action.
+
+        Args:
+            df: Input DataFrame with 'action' and 'PRODUCER_GROUP_NAME1'.
+        """
+        required = {"action", "PRODUCER_GROUP_NAME1"}
+        missing = required - set(df.columns)
+        if missing:
+            raise ValueError(f"DataFrame missing required columns: {missing}")
+
+        args: Dict[str, Any] = {
+            "df": df,
+            "maxStratCount": int(max_strat_count),
+            "minActionRate": float(min_action_rate),
+            "minRecords": int(min_records),
+        }
+
+        result = self._call_r_function_df(
+            "generate_producer_top_strata_features",
+            args=args,
+            timeout_sec=timeout_sec,
+            use_parquet=use_parquet,
+        )
+
+        if isinstance(result, dict) and result.get("status") == "error":
+            raise ValueError(f"R function error: {result.get('error')}")
+
+        if "result_df" in result:
+            result_df = result["result_df"]
+            if isinstance(result_df, pd.DataFrame):
+                return result_df
+            raise ValueError(f"Expected DataFrame, got {type(result_df)}")
+
+        raise ValueError(f"No 'result_df' in result: {result.keys()}")
+
+
+    def generate_importer_top_strata_features(
+        self,
+        df: pd.DataFrame,
+        max_strat_count: int = -1,
+        min_action_rate: float = -1.0,
+        min_records: int = -1,
+        use_parquet: bool = True,
+        timeout_sec: float = 120.0,
+    ) -> pd.DataFrame:
+        """
+        Add IMPORTER_NAME_TOP based on IMPORTER_NAME1 and action.
+
+        Args:
+            df: Input DataFrame with 'action' and 'IMPORTER_NAME1'.
+        """
+        required = {"action", "IMPORTER_NAME1"}
+        missing = required - set(df.columns)
+        if missing:
+            raise ValueError(f"DataFrame missing required columns: {missing}")
+
+        args: Dict[str, Any] = {
+            "df": df,
+            "maxStratCount": int(max_strat_count),
+            "minActionRate": float(min_action_rate),
+            "minRecords": int(min_records),
+        }
+
+        result = self._call_r_function_df(
+            "generate_importer_top_strata_features",
+            args=args,
+            timeout_sec=timeout_sec,
+            use_parquet=use_parquet,
+        )
+
+        if isinstance(result, dict) and result.get("status") == "error":
+            raise ValueError(f"R function error: {result.get('error')}")
+
+        if "result_df" in result:
+            result_df = result["result_df"]
+            if isinstance(result_df, pd.DataFrame):
+                return result_df
+            raise ValueError(f"Expected DataFrame, got {type(result_df)}")
+
+        raise ValueError(f"No 'result_df' in result: {result.keys()}")
+
+
