@@ -11,7 +11,6 @@ suppress_optional_dependency_warnings()
 
 import pandas as pd
 import streamlit as st
-import plotly.express as px
 
 
 from gui.models import init_state
@@ -32,7 +31,6 @@ init_state()
 state = get_slippage_state()
 render_sidebar_navigation()
 apply_shared_page_styles()
-paths = state["paths"]
 state.setdefault("compliance_mapping_path", Path("data_input/compliance_mapping_detection_confidence_levels.csv"))
 TMP_DIR = Path("tmp")
 TMP_DIR.mkdir(exist_ok=True)
@@ -40,24 +38,6 @@ COMPLIANCE_ROOT = TMP_DIR / "compliance"
 COMPLIANCE_ROOT.mkdir(parents=True, exist_ok=True)
 COMPLIANCE_SOURCE_ROOT = COMPLIANCE_ROOT / "_sources"
 COMPLIANCE_SOURCE_ROOT.mkdir(parents=True, exist_ok=True)
-
-
-def _load_compliance_table(path: Path) -> Optional[pd.DataFrame]:
-    try:
-        return pd.read_csv(path)
-    except FileNotFoundError:
-        return None
-
-
-def _compliance_level_counts(series: pd.Series):
-    if series is None:
-        return {"Low": 0, "Medium": 0, "High": 0}
-    normalized = series.fillna("").astype(str).str.lower().str.strip()
-    return {
-        "Low": normalized.str.contains("low").sum(),
-        "Medium": normalized.str.contains("med").sum(),
-        "High": normalized.str.contains("high").sum(),
-    }
 
 
 def _pick_compliance_column(df: pd.DataFrame) -> Optional[str]:
@@ -99,6 +79,36 @@ def _numeric_heat_style(value: object, base_color: str) -> str:
     numeric = max(0.0, min(1.0, numeric))
     alpha = 0.15 + (0.75 * numeric)
     return f"background-color: rgba({base_color}, {alpha:.3f}); font-weight: 600;"
+
+
+def _read_uploaded_csv(uploaded_file) -> Optional[pd.DataFrame]:
+    if uploaded_file is None:
+        return None
+    try:
+        uploaded_file.seek(0)
+        return pd.read_csv(uploaded_file)
+    except Exception:  # pylint: disable=broad-except
+        return None
+
+
+def _style_policy_dataframe(df: pd.DataFrame):
+    compliance_col = _first_matching_column(df, ["Compliance"])
+    detection_col = _first_matching_column(df, ["Detection Level"])
+    confidence_col = _first_matching_column(df, ["Confidence Levels", "Confidence Level"])
+    styled_df = df.style
+    if compliance_col:
+        styled_df = styled_df.map(_compliance_cell_style, subset=[compliance_col])
+    if detection_col:
+        styled_df = styled_df.map(
+            lambda v: _numeric_heat_style(v, "31, 119, 180"),
+            subset=[detection_col],
+        )
+    if confidence_col:
+        styled_df = styled_df.map(
+            lambda v: _numeric_heat_style(v, "76, 149, 108"),
+            subset=[confidence_col],
+        )
+    return styled_df
 
 
 def _save_policy_artifact(
@@ -169,22 +179,7 @@ with tabs[0]:
             preview_rows = policy.get("_policy_preview")
             if preview_rows:
                 policy_df = pd.DataFrame(preview_rows)
-                compliance_col = _first_matching_column(policy_df, ["Compliance"])
-                detection_col = _first_matching_column(policy_df, ["Detection Level"])
-                confidence_col = _first_matching_column(policy_df, ["Confidence Levels", "Confidence Level"])
-                styled_policy = policy_df.style
-                if compliance_col:
-                    styled_policy = styled_policy.applymap(_compliance_cell_style, subset=[compliance_col])
-                if detection_col:
-                    styled_policy = styled_policy.applymap(
-                        lambda v: _numeric_heat_style(v, "31, 119, 180"),
-                        subset=[detection_col],
-                    )
-                if confidence_col:
-                    styled_policy = styled_policy.applymap(
-                        lambda v: _numeric_heat_style(v, "76, 149, 108"),
-                        subset=[confidence_col],
-                    )
+                styled_policy = _style_policy_dataframe(policy_df)
                 st.dataframe(styled_policy, use_container_width=True, height=360)
             else:
                 policy_rows = []
@@ -216,12 +211,9 @@ with tabs[1]:
     )
     upload_preview = None
     if compliance_upload is not None:
-        try:
-            compliance_upload.seek(0)
-            upload_preview = pd.read_csv(compliance_upload)
-        except Exception:  # pylint: disable=broad-except
+        upload_preview = _read_uploaded_csv(compliance_upload)
+        if upload_preview is None:
             st.info("Unable to preview upload.")
-            upload_preview = None
     if upload_preview is not None:
         selected_column = _pick_compliance_column(upload_preview)
         styled_base = upload_preview.copy()
@@ -242,12 +234,9 @@ with tabs[1]:
     )
     mapping_preview = None
     if mapping_upload is not None:
-        try:
-            mapping_upload.seek(0)
-            mapping_preview = pd.read_csv(mapping_upload)
-        except Exception:  # pylint: disable=broad-except
+        mapping_preview = _read_uploaded_csv(mapping_upload)
+        if mapping_preview is None:
             st.info("Unable to preview mapping upload.")
-            mapping_preview = None
 
     if mapping_preview is not None:
         detection_col = _first_matching_column(mapping_preview, ["Detection Level"])
@@ -256,12 +245,8 @@ with tabs[1]:
         if compliance_col and detection_col and confidence_col:
             mapping_table = mapping_preview[[compliance_col, detection_col, confidence_col]].copy()
             mapping_table.columns = ["Compliance", "Detection Level", "Confidence Level"]
-            styled_mapping = (
-                mapping_table.style
-                .applymap(_compliance_cell_style, subset=["Compliance"])
-                .applymap(lambda v: _numeric_heat_style(v, "31, 119, 180"), subset=["Detection Level"])
-                .applymap(lambda v: _numeric_heat_style(v, "76, 149, 108"), subset=["Confidence Level"])
-                .format({"Detection Level": "{:.2f}", "Confidence Level": "{:.2f}"})
+            styled_mapping = _style_policy_dataframe(mapping_table).format(
+                {"Detection Level": "{:.2f}", "Confidence Level": "{:.2f}"}
             )
             st.markdown("**Detection/confidence mapping policy table**")
             st.dataframe(styled_mapping, use_container_width=True, height=260)

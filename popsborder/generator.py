@@ -11,7 +11,7 @@ SyntheticConsignmentDataGenerator:
     * Generates synthetic consignment data for testing and simulation purposes
     * Creates realistic consignment records with randomized attributes
     * Uses advanced sampling techniques including Gaussian copulas
-    * Supports multiple sampling methods: naive, sequential, GMM, gaussian_copula
+    * Supports multiple sampling methods: naive, sequential, GMM
     * Integrates with real PIS data for training synthetic data generation
 
 Sampling Methods Implemented:
@@ -19,7 +19,6 @@ Sampling Methods Implemented:
 - multinomial_sample(): Naive approach sampling each column independently
 - sequential_multinomial_sample(): Sequential sampling preserving conditional dependencies
 - gmm_sample(): Gaussian Mixture Model sampling for numeric columns
-- gaussian_copula_sample(): Category-conditional Gaussian copula preserving correlations
 
 Data Generation Features:
 ------------------------
@@ -59,10 +58,7 @@ this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
 .. codeauthor:: Joseph Agor (Johns Hopkins University Applied Physics Laboratory) 
 """
 
-import csv
-import json
 import random
-from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -76,9 +72,34 @@ import re
 from typing import Optional, Union
 from scipy import stats
 from popsborder.inspections import construct_risk_units
-from slippage_model_utils.references import GENERATOR_TARGET_COLUMNS
 
-warnings.filterwarnings('ignore')
+DEFAULT_RANDOM_STATE = 42
+DEFAULT_SAMPLING_METHOD = "sequential"
+DEFAULT_TARGET_COLUMNS = [
+    "INSPECTION_NUMBER",
+    "COMMODITY_COMMON_NAME",
+    "COUNTRY_OF_ORIGIN_NAME",
+    "PRODUCER_NAME",
+    "PROPAGATIVE_MATERIAL_TYPE",
+    "QUANTITY",
+    "BROKER_NAME",
+    "INSPECTION_LOCATION_NAME",
+    "PATHWAY",
+    "SHIPPER_NAME",
+    "TAXONOMY_ORDER",
+    "TAXONOMY_FAMILY",
+    "TAXONOMY_GENUS",
+    "TAXONOMY_SPECIES",
+    "action",
+    "RISK_UNIT",
+    "TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT",
+    "SAMPLING_UNITS_FOR_INSPECTION_UNIT",
+    "REQUIRED_NUMBER_OF_BOXES",
+    "IMPORTER_NAME",
+    "GENUS_NAME",
+    "COMMODITY_DISPLAY_NAME",
+    "COMMODITY_HOST_TYPE",
+]
 
 ### Support functions:
 
@@ -218,6 +239,10 @@ def apply_producer_grouping(input_data, producer_group_mapping_df, use_shortest_
     return data
 
 
+def _log(message: str) -> None:
+    print(message)
+
+
 class SyntheticConsignmentDataGenerator:
     """Generate synthetic consignment data using advanced sampling techniques
     
@@ -228,23 +253,24 @@ class SyntheticConsignmentDataGenerator:
     
     def __init__(self,
                  config: dict = None,
-                 producer_group_mapping: pd.DataFrame=None,
+                 producer_group_mapping: pd.DataFrame = None,
                  input_data_file: Path = None) -> None:
         """Initialize the synthetic data generator
 
-        :param config: Optional path to input data file for training
-        :param producer_group_mapping: Optional path to input data file for training
+        :param config: Optional generator configuration
+        :param producer_group_mapping: Optional producer grouping table
         :param input_data_file: Optional path to input data file for training
         """
-
+        self.config = config or {}
+        self.producer_group_mapping = producer_group_mapping
         self.input_data = self._load_input_data(input_data_file)
 
-        if 'RISK_UNIT' not in self.input_data.columns and "RISK_UNIT".lower() in self.input_data.columns:
+        if self.input_data is not None and 'RISK_UNIT' not in self.input_data.columns and "RISK_UNIT".lower() in self.input_data.columns:
             self.input_data.rename(columns={'risk_unit': 'RISK_UNIT'}, inplace=True)
         
         # Initialize random seed for reproducible results
-        random.seed(42)
-        np.random.seed(42)
+        random.seed(DEFAULT_RANDOM_STATE)
+        np.random.seed(DEFAULT_RANDOM_STATE)
 
     @staticmethod
     def _load_input_data(input_file):
@@ -253,6 +279,8 @@ class SyntheticConsignmentDataGenerator:
         :param input_file: Path to input data file (.csv, .xlsx, .xls)
         :return: DataFrame with loaded data or None if failed
         """
+        if input_file is None:
+            return None
         try:
             # Normalize path and detect extension
             input_path = Path(input_file)
@@ -309,12 +337,33 @@ class SyntheticConsignmentDataGenerator:
                 else:
                     df[col] = df[col].fillna("Unknown")
 
-            print(f"Loaded {len(df)} records from {input_path} (after cleaning)")
+            _log(f"Loaded {len(df)} records from {input_path} (after cleaning)")
             return df
 
         except Exception as e:
-            print(f"Error loading input data file '{input_file}': {e}")
+            _log(f"Error loading input data file '{input_file}': {e}")
             return None
+
+    def _resolve_target_columns(self) -> list[str]:
+        available_cols = self.input_data.columns.tolist()
+        target_cols = [col for col in available_cols if col in DEFAULT_TARGET_COLUMNS]
+        return target_cols or available_cols
+
+    def _generate_with_method(self, method: str, target_cols: list[str], n_consignments: int) -> pd.DataFrame:
+        method_dispatch = {
+            "naive": lambda: self.multinomial_sample(
+                self.input_data, target_cols, n_consignments, random_state=DEFAULT_RANDOM_STATE
+            ),
+            "sequential": lambda: self.sequential_multinomial_sample(
+                self.input_data, target_cols, n_consignments, random_state=DEFAULT_RANDOM_STATE
+            ),
+            "gmm": lambda: self.gmm_sample(
+                self.input_data, target_cols, n_consignments, random_state=DEFAULT_RANDOM_STATE
+            ),
+        }
+        if method not in method_dispatch:
+            raise ValueError(f"Unknown sampling method: {method}")
+        return method_dispatch[method]()
 
     @staticmethod
     def fit_best_continuous_distribution(data, distributions=None, criterion="aic"):
@@ -337,7 +386,6 @@ class SyntheticConsignmentDataGenerator:
             raise ValueError("No valid data to fit distribution.")
 
         # (Optional) clip extreme values to reduce numerical issues
-        # comment these two lines out if you don't want clipping
         lo, hi = np.percentile(data, [0.1, 99.9])
         data = np.clip(data, lo, hi)
 
@@ -897,7 +945,7 @@ class SyntheticConsignmentDataGenerator:
         np.random.seed(random_state)
 
 
-        num_inspection_units = self.identify_num_inspection_units(self, df=df, n_consignments=n_consignments)
+        num_inspection_units = self.identify_num_inspection_units(df=df, n_consignments=n_consignments)
 
         sampled_df = self.sample_mixed_with_inspection(
             df=df,
@@ -905,7 +953,7 @@ class SyntheticConsignmentDataGenerator:
             n_consignments=n_consignments,
             num_inspection_units=num_inspection_units,
             inspection_col="INSPECTION_NUMBER",
-            random_state=42,
+            random_state=random_state,
         )
 
         return sampled_df
@@ -1394,42 +1442,15 @@ class SyntheticConsignmentDataGenerator:
         """Generate synthetic data based on input data file using specified sampling method
         
         :param n_consignments: Number of unique consignments/shipments to generate
-        :param sampling_method: Sampling method to use (naive, sequential, gmm, gaussian_copula)
+        :param sampling_method: Sampling method to use (naive, sequential, gmm)
         :return: DataFrame with synthetic data
         """
         if self.input_data is None or len(self.input_data) == 0:
             raise ValueError("No usable input data loaded. Please provide a non-empty input_data_file.")
-
-        # Define columns to use for sampling
-        target_cols = GENERATOR_TARGET_COLUMNS
         
-        if not target_cols:
-            # Fallback to all available columns
-            target_cols = self.input_data.columns.tolist()
-        
-        # print(f"Using sampling method: {method}")
-        # print(f"Sampling columns: {target_cols}")
-        
-        if sampling_method == "naive":
-            synthetic_data = self.multinomial_sample(
-                self.input_data, target_cols, n_consignments, random_state=42
-            )
-        elif sampling_method == "sequential":
-            synthetic_data = self.sequential_multinomial_sample(
-                self.input_data, target_cols, n_consignments, random_state=42
-            )
-        elif sampling_method == "gmm": # Experimental
-            synthetic_data = self.gmm_sample(
-                self.input_data, target_cols, n_consignments, random_state=42
-            )
-        elif sampling_method == "gaussian_copula":
-            synthetic_data = self.gaussian_copula_sample(
-                self.input_data, target_cols, n_consignments, random_state=42
-            )
-        else:
-            raise ValueError(f"Unknown sampling method: {method}")
-        
-        return synthetic_data
+        method = sampling_method or DEFAULT_SAMPLING_METHOD
+        target_cols = self._resolve_target_columns()
+        return self._generate_with_method(method, target_cols, n_consignments)
     
     @staticmethod
     def calculate_quality_metrics(original_df, synthetic_df):
@@ -1523,7 +1544,7 @@ def save_to_csv(dataset, filename):
     :param filename: Output CSV filename
     """
     dataset.to_csv(filename, index=False)
-    print(f"Saved {len(dataset)} records to {filename}")
+    _log(f"Saved {len(dataset)} records to {filename}")
 
 def save_to_json(dataset, filename):
     """Save dataset to JSON file
@@ -1532,4 +1553,4 @@ def save_to_json(dataset, filename):
     :param filename: Output JSON filename
     """
     dataset.to_json(filename, orient='records', indent=2)
-    print(f"Saved {len(dataset)} records to {filename}")
+    _log(f"Saved {len(dataset)} records to {filename}")

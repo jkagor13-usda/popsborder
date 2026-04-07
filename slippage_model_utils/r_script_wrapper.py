@@ -1,20 +1,32 @@
-# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 from __future__ import annotations
-import os
+
+import ast
 import json
+import logging
+import os
+import platform
 import shutil
 import subprocess
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Mapping, Sequence, TypedDict, Literal, Tuple, SupportsFloat, Callable
-import numpy as np
-from scipy.optimize import minimize_scalar
-import platform
-import sys
-from math import isinf
-import time
-import pandas as pd
-
 import tempfile
+from math import isinf
+from pathlib import Path
+from typing import (
+    Any,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    TypedDict,
+)
+
+import numpy as np
+import pandas as pd
+from numpy.random import Generator
+
+# === LOGGING ===
+logger = logging.getLogger(__name__)
 
 # === CONFIG ===
 # Name of the conda environment that contains R + required R packages.
@@ -23,36 +35,74 @@ CONDA_ENV_NAME: Optional[str] = os.getenv("POPS_R_CONDA_ENV", "rbb")
 REPO_NAME = "plant-inspection-station-simulation"
 R_SCRIPT_REL = Path("slippage_model_utils") / "clarke_bb_model.R"
 
+
+class OptimResult(TypedDict):
+    value: float
+    par: Tuple[float, float]  # two parameters
+    counts: Tuple[int, str]  # R's optim: (fn_evals, "NA")
+    convergence: int  # 0 means success
+    message: Mapping[str, Any]  # R often returns an empty list/dict here
+    hessian: Tuple[Tuple[float, float], Tuple[float, float]]  # 2x2 matrix
+
+
+#### Repo & script path utilities ####
 def find_repo_root() -> Optional[Path]:
     """
-    Find the repo root by looking for REPO_NAME or '.git'
+    Find the repo root by looking for REPO_NAME or '.git'.
     """
-    # 2) Walk up from anchor (or this file) to find REPO_NAME or .git
     start = Path(__file__).resolve()
     for parent in [start, *start.parents]:
         if parent.name == REPO_NAME or (parent / ".git").exists():
             return parent
-
     return None
 
-def get_r_script_path() -> Path:
+
+def get_script_path(relative: Path, *, repo_root: Optional[Path] = None) -> Path:
     """
-    Resolve the path to clarke_bb_model.R via repo root discovery + R_SCRIPT_REL
-    Raises FileNotFoundError if not found.
+    Resolve path to an R script via repo root discovery.
+
+    Args:
+        relative: Path relative to repo root.
+        repo_root: Explicit repo root. If None, auto-detect via find_repo_root().
+
+    Returns:
+        Absolute path to the script.
+
+    Raises:
+        FileNotFoundError: If script cannot be located.
     """
-    # Find repo root
-    repo_root = find_repo_root()
-    # From repo root, return path to R script
+    # Try explicit root first
     if repo_root:
-        candidate = (repo_root / R_SCRIPT_REL).resolve()
+        candidate = (repo_root / relative).resolve()
         if candidate.exists():
             return candidate
 
-    # Raise error if the R script was not found
+    # Auto-detect root
+    auto_root = find_repo_root()
+    if auto_root:
+        candidate = (auto_root / relative).resolve()
+        if candidate.exists():
+            return candidate
+
     raise FileNotFoundError(
-        "Could not locate 'clarke_bb_model.R'.\n"
+        f"Could not locate '{relative.name}'. "
+        f"Searched from repo_root={repo_root or 'auto-detected root'}; "
+        f"expected relative path: {relative}"
     )
 
+
+def get_r_script_path() -> Path:
+    """
+    Resolve the path to clarke_bb_model.R via repo root discovery + R_SCRIPT_REL.
+
+    Raises:
+        FileNotFoundError if not found.
+    """
+    return get_script_path(R_SCRIPT_REL)
+
+
+
+#### Conda / R discovery utilities ####
 
 def _find_conda_exe() -> Optional[Path]:
     """
@@ -61,19 +111,18 @@ def _find_conda_exe() -> Optional[Path]:
       2) PATH
       3) Common Anaconda/Miniconda install locations
     """
-
-    # Respect explicit overrides first
+    # Explicit overrides
     for env_var in ("POPS_CONDA_EXE", "CONDA_EXE"):
         v = os.getenv(env_var)
         if v and Path(v).exists():
             return Path(v).resolve()
 
-    # Then try PATH
+    # PATH
     which = shutil.which("conda.exe" if platform.system() == "Windows" else "conda")
     if which:
         return Path(which).resolve()
 
-    # If above two options don't work, go through all "Common" install paths by OS
+    # Common install locations
     candidates: list[Path] = []
 
     if platform.system() == "Windows":
@@ -84,14 +133,12 @@ def _find_conda_exe() -> Optional[Path]:
             Path(local_appdata) / "miniconda3" / "Scripts" / "conda.exe",
             Path(local_appdata) / "Programs" / "anaconda" / "Scripts" / "conda.exe",
         ]
-        # add standard home locations too
         candidates += [
             Path.home() / "anaconda" / "Scripts" / "conda.exe",
             Path.home() / "anaconda3" / "Scripts" / "conda.exe",
             Path.home() / "miniconda3" / "Scripts" / "conda.exe",
         ]
     else:
-        # macOS / Linux
         candidates += [
             Path.home() / "anaconda" / "bin" / "conda",
             Path.home() / "anaconda3" / "bin" / "conda",
@@ -117,9 +164,9 @@ def _find_conda_env_dir(env_name: str) -> Optional[Path]:
         env_name: Name of the conda environment
 
     Returns:
-        Path to the environment directory, or None if not found
+        Path to the environment directory, or None if not found.
     """
-    # Check for explicit override first
+    # Explicit override
     override = os.getenv("POPS_CONDA_ENV_DIR")
     if override:
         override_path = Path(override)
@@ -130,7 +177,7 @@ def _find_conda_env_dir(env_name: str) -> Optional[Path]:
     if not conda_exe:
         return None
 
-    # Method 1: Try 'conda env list --json'
+    # Method 1: 'conda env list --json'
     try:
         result = subprocess.run(
             [str(conda_exe), "env", "list", "--json"],
@@ -139,26 +186,21 @@ def _find_conda_env_dir(env_name: str) -> Optional[Path]:
             timeout=30.0,
             check=True,
         )
-
-        # Parse JSON more robustly - find the JSON object in the output
         stdout = result.stdout.strip()
-
-        # Try to find JSON object boundaries
-        json_start = stdout.find('{')
-        json_end = stdout.rfind('}')
-
+        json_start = stdout.find("{")
+        json_end = stdout.rfind("}")
         if json_start != -1 and json_end != -1:
-            json_str = stdout[json_start:json_end + 1]
+            json_str = stdout[json_start : json_end + 1]
             env_data = json.loads(json_str)
 
-            # Method 1a: Check 'envs' list (paths only)
+            # Check 'envs' list
             envs = env_data.get("envs", [])
             for env_path in envs:
                 env_path_obj = Path(env_path)
                 if env_path_obj.name == env_name:
                     return env_path_obj
 
-            # Method 1b: Check 'envs_details' dict (more detailed info)
+            # Check 'envs_details'
             envs_details = env_data.get("envs_details", {})
             for env_path_str, details in envs_details.items():
                 if details.get("name") == env_name:
@@ -166,11 +208,10 @@ def _find_conda_env_dir(env_name: str) -> Optional[Path]:
                     if env_path_obj.exists():
                         return env_path_obj
 
-    except (subprocess.CalledProcessError, json.JSONDecodeError, subprocess.TimeoutExpired) as e:
-        # Silent fallback to other methods
+    except (subprocess.CalledProcessError, json.JSONDecodeError, subprocess.TimeoutExpired):
         pass
 
-    # Method 2: Try 'conda info --envs' (plain text parsing)
+    # Method 2: 'conda info --envs'
     try:
         result = subprocess.run(
             [str(conda_exe), "info", "--envs"],
@@ -179,73 +220,68 @@ def _find_conda_env_dir(env_name: str) -> Optional[Path]:
             timeout=30.0,
             check=True,
         )
-
-        # Parse output like:
-        # # conda environments:
-        # #
-        # base                  *  C:\Users\user\anaconda3
-        # rbb                      C:\Users\user\anaconda3\envs\rbb
-
         for line in result.stdout.splitlines():
             line = line.strip()
-            # Skip comments and empty lines
-            if not line or line.startswith('#'):
+            if not line or line.startswith("#"):
                 continue
-
-            # Split by whitespace, handle asterisk for active env
             parts = line.split()
             if not parts:
                 continue
-
-            # First part is env name, last part is path
             curr_env_name = parts[0]
             env_path_str = parts[-1]
-
             if curr_env_name == env_name:
                 env_path_obj = Path(env_path_str)
                 if env_path_obj.exists():
                     return env_path_obj
 
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        # Silent fallback to other methods
         pass
 
-    # Method 3: Try common conda environment locations manually
-    if conda_exe:
-        conda_root = conda_exe.parent.parent  # Go up from Scripts/bin to conda root
+    # Method 3: common env locations
+    conda_root = conda_exe.parent.parent  # Scripts/bin -> conda root
+    candidates = [
+        conda_root / "envs" / env_name,
+        Path.home() / ".conda" / "envs" / env_name,
+        Path.home() / "anaconda3" / "envs" / env_name,
+        Path.home() / "miniconda3" / "envs" / env_name,
+    ]
 
-        # Common env locations relative to conda installation
-        candidates = [
-            conda_root / "envs" / env_name,  # Standard location
-            Path.home() / ".conda" / "envs" / env_name,  # User envs
-            Path.home() / "anaconda3" / "envs" / env_name,
-            Path.home() / "miniconda3" / "envs" / env_name,
+    if platform.system() == "Windows":
+        local_appdata = os.getenv("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))
+        candidates += [
+            Path(local_appdata) / "anaconda" / "envs" / env_name,
+            Path(local_appdata) / "anaconda3" / "envs" / env_name,
+            Path(local_appdata) / "miniconda3" / "envs" / env_name,
         ]
 
-        if platform.system() == "Windows":
-            local_appdata = os.getenv("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))
-            candidates += [
-                Path(local_appdata) / "anaconda" / "envs" / env_name,
-                Path(local_appdata) / "anaconda3" / "envs" / env_name,
-                Path(local_appdata) / "miniconda3" / "envs" / env_name,
-            ]
-
-        for candidate in candidates:
-            if candidate.exists() and candidate.is_dir():
-                # Verify it's actually a conda env by checking for key files
-                if platform.system() == "Windows":
-                    if (candidate / "Scripts" / "activate.bat").exists() or \
-                            (candidate / "python.exe").exists():
-                        return candidate
-                else:
-                    if (candidate / "bin" / "activate").exists() or \
-                            (candidate / "bin" / "python").exists():
-                        return candidate
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_dir():
+            if platform.system() == "Windows":
+                if (candidate / "Scripts" / "activate.bat").exists() or (candidate / "python.exe").exists():
+                    return candidate
+            else:
+                if (candidate / "bin" / "activate").exists() or (candidate / "bin" / "python").exists():
+                    return candidate
 
     return None
 
 
-def _pick_rscript_command() -> Tuple[List[str], Dict[str, str]]:
+def _build_windows_r_env(env_dir: Path) -> dict[str, str]:
+    """
+    Build environment variables for running Rscript on Windows via a conda env.
+    """
+    env = os.environ.copy()
+    prepend = [
+        str(env_dir / "Library" / "bin"),
+        str(env_dir / "Scripts"),
+        str(env_dir),
+    ]
+    env["PATH"] = os.pathsep.join(prepend + [env.get("PATH", "")])
+    env["R_HOME"] = str(env_dir / "Lib" / "R")
+    return env
+
+
+def _pick_rscript_command() -> tuple[list[str], dict[str, str]]:
     """
     Determine command to run Rscript and environment variables.
 
@@ -261,25 +297,23 @@ def _pick_rscript_command() -> Tuple[List[str], Dict[str, str]]:
             "that contains R and required packages."
         )
 
-    # Test the conda environment detection
     conda_exe = _find_conda_exe()
 
-    # On Windows, we need to directly invoke Rscript with proper env vars
-    # On Unix, conda run works better
     if platform.system() == "Windows":
         env_dir = _find_conda_env_dir(CONDA_ENV_NAME)
         if not env_dir:
-            # Provide detailed debugging information
-            try:
-                result = subprocess.run(
-                    [str(conda_exe), "env", "list"],
-                    capture_output=True,
-                    text=True,
-                    timeout=30.0,
-                )
-                available_envs = result.stdout
-            except:
-                available_envs = "(could not retrieve environment list)"
+            available_envs = "(could not retrieve environment list)"
+            if conda_exe:
+                try:
+                    result = subprocess.run(
+                        [str(conda_exe), "env", "list"],
+                        capture_output=True,
+                        text=True,
+                        timeout=30.0,
+                    )
+                    available_envs = result.stdout
+                except Exception:
+                    pass
 
             raise RuntimeError(
                 f"Could not find conda environment '{CONDA_ENV_NAME}'.\n\n"
@@ -292,7 +326,6 @@ def _pick_rscript_command() -> Tuple[List[str], Dict[str, str]]:
                 f"  set POPS_CONDA_ENV_DIR=C:\\path\\to\\envs\\{CONDA_ENV_NAME}"
             )
 
-        # Build the command to directly invoke Rscript
         rscript = env_dir / "Scripts" / "Rscript.exe"
         if not rscript.exists():
             raise RuntimeError(
@@ -304,41 +337,65 @@ def _pick_rscript_command() -> Tuple[List[str], Dict[str, str]]:
                 "  conda install r-base"
             )
 
-        # Build environment variables
-        env = os.environ.copy()
-
-        # Critical conda DLL locations for R + packages
-        prepend = [
-            str(env_dir / "Library" / "bin"),
-            str(env_dir / "Scripts"),
-            str(env_dir),
-        ]
-        env["PATH"] = os.pathsep.join(prepend + [env.get("PATH", "")])
-
-        # Help R find its home
-        env["R_HOME"] = str(env_dir / "Lib" / "R")
-
+        env = _build_windows_r_env(env_dir)
         return [str(rscript)], env
 
-    else:
-        # On Unix, conda run works well
-        return [str(conda_exe), "run", "-n", CONDA_ENV_NAME, "Rscript"], {}
+    # Unix-like: use conda run
+    if not conda_exe:
+        raise RuntimeError(
+            "Could not locate conda executable. "
+            "Ensure conda is installed and CONDA_EXE or POPS_CONDA_EXE is set "
+            "if using nonstandard locations."
+        )
 
-# ---- Nested schema for `optim` ----
-class OptimResult(TypedDict):
-    value: float
-    par: Tuple[float, float]                       # two parameters
-    counts: Tuple[int, Literal["NA"]]             # R's optim: (fn_evals, "NA")
-    convergence: int                               # 0 means success
-    message: Mapping[str, Any]                     # R often returns an empty list/dict here
-    hessian: Tuple[Tuple[float, float], Tuple[float, float]]  # 2x2 matrix
+    return [str(conda_exe), "run", "-n", CONDA_ENV_NAME, "Rscript"], {}
 
+
+#### R subprocess helpers ####
+def _run_rscript(
+    cmd: list[str],
+    script_path: str,
+    arg: str,
+    *,
+    env: Optional[dict[str, str]] = None,
+    timeout_sec: float = 120.0,
+) -> subprocess.CompletedProcess[str]:
+    """
+    Run Rscript with a single JSON or file-path argument and common error handling.
+    """
+    subprocess_env = env if env else None
+
+    try:
+        proc: subprocess.CompletedProcess[str] = subprocess.run(
+            cmd + [script_path, arg],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout_sec,
+            env=subprocess_env,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise TimeoutError(
+            f"R script '{script_path}' timed out after {timeout_sec}s. "
+            f"Partial stdout: {e.output!r}, stderr: {e.stderr!r}"
+        ) from e
+
+    if proc.returncode != 0:
+        # Let callers wrap this if they want more context
+        raise subprocess.CalledProcessError(
+            returncode=proc.returncode,
+            cmd=proc.args,
+            output=proc.stdout,
+            stderr=proc.stderr,
+        )
+
+    return proc
 
 
 def _parse_json_from_r_stdout(stdout: str) -> dict[str, Any]:
     """
     Extract the final JSON object from mixed R stdout (startup messages, warnings, etc.).
-    Returns a raw dict
+    Returns a raw dict.
     """
     lines = [ln.strip() for ln in stdout.splitlines() if ln.strip()]
     for ln in reversed(lines):
@@ -348,11 +405,56 @@ def _parse_json_from_r_stdout(stdout: str) -> dict[str, Any]:
     start = stdout.rfind("{")
     end = stdout.rfind("}")
     if start != -1 and end != -1 and start < end:
-        return json.loads(stdout[start:end + 1])
+        return json.loads(stdout[start : end + 1])
 
     raise ValueError("Expected JSON from R; nothing that looks like a JSON object was found.")
 
 
+def _safe_parse_json_from_r_stdout(stdout: str, context: str) -> dict[str, Any]:
+    """
+    Parse JSON from R stdout, raising a ValueError with context on failure.
+    """
+    try:
+        return _parse_json_from_r_stdout(stdout)
+    except ValueError as e:
+        preview = stdout[:500].replace("\n", "\\n")
+        raise ValueError(
+            f"Expected JSON from R ({context}); got (preview): {preview}"
+        ) from e
+
+
+#### Helper for tuple range dictionary keys (if you still use it here) ####
+def get_range_key(
+    d: Dict[str, Any],
+    num_plants: float,
+) -> Optional[str]:
+    """
+    Get the key in a dictionary corresponding to a numeric range that
+    contains the given number of plants.
+
+    The dictionary `d` is expected to have some keys that are string
+    representations of 2‑tuples, e.g. "(0, 10)", "(10, 20)", etc.
+    Each such key defines a half-open interval `(lower, upper]`.
+    """
+    last_key: Optional[str] = None
+    max_upper: float = float("-inf")
+
+    for key in d:
+        if key.startswith("(") and key.endswith(")"):
+            lower, upper = ast.literal_eval(key)
+
+            if upper > max_upper:
+                max_upper = upper
+                last_key = key
+
+            if lower < num_plants <= upper:
+                return key
+
+    return last_key
+
+
+
+#### Clark BB wrapper ####
 def run_clarke_bb_group_model(
     ty: Sequence[int],
     b: int,
@@ -361,13 +463,14 @@ def run_clarke_bb_group_model(
     freq: Sequence[int],
     theta: float,
     R: int,
-    startval: Sequence[SupportsFloat],
+    startval: Sequence[float],
     se: bool,
     *,
     timeout_sec: float = 120.0,
 ) -> dict[str, Any]:
     """
-    Runs the Clarke BB group model via an R script and returns parsed JSON.
+    Runs the Clark BB group model via an R script and returns parsed JSON.
+
     Raises:
       - FileNotFoundError if the script is missing
       - CalledProcessError if the R subprocess fails
@@ -380,10 +483,8 @@ def run_clarke_bb_group_model(
 
     cmd, env = _pick_rscript_command()
 
-    #theta_json = "Inf" if (isinstance(theta, float) and np.isinf(theta)) else float(theta)
     theta_json = None if isinf(float(theta)) else float(theta)
 
-    # Build the payload with explicit conversions
     payload: Dict[str, Any] = {
         "ty": [int(x) for x in ty],
         "b": int(b),
@@ -396,44 +497,59 @@ def run_clarke_bb_group_model(
         "se": bool(se),
     }
 
-    try:
-        # Use custom env if provided (Windows), otherwise use current env
-        subprocess_env = env if env else None
+    proc = _run_rscript(
+        cmd,
+        r_script_path_bb_cli,
+        json.dumps(payload, allow_nan=False),
+        env=env,
+        timeout_sec=timeout_sec,
+    )
 
-        proc: subprocess.CompletedProcess[str] = subprocess.run(
-            cmd + [str(Path(r_script_path_bb_cli)), json.dumps(payload, allow_nan=False)],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=timeout_sec,
-            env=subprocess_env,
+    return _safe_parse_json_from_r_stdout(proc.stdout, "run_clarke_bb_group_model")
+
+
+#### DataFrame serialization helpers ####
+def _write_df_temp(
+    df: pd.DataFrame,
+    *,
+    use_parquet: bool,
+    temp_dir: str,
+) -> str:
+    """
+    Write a DataFrame to a temp file and return its path.
+    """
+    if use_parquet:
+        tmp_file = tempfile.NamedTemporaryFile(
+            suffix=".parquet",
+            delete=False,
+            dir=temp_dir,
         )
-
-    except subprocess.TimeoutExpired as e:
-        raise TimeoutError(
-            f"R script timed out after {timeout_sec}s. "
-            f"Partial stdout: {e.output!r}, stderr: {e.stderr!r}"
-        ) from e
-
-    if proc.returncode != 0:
-        raise subprocess.CalledProcessError(
-            returncode=proc.returncode,
-            cmd=proc.args,
-            output=proc.stdout,
-            stderr=proc.stderr,
+        tmp_file.close()
+        df.to_parquet(tmp_file.name, engine="pyarrow", index=False)
+    else:
+        tmp_file = tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".csv",
+            delete=False,
+            newline="",
+            encoding="utf-8",
+            dir=temp_dir,
         )
-
-    # Parse the final line as JSON (ignore startup messages)
-    try:
-        return _parse_json_from_r_stdout(proc.stdout)
-    except ValueError as e:
-        preview = proc.stdout[:500].replace("\n", "\\n")
-        raise ValueError(f"Expected JSON from R; got (preview): {preview}") from e
+        df.to_csv(tmp_file.name, index=False)
+        tmp_file.close()
+    return tmp_file.name
 
 
+def _read_df_from_path(path: str) -> pd.DataFrame:
+    """
+    Read a DataFrame from a parquet or CSV file.
+    """
+    if path.endswith(".parquet"):
+        return pd.read_parquet(path, engine="pyarrow")
+    return pd.read_csv(path)
 
 
-
+#### R variable creator wrapper class for engineered features ####
 class RVariableCreator:
     """
     Executes R functions from variable_creator.R using the conda-based R wrapper infrastructure.
@@ -444,123 +560,75 @@ class RVariableCreator:
 
     def __init__(self, repo_root: Optional[str] = None) -> None:
         """
-        Initialize variable creator
+        Initialize variable creator.
 
         Args:
-            repo_root: Root directory of the repository. If None, attempts auto-detection
+            repo_root: Root directory of the repository. If None, attempts auto-detection.
         """
         self.repo_root = Path(repo_root) if repo_root is not None else None
-        self.function_execution_times: List[Tuple[str, float]] = []
-
-        # List of functions to execute: (name, method)
-        self.functions_to_execute: List[Tuple[str, Callable[..., Any]]] = [
-            ('basic_text_preproc', self.basic_text_preproc),
-            ('generate_quantity_binaries', self.generate_quantity_binaries),
-        ]
 
     def _get_r_script_path(self) -> Path:
         """
-        Resolve the path to variable_creator.R
+        Resolve the path to variable_creator.R.
 
         Returns:
-            Path to the R script
+            Path to the R script.
 
         Raises:
-            FileNotFoundError: If script cannot be found
+            FileNotFoundError: If script cannot be found.
         """
-        # Try from provided repo root first
-        if self.repo_root:
-            candidate = self.repo_root / self.R_SCRIPT_REL
-            if candidate.exists():
-                return candidate.resolve()
-
-        # Try using the existing repo root finder
-        repo_root = find_repo_root()
-        if repo_root:
-            candidate = repo_root / self.R_SCRIPT_REL
-            if candidate.exists():
-                return candidate.resolve()
-
-        raise FileNotFoundError(
-            f"Could not locate 'variable_creator.R'.\n"
-            f"Searched in: {self.repo_root if self.repo_root else 'auto-detected locations'}\n"
-            f"Expected relative path: {self.R_SCRIPT_REL}"
-        )
-
+        return get_script_path(self.R_SCRIPT_REL, repo_root=self.repo_root)
 
     def _call_r_function(
-            self,
-            function_name: str,
-            args: Optional[Dict[str, Any]] = None,
-            timeout_sec: float = 120.0
+        self,
+        function_name: str,
+        args: Optional[Dict[str, Any]] = None,
+        timeout_sec: float = 120.0,
     ) -> Dict[str, Any]:
         """
-        Call a specific R function from variable_creator.R
+        Call a specific R function from variable_creator.R using JSON payload.
         """
         r_script_path = str(self._get_r_script_path())
-
-        # Get the Rscript command and environment (uses existing infrastructure)
         cmd, env = _pick_rscript_command()
 
-        # Build payload - use "func_name" instead of "function" (reserved in R)
         payload: Dict[str, Any] = {
-            "func_name": function_name,  # Changed from "function"
-            "args": args if args is not None else {}
+            "func_name": function_name,
+            "args": args if args is not None else {},
         }
 
         try:
-            # Use custom env if provided (Windows), otherwise use current env
-            subprocess_env = env if env else None
-
-            proc = subprocess.run(
-                cmd + [r_script_path, json.dumps(payload, allow_nan=False)],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=timeout_sec,
-                env=subprocess_env,
+            proc = _run_rscript(
+                cmd,
+                r_script_path,
+                json.dumps(payload, allow_nan=False),
+                env=env,
+                timeout_sec=timeout_sec,
             )
-        except subprocess.TimeoutExpired as e:
-            raise TimeoutError(
-                f"R function '{function_name}' timed out after {timeout_sec}s. "
-                f"Partial stdout: {e.output!r}, stderr: {e.stderr!r}"
-            ) from e
-
-        if proc.returncode != 0:
-            # Enhanced error message showing R's actual error
+        except subprocess.CalledProcessError as e:
             error_msg = (
-                f"R function '{function_name}' failed with return code {proc.returncode}\n"
+                f"R function '{function_name}' failed with return code {e.returncode}\n"
                 f"{'=' * 60}\n"
-                f"STDOUT:\n{proc.stdout}\n"
+                f"STDOUT:\n{e.output}\n"
                 f"{'=' * 60}\n"
-                f"STDERR:\n{proc.stderr}\n"
+                f"STDERR:\n{e.stderr}\n"
                 f"{'=' * 60}\n"
-                f"Command: {' '.join(proc.args)}\n"
+                f"Command: {' '.join(map(str, e.cmd))}\n"
                 f"{'=' * 60}"
             )
-            print(error_msg)  # Print for immediate visibility
-            raise subprocess.CalledProcessError(
-                returncode=proc.returncode,
-                cmd=proc.args,
-                output=proc.stdout,
-                stderr=proc.stderr,
-            )
+            logger.error(error_msg)
+            raise
 
-        # Parse JSON output (reuses existing parser)
-        try:
-            return _parse_json_from_r_stdout(proc.stdout)
-        except ValueError as e:
-            preview = proc.stdout[:500].replace("\n", "\\n")
-            raise ValueError(
-                f"Expected JSON from R function '{function_name}'; got (preview): {preview}"
-            ) from e
+        return _safe_parse_json_from_r_stdout(
+            proc.stdout,
+            f"function '{function_name}'",
+        )
 
     def _call_r_function_df(
-            self,
-            function_name: str,
-            args: Optional[Dict[str, Any]] = None,
-            timeout_sec: float = 120.0,
-            use_parquet: bool = True
+        self,
+        function_name: str,
+        args: Optional[Dict[str, Any]] = None,
+        timeout_sec: float = 120.0,
+        use_parquet: bool = True,
     ) -> Dict[str, Any]:
         """
         Call a specific R function from variable_creator.R using temp files for data transfer.
@@ -568,40 +636,23 @@ class RVariableCreator:
         r_script_path = str(self._get_r_script_path())
         cmd, env = _pick_rscript_command()
 
-        temp_files = []
-        temp_dir = tempfile.gettempdir()  # 🟢 Get Python's temp directory
+        temp_files: list[str] = []
+        temp_dir = tempfile.gettempdir()
 
         try:
-            # Separate DataFrames from other arguments
-            df_paths = {}
-            simple_args = {}
+            df_paths: Dict[str, str] = {}
+            simple_args: Dict[str, Any] = {}
 
             if args:
                 for key, value in args.items():
                     if isinstance(value, pd.DataFrame):
-                        if use_parquet:
-                            # Use temp_dir explicitly
-                            tmp_file = tempfile.NamedTemporaryFile(
-                                suffix='.parquet',
-                                delete=False,
-                                dir=temp_dir  # 🟢 Specify directory
-                            )
-                            tmp_file.close()
-                            value.to_parquet(tmp_file.name, engine='pyarrow', index=False)
-                        else:
-                            tmp_file = tempfile.NamedTemporaryFile(
-                                mode='w',
-                                suffix='.csv',
-                                delete=False,
-                                newline='',
-                                encoding='utf-8',
-                                dir=temp_dir  # 🟢 Specify directory
-                            )
-                            value.to_csv(tmp_file.name, index=False)
-                            tmp_file.close()
-
-                        df_paths[key] = tmp_file.name
-                        temp_files.append(tmp_file.name)
+                        file_path = _write_df_temp(
+                            value,
+                            use_parquet=use_parquet,
+                            temp_dir=temp_dir,
+                        )
+                        df_paths[key] = file_path
+                        temp_files.append(file_path)
                     else:
                         simple_args[key] = value
 
@@ -610,29 +661,26 @@ class RVariableCreator:
                 "args": simple_args,
                 "df_args": df_paths,
                 "use_parquet": use_parquet,
-                "temp_dir": temp_dir  # 🟢 Pass temp directory to R
+                "temp_dir": temp_dir,
             }
 
             tmp_json = tempfile.NamedTemporaryFile(
-                mode='w',
-                suffix='.json',
+                mode="w",
+                suffix=".json",
                 delete=False,
-                encoding='utf-8',
-                dir=temp_dir  # 🟢 Specify directory
+                encoding="utf-8",
+                dir=temp_dir,
             )
             json.dump(payload, tmp_json, allow_nan=False)
             tmp_json.close()
             temp_files.append(tmp_json.name)
 
-            subprocess_env = env if env else None
-
-            proc = subprocess.run(
-                cmd + [r_script_path, tmp_json.name],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=timeout_sec,
-                env=subprocess_env,
+            proc = _run_rscript(
+                cmd,
+                r_script_path,
+                tmp_json.name,
+                env=env,
+                timeout_sec=timeout_sec,
             )
 
         except subprocess.TimeoutExpired as e:
@@ -640,158 +688,130 @@ class RVariableCreator:
                 f"R function '{function_name}' timed out after {timeout_sec}s."
             ) from e
         finally:
-            # Clean up INPUT temp files only (not output files yet!)
+            # Clean up INPUT temp files only (not R-generated output files)
             for tmp_file in temp_files:
                 try:
                     if os.path.exists(tmp_file):
                         os.unlink(tmp_file)
                 except Exception as cleanup_err:
-                    print(f"Warning: Could not delete temp file {tmp_file}: {cleanup_err}")
+                    logger.warning("Could not delete temp file %s: %s", tmp_file, cleanup_err)
 
-        if proc.returncode != 0:
-            error_msg = (
-                f"R function '{function_name}' failed with return code {proc.returncode}\n"
-                f"STDOUT: {proc.stdout}\n"
-                f"STDERR: {proc.stderr}"
-            )
-            print(error_msg)
-            raise subprocess.CalledProcessError(
-                returncode=proc.returncode,
-                cmd=proc.args,
-                output=proc.stdout,
-                stderr=proc.stderr,
-            )
+        # Parse JSON output and then handle df result files
+        result = _safe_parse_json_from_r_stdout(
+            proc.stdout,
+            f"function '{function_name}' (df)",
+        )
 
-        # Parse JSON output from R
-        try:
-            result = _parse_json_from_r_stdout(proc.stdout)
+        if isinstance(result, dict) and "df_results" in result:
+            file_paths = result["df_results"]
+            df_results: Dict[str, pd.DataFrame] = {}
 
-            # Check if R returned file paths for DataFrames
-            if isinstance(result, dict) and "df_results" in result:
-                file_paths = result["df_results"]
-                df_results = {}
+            for key, file_path in file_paths.items():
+                try:
+                    logger.debug("Looking for result file: %s", file_path)
+                    if os.path.exists(file_path):
+                        df_results[key] = _read_df_from_path(file_path)
+                        logger.debug(
+                            "Successfully read %d rows for key %s",
+                            len(df_results[key]),
+                            key,
+                        )
+                        try:
+                            os.unlink(file_path)
+                            logger.debug("Cleaned up: %s", file_path)
+                        except Exception as e:
+                            logger.warning("Could not delete %s: %s", file_path, e)
+                    else:
+                        logger.warning("File not found: %s", file_path)
+                except Exception as read_err:
+                    logger.exception("Error reading file %s: %s", file_path, read_err)
 
-                for key, file_path in file_paths.items():
-                    try:
-                        # 🟢 Add debug output
-                        print(f"Looking for result file: {file_path}")
-                        print(f"File exists: {os.path.exists(file_path)}")
+            # Merge DataFrame results with other results
+            result = {**result, **df_results}
+            if "df_results" in result:
+                del result["df_results"]
 
-                        if os.path.exists(file_path):
-                            if file_path.endswith('.parquet'):
-                                df_results[key] = pd.read_parquet(file_path, engine='pyarrow')
-                            else:
-                                df_results[key] = pd.read_csv(file_path)
-
-                            print(f"Successfully read {len(df_results[key])} rows")
-
-                            # 🟢 Clean up AFTER reading
-                            try:
-                                os.unlink(file_path)
-                                print(f"Cleaned up: {file_path}")
-                            except Exception as e:
-                                print(f"Warning: Could not delete {file_path}: {e}")
-                        else:
-                            print(f"Warning: File not found: {file_path}")
-                            # 🟢 List files in temp directory for debugging
-                            if os.path.exists(temp_dir):
-                                print(f"Files in {temp_dir}:")
-                                for f in os.listdir(temp_dir)[:10]:  # Show first 10
-                                    print(f"  - {f}")
-
-                    except Exception as read_err:
-                        print(f"Error reading file {file_path}: {read_err}")
-                        import traceback
-                        traceback.print_exc()
-
-                # Merge DataFrame results with other results
-                result = {**result, **df_results}
-                if "df_results" in result:
-                    del result["df_results"]
-
-            return result
-
-        except ValueError as e:
-            preview = proc.stdout[:500].replace("\n", "\\n")
-            raise ValueError(
-                f"Expected JSON from R function '{function_name}'; got (preview): {preview}"
-            ) from e
+        return result
 
     def basic_text_preproc(
-            self,
-            text_field: str,
-            suffix_string: Optional[str] = None,
-            prefix_string: Optional[str] = None
+        self,
+        text_field: str,
+        suffix_string: Optional[str] = None,
+        prefix_string: Optional[str] = None,
+        timeout_sec: float = 120.0,
     ) -> str:
         """
-        Executes R basic_text_preproc function to clean and normalize text
-
-        Args:
-            text_field: Text string to process
-            suffix_string: Optional custom suffix patterns to remove (regex)
-            prefix_string: Optional custom prefix patterns to remove (regex)
-
-        Returns:
-            Processed text string
-
-        Raises:
-            ValueError: If R function fails or returns unexpected format
+        Executes R basic_text_preproc function to clean and normalize text.
         """
-        try:
-            # Prepare arguments for R function with explicit type conversion
-            args: Dict[str, Any] = {
-                "text_field": str(text_field)
-            }
-
-            if suffix_string is not None:
-                args["suffix_string"] = str(suffix_string)
-            if prefix_string is not None:
-                args["prefix_string"] = str(prefix_string)
-
-            # Call R function
-            result = self._call_r_function("basic_text_preproc", args)
-
-            # Check if R returned an error
-            if isinstance(result, dict):
-                if result.get("status") == "error":
-                    error_msg = result.get("error", "Unknown error from R")
-                    raise ValueError(f"R function error: {error_msg}")
-
-                if "processed_text" in result:
-                    processed_text = result["processed_text"]
-                    print(f"basic_text_preproc result: '{processed_text}'")
-                    return processed_text
-
-            raise ValueError(
-                f"Expected dict with 'processed_text' key from R, got: {result}"
-            )
-
-        except Exception as e:
-            print(f"Error in execution of basic_text_preproc function: {e}")
-            raise
-
-    def batch_basic_text_preproc(self, text_fields, suffix_string=None, prefix_string=None, timeout_sec=120.0):
-        # Prepare argument payload
-        args = {"text_field": list(map(str, text_fields))}
+        args: Dict[str, Any] = {"text_field": str(text_field)}
         if suffix_string is not None:
             args["suffix_string"] = str(suffix_string)
         if prefix_string is not None:
             args["prefix_string"] = str(prefix_string)
-        payload = {
-            "func_name": "basic_text_preproc",
-            "args": args
-        }
 
-        # Write to temp file
-        with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as f:
-            json.dump(payload, f, allow_nan=False)
-            temp_json_path = f.name
+        result = self._call_r_function(
+            "basic_text_preproc",
+            args=args,
+            timeout_sec=timeout_sec,
+        )
+
+        if isinstance(result, dict):
+            if result.get("status") == "error":
+                error_msg = result.get("error", "Unknown error from R")
+                raise ValueError(f"R function error: {error_msg}")
+
+            if "processed_text" in result:
+                processed_text = result["processed_text"]
+                logger.debug("basic_text_preproc result: %r", processed_text)
+                return processed_text
+
+        raise ValueError(
+            f"Expected dict with 'processed_text' key from R, got: {result}"
+        )
+
+    def batch_basic_text_preproc(
+            self,
+            text_fields: Sequence[str],
+            suffix_string: Optional[str] = None,
+            prefix_string: Optional[str] = None,
+            timeout_sec: float = 120.0,
+    ) -> List[str]:
+        """
+        Batch version of basic_text_preproc that sends a list of text fields to R.
+
+        This version matches the original behavior where the payload is
+        written to a temporary JSON file, and the path is passed to R.
+        The R script is expected to treat the argument as a file path.
+        """
+        # Prepare argument payload
+        args: Dict[str, Any] = {"text_field": list(map(str, text_fields))}
+        if suffix_string is not None:
+            args["suffix_string"] = str(suffix_string)
+        if prefix_string is not None:
+            args["prefix_string"] = str(prefix_string)
+
+        payload: Dict[str, Any] = {
+            "func_name": "basic_text_preproc",
+            "args": args,
+        }
 
         r_script_path = str(self._get_r_script_path())
         cmd, env = _pick_rscript_command()
         subprocess_env = env if env else None
 
+        # Write payload to temp JSON file
+        with tempfile.NamedTemporaryFile(
+                mode="w",
+                suffix=".json",
+                delete=False,
+                encoding="utf-8",
+        ) as f:
+            json.dump(payload, f, allow_nan=False)
+            temp_json_path = f.name
+
         try:
+            # Use raw subprocess.run here instead of _run_rscript, because we
+            # want the exact same semantics as the original implementation.
             proc = subprocess.run(
                 cmd + [r_script_path, temp_json_path],
                 capture_output=True,
@@ -800,19 +820,45 @@ class RVariableCreator:
                 timeout=timeout_sec,
                 env=subprocess_env,
             )
-        finally:
-            # Clean up temp file
+        except subprocess.TimeoutExpired as e:
+            # Ensure cleanup of the temp file on timeout
             if os.path.exists(temp_json_path):
-                os.unlink(temp_json_path)
+                try:
+                    os.unlink(temp_json_path)
+                except Exception as cleanup_err:
+                    logger.warning(
+                        "Could not delete temp JSON file %s: %s",
+                        temp_json_path,
+                        cleanup_err,
+                    )
+            raise TimeoutError(
+                f"R function 'basic_text_preproc' timed out after {timeout_sec}s. "
+                f"Partial stdout: {e.output!r}, stderr: {e.stderr!r}"
+            ) from e
+        finally:
+            # Best-effort cleanup of the temp JSON file
+            if os.path.exists(temp_json_path):
+                try:
+                    os.unlink(temp_json_path)
+                except Exception as cleanup_err:
+                    logger.warning(
+                        "Could not delete temp JSON file %s: %s",
+                        temp_json_path,
+                        cleanup_err,
+                    )
 
         if proc.returncode != 0:
             error_msg = (
                 f"R function 'basic_text_preproc' failed with return code {proc.returncode}\n"
+                f"{'=' * 60}\n"
                 f"STDOUT:\n{proc.stdout}\n"
+                f"{'=' * 60}\n"
                 f"STDERR:\n{proc.stderr}\n"
-                f"Command: {' '.join(proc.args)}\n"
+                f"{'=' * 60}\n"
+                f"Command: {' '.join(map(str, proc.args))}\n"
+                f"{'=' * 60}"
             )
-            print(error_msg)
+            logger.error(error_msg)
             raise subprocess.CalledProcessError(
                 returncode=proc.returncode,
                 cmd=proc.args,
@@ -820,114 +866,59 @@ class RVariableCreator:
                 stderr=proc.stderr,
             )
 
-        result = _parse_json_from_r_stdout(proc.stdout)
+        result = _safe_parse_json_from_r_stdout(
+            proc.stdout,
+            "basic_text_preproc batch",
+        )
+
         # Your R returns {processed_text: [cleaned names...]}
         if "processed_text" in result:
-            return result["processed_text"]
+            return list(result["processed_text"])
+
         raise ValueError("R did not return processed_text")
 
     def generate_quantity_binaries(
-            self,
-            df: pd.DataFrame,
-            quantity_threshold: float = 200.0,
-            group_cols: Optional[List[str]] = None,
-            use_parquet: bool = True
+        self,
+        df: pd.DataFrame,
+        quantity_threshold: float = 200.0,
+        group_cols: Optional[List[str]] = None,
+        use_parquet: bool = True,
+        timeout_sec: float = 120.0,
     ) -> pd.DataFrame:
         """
-        Aggregate data by inspection (or custom grouping) and calculate quantity binary features
+        Aggregate data by inspection (or custom grouping) and calculate quantity binary features.
 
         Args:
-            df: Input DataFrame with QUANTITY column
-            quantity_threshold: Threshold for binary classification
-            group_cols: Columns to group by (default: ['RISK_UNIT'])
-            use_parquet: If True, use Parquet format for file transfer (faster for large data)
-
-        Returns:
-            Aggregated DataFrame with quantity features
+            df: Input DataFrame with QUANTITY column.
+            quantity_threshold: Threshold for binary classification.
+            group_cols: Columns to group by (default: ['RISK_UNIT'] on R side).
+            use_parquet: If True, use Parquet format for file transfer (faster for large data).
         """
-        try:
-            if 'QUANTITY' not in df.columns:
-                raise ValueError("DataFrame must contain 'QUANTITY' column")
+        if "QUANTITY" not in df.columns:
+            raise ValueError("DataFrame must contain 'QUANTITY' column")
 
-            args: Dict[str, Any] = {
-                "df": df,
-                "quantity_threshold": float(quantity_threshold)
-            }
+        args: Dict[str, Any] = {
+            "df": df,
+            "quantity_threshold": float(quantity_threshold),
+        }
+        if group_cols is not None:
+            args["group_cols"] = list(group_cols)
 
-            if group_cols is not None:
-                args["group_cols"] = list(group_cols)
+        result = self._call_r_function_df(
+            "generate_quantity_binaries",
+            args=args,
+            timeout_sec=timeout_sec,
+            use_parquet=use_parquet,
+        )
 
-            # Call R function with parquet option
-            result = self._call_r_function_df(
-                "generate_quantity_binaries",
-                args,
-                use_parquet=use_parquet
-            )
+        if isinstance(result, dict) and result.get("status") == "error":
+            raise ValueError(f"R function error: {result.get('error')}")
 
-            if isinstance(result, dict) and result.get("status") == "error":
-                raise ValueError(f"R function error: {result.get('error')}")
+        if "result_df" in result:
+            result_df = result["result_df"]
+            if isinstance(result_df, pd.DataFrame):
+                logger.debug("Aggregated to %d groups", result_df.shape[0])
+                return result_df
+            raise ValueError(f"Expected DataFrame, got {type(result_df)}")
 
-            if "result_df" in result:
-                result_df = result["result_df"]
-                if isinstance(result_df, pd.DataFrame):
-                    print(f"Aggregated to {result_df.shape[0]} groups")
-                    return result_df
-                else:
-                    raise ValueError(f"Expected DataFrame, got {type(result_df)}")
-            else:
-                raise ValueError(f"No 'result_df' in result: {result.keys()}")
-
-        except Exception as e:
-            print(f"Error in generate_quantity_binaries: {e}")
-            raise
-
-    def run_all(self) -> Dict[str, Any]:
-        """
-        Execute all registered functions and track their execution times
-
-        Returns:
-            Dictionary containing execution summary with timing information
-        """
-        results: Dict[str, Any] = {}
-        self.function_execution_times = []
-
-        print(f"Executing {len(self.functions_to_execute)} functions...")
-
-        for func_name, func in self.functions_to_execute:
-            print(f"\n--- Executing {func_name} ---")
-            start_time = time.time()
-
-            try:
-                success = func()
-                elapsed = time.time() - start_time
-
-                self.function_execution_times.append((func_name, elapsed))
-                results[func_name] = {
-                    "success": success,
-                    "execution_time": elapsed
-                }
-
-                print(f"✓ {func_name} completed in {elapsed:.2f}s")
-
-            except Exception as e:
-                elapsed = time.time() - start_time
-                self.function_execution_times.append((func_name, elapsed))
-                results[func_name] = {
-                    "success": False,
-                    "execution_time": elapsed,
-                    "error": str(e)
-                }
-                print(f"✗ {func_name} failed after {elapsed:.2f}s: {e}")
-
-        # Print summary
-        total_time = sum(t for _, t in self.function_execution_times)
-        print(f"\n{'=' * 50}")
-        print(f"Execution Summary:")
-        print(f"  Total functions: {len(self.functions_to_execute)}")
-        print(f"  Successful: {sum(1 for r in results.values() if r['success'])}")
-        print(f"  Failed: {sum(1 for r in results.values() if not r['success'])}")
-        print(f"  Total time: {total_time:.2f}s")
-        print(f"{'=' * 50}\n")
-
-        return results
-
+        raise ValueError(f"No 'result_df' in result: {result.keys()}")

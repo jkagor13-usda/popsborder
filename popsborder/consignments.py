@@ -114,6 +114,26 @@ import pandas as pd
 from slippage_model_utils.UnitAttributes import RiskUnitConfig
 
 
+def _log(message: str) -> None:
+    print(message)
+
+
+def _get_pathway_default(config_map, pathway):
+    pathway_key = str(pathway).lower()
+    if pathway_key == "airport" and "air" in config_map:
+        return config_map["air"]["default"]
+    if pathway_key == "maritime" and "maritime" in config_map:
+        return config_map["maritime"]["default"]
+    return config_map["default"]
+
+
+def _next_record(reader, exhausted_message: str):
+    try:
+        return next(reader)
+    except StopIteration:
+        raise RuntimeError(exhausted_message) from None
+
+
 class RiskUnit:
     """Risk Unit
 
@@ -141,36 +161,6 @@ class RiskUnit:
         # Set all other attributes dynamically
         for key, value in kwargs.items():
             setattr(self, key, value)
-
-    # def __init__(self,
-    #              sample_units,
-    #              risk_unit_id=None,
-    #              sample_unit_ids=None,
-    #              inspection_unit_ids=None,
-    #              plant_ids=None,
-    #              material_type=None,
-    #              producer=None,
-    #              origin=None,
-    #              port=None,
-    #              pathway=None):
-    #     """Store reference to associated sample_units
-    #
-    #     :param sample_units: Array-like object of sample_units
-    #     :param material_type: Material type for this inspection unit
-    #     :param producer: Producer name for this inspection unit
-    #     """
-    #     self.sample_units = sample_units
-    #     self.id = risk_unit_id
-    #     self.sample_unit_ids = sample_unit_ids if sample_unit_ids is not None else []
-    #     self.inspection_unit_ids = (
-    #         inspection_unit_ids if inspection_unit_ids is not None else []
-    #     )
-    #     self.plant_ids = plant_ids if plant_ids is not None else []
-    #     self.material_type = material_type
-    #     self.producer = producer
-    #     self.origin = origin
-    #     self.port = port
-    #     self.pathway = pathway
 
     @property
     def num_sample_units(self):
@@ -345,10 +335,6 @@ class Consignment(collections.UserDict):
     using a dictionary-like item access (old style).
     """
 
-    # Inheriting from this library class is its intended use, so disable ancestors msg.
-    # pylint: disable=too-many-ancestors
-    # This class is meant to hold a lot of attributes.
-    # pylint: disable=too-many-instance-attributes
 
     def __init__(
         self,
@@ -604,12 +590,10 @@ class F280ConsignmentGenerator:
 
     def generate_consignment(self):
         """Generate a new consignment"""
-        try:
-            record = next(self.reader)
-        except StopIteration:
-            raise RuntimeError(
-                "More consignments requested than number of records in provided F280"
-            ) from None
+        record = _next_record(
+            self.reader,
+            "More consignments requested than number of records in provided F280",
+        )
 
         num_sample_units = int(record["QUANTITY"])
         sample_units = np.zeros(num_sample_units, dtype=np.int64)
@@ -863,18 +847,6 @@ class PISConsignmentGenerator:
 
         # Create risk units from accumulated hierarchy links
         for risk_unit_id, bucket in risk_unit_buckets.items():
-            # risk_unit = RiskUnit(
-            #     np.zeros(len(bucket["sample_unit_ids"]), dtype=np.int64),
-            #     risk_unit_id=risk_unit_id,
-            #     sample_unit_ids=bucket["sample_unit_ids"],
-            #     inspection_unit_ids=bucket["inspection_unit_ids"],
-            #     plant_ids=bucket["plant_ids"],
-            #     material_type=bucket["material_type"],
-            #     producer=bucket["producer"],
-            #     origin=bucket["origin"],
-            #     port=bucket["port"],
-            #     pathway=bucket["pathway"],
-            # )
             # Build kwargs dynamically from bucket
             risk_unit_kwargs = {
                 "risk_unit_id": risk_unit_id,
@@ -990,12 +962,10 @@ class AQIMConsignmentGenerator:
 
     def generate_consignment(self):
         """Generate a new consignment"""
-        try:
-            record = next(self.reader)
-        except StopIteration:
-            raise RuntimeError(
-                "More consignments requested than number of records in AQIM data"
-            ) from None
+        record = _next_record(
+            self.reader,
+            "More consignments requested than number of records in AQIM data",
+        )
         pathway = record["CARGO_FORM"]
         sample_units_per_inspection_unit = self.sample_units_per_inspection_unit
         sample_units_per_inspection_unit = get_sample_units_per_inspection_unit(sample_units_per_inspection_unit, pathway)
@@ -1040,70 +1010,53 @@ class AQIMConsignmentGenerator:
 
 def get_sample_units_per_inspection_unit(sample_units_per_inspection_unit, pathway):
     """Based on config and pathway, return number of sample_units per inspection_unit."""
-    if pathway.lower() == "airport" and "air" in sample_units_per_inspection_unit:
-        sample_units_per_inspection_unit = sample_units_per_inspection_unit["air"]["default"]
-    elif pathway.lower() == "maritime" and "maritime" in sample_units_per_inspection_unit:
-        sample_units_per_inspection_unit = sample_units_per_inspection_unit["maritime"]["default"]
-    else:
-        sample_units_per_inspection_unit = sample_units_per_inspection_unit["default"]
-    return sample_units_per_inspection_unit
+    return _get_pathway_default(sample_units_per_inspection_unit, pathway)
 
 
 def get_plants_per_sample_unit(plants_per_sample_unit, pathway):
     """Based on config and pathway, return number of sample_units per inspection_unit."""
-    if pathway.lower() == "airport" and "air" in plants_per_sample_unit:
-        plants_per_sample_unit = plants_per_sample_unit["air"]["default"]
-    elif pathway.lower() == "maritime" and "maritime" in plants_per_sample_unit:
-        plants_per_sample_unit = plants_per_sample_unit["maritime"]["default"]
-    else:
-        plants_per_sample_unit = plants_per_sample_unit["default"]
-    return plants_per_sample_unit
+    return _get_pathway_default(plants_per_sample_unit, pathway)
 
 
 def get_consignment_generator(config):
     """Based on config, return consignment generator object."""
     config = config["consignment"]
     generation_method = config["generation_method"]
-    if (generation_method == "input_file") and (
-        config["input_file"]["file_type"] == "F280"
-    ):
-        # Backward compatibility: check for both old and new terminology
-        sample_units_config = config.get("sample_units_per_inspection_unit", config.get("items_per_box"))
-        consignment_generator = F280ConsignmentGenerator(
-            sample_units_per_inspection_unit=sample_units_config,
-            filename=config["input_file"]["file_name"],
-        )
-    elif (generation_method == "input_file") and (
-        config["input_file"]["file_type"] == "AQIM"
-    ):
-        consignment_generator = AQIMConsignmentGenerator(
-            sample_units_per_inspection_unit=config["items_per_box"],
-            filename=config["input_file"]["file_name"],
-        )
-    elif generation_method == "parameter_based":
+
+    if generation_method == "parameter_based":
         start_date = config.get("start_date", "2020-01-01")
-        consignment_generator = ParameterConsignmentGenerator(
+        return ParameterConsignmentGenerator(
             parameters=config["parameter_based"],
             sample_units_per_inspection_unit=config["items_per_box"],
             start_date=start_date,
         )
-    elif (generation_method == "input_file") and (
-        config["input_file"]["file_type"] == "PIS"
-    ):
-        consignment_generator = PISConsignmentGenerator(
-            filename=config["input_file"]["file_name"],
-        )
-    elif generation_method == "RBS":
+
+    if generation_method == "RBS":
         if "input_file" in config and "rbs_file_name" in config["input_file"]:
-        # RBS record-based generation from file
-            consignment_generator = PISConsignmentGenerator(
-                filename=config["input_file"]["rbs_file_name"],
-            )
-        else:
-            print("No consignment data available")
-    else:
-        raise RuntimeError(
-            f"Unknown consignment generation method: {generation_method}"
+            return PISConsignmentGenerator(filename=config["input_file"]["rbs_file_name"])
+        _log("No consignment data available")
+        return None
+
+    if generation_method != "input_file":
+        raise RuntimeError(f"Unknown consignment generation method: {generation_method}")
+
+    input_file = config["input_file"]
+    file_type = input_file["file_type"]
+    filename = input_file["file_name"]
+
+    if file_type == "F280":
+        sample_units_config = config.get("sample_units_per_inspection_unit", config.get("items_per_box"))
+        return F280ConsignmentGenerator(
+            sample_units_per_inspection_unit=sample_units_config,
+            filename=filename,
         )
-    return consignment_generator
+    if file_type == "AQIM":
+        return AQIMConsignmentGenerator(
+            sample_units_per_inspection_unit=config["items_per_box"],
+            filename=filename,
+        )
+    if file_type == "PIS":
+        return PISConsignmentGenerator(filename=filename)
+
+    raise RuntimeError(f"Unknown consignment input file type: {file_type}")
 

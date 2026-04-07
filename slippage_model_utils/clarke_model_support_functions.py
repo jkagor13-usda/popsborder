@@ -58,7 +58,7 @@ class ClarkeModelInputs:
 
 
 
-def _get_b_B_nbar_ty_freq_inputs(df_pis_data_filtered: pd.DataFrame):
+def get_inputs(df_pis_data_filtered: pd.DataFrame):
     print("   Determining Inputs 'b', 'B', 'Nbar', 'ty, and 'freq'")
 
     # ---- Required columns ----
@@ -66,7 +66,6 @@ def _get_b_B_nbar_ty_freq_inputs(df_pis_data_filtered: pd.DataFrame):
     missing = [c for c in required_cols if c not in df_pis_data_filtered.columns]
     if missing:
         raise KeyError(f"Missing required columns: {missing}")
-
     # Filter upper bound of outliers from IQR method
     Q1 = df_pis_data_filtered["TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT"].quantile(0.25)
     Q3 = df_pis_data_filtered["TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT"].quantile(0.75)
@@ -75,7 +74,6 @@ def _get_b_B_nbar_ty_freq_inputs(df_pis_data_filtered: pd.DataFrame):
     df_pis_data_filtered = df_pis_data_filtered[
         (df_pis_data_filtered["TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT"] >= 0.0) &
         (df_pis_data_filtered["TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT"] <= upper_bound)]
-
     Q1 = df_pis_data_filtered["REQUIRED_NUMBER_OF_BOXES"].quantile(0.25)
     Q3 = df_pis_data_filtered["REQUIRED_NUMBER_OF_BOXES"].quantile(0.75)
     IQR = Q3 - Q1
@@ -84,14 +82,12 @@ def _get_b_B_nbar_ty_freq_inputs(df_pis_data_filtered: pd.DataFrame):
         (df_pis_data_filtered["REQUIRED_NUMBER_OF_BOXES"] >= 0.0) &
         (df_pis_data_filtered[
              "REQUIRED_NUMBER_OF_BOXES"] <= upper_bound)]
-
     Q1 = df_pis_data_filtered["QUANTITY"].quantile(0.25)
     Q3 = df_pis_data_filtered["QUANTITY"].quantile(0.75)
     IQR = Q3 - Q1
     upper_bound = Q3 + 1.5 * IQR
     df_pis_data_filtered_no_outliers = df_pis_data_filtered[(df_pis_data_filtered["QUANTITY"] >= 0.0) &
                                                                 (df_pis_data_filtered["QUANTITY"] <= upper_bound)]
-
     # Ensure numeric where needed
     df = df_pis_data_filtered_no_outliers.copy()
     df["TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT"] = pd.to_numeric(
@@ -112,11 +108,9 @@ def _get_b_B_nbar_ty_freq_inputs(df_pis_data_filtered: pd.DataFrame):
         q=10,
         labels=labels
     )
-
     grouped_pairs_quantity = df.groupby("sampling_unit_decile_quantity", observed=True)
 
     num_groups = grouped_pairs_quantity.ngroups
-
     clarke_inputs_by_quantity = {}
     count = 1
     for q, g in grouped_pairs_quantity:
@@ -189,7 +183,6 @@ def _get_b_B_nbar_ty_freq_inputs(df_pis_data_filtered: pd.DataFrame):
         clarke_inputs.freq = freq
         clarke_inputs.B = B
         clarke_inputs_by_quantity[q] = clarke_inputs
-
     # Return the calculated parameters
     return clarke_inputs_by_quantity
 
@@ -226,6 +219,6 @@ def gen_clarke_model_inputs(
     """
     # Function to generate b, B, and Nbar input parameters
     print(f"Determining All Clarke Model Required Inputs")
-    clarke_inputs_by_quantity = _get_b_B_nbar_ty_freq_inputs(df_pis_data)
+    clarke_inputs_by_quantity = get_inputs(df_pis_data)
 
     return clarke_inputs_by_quantity

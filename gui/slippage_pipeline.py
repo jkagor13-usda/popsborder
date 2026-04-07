@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import copy
-import json
 import pickle
-import subprocess
 from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
 from .runtime_warnings import suppress_optional_dependency_warnings
 
 suppress_optional_dependency_warnings()
@@ -23,13 +20,11 @@ from popsborder.inputs import (
     load_compliance_lookup_csv,
     load_configuration,
     load_scenario_table,
-    text_to_value,
 )
 from popsborder.outputs import save_scenario_result_to_pandas
 from popsborder.scenarios import run_scenarios
 from slippage_model_utils.clarke_model_support_functions import gen_clarke_model_inputs
 from slippage_model_utils.r_script_wrapper import run_clarke_bb_group_model
-from typing import Any, Dict, Tuple
 
 
 # Default config columns to persist into results
@@ -86,10 +81,8 @@ class SyntheticOptions:
 
 
 DEFAULT_DATA_DIR = Path("data_input")
-CONS_FILENAME = "consignment_uploaded_rbs_data.csv"
 COMPLIANCE_FILENAME = "compliance_table.csv"
 CONFIG_FILENAME = "config.yml"
-SCENARIO_FILENAME = "scenario_table.csv"
 
 
 
@@ -235,7 +228,7 @@ def _infer_num_consignments(consignment_path: Optional[Path]) -> int:
 
 def fit_contamination_distribution(
     pis_data_path: Path,
-) -> Tuple[Dict[Tuple,Any], pd.DataFrame, Dict[Any, Any]]:
+) -> Tuple[Dict[Tuple,Any], pd.DataFrame, Dict[Any, Any], list[tuple[tuple, str]]]:
     """Fit contamination parameters using the Clarke beta-binomial model."""
     if pis_data_path is None or not Path(pis_data_path).exists():
         raise FileNotFoundError("PIS action data not provided. Upload on Page 2 - Contamination Fit.")
@@ -254,20 +247,45 @@ def fit_contamination_distribution(
         raise ValueError("Fitting failed: generating of Clark inputs has failed.  Check input data.")
 
     res = {}
+    warnings: list[tuple[tuple, str]] = []
+    # Defaults for if/when parameters for alpha/beta are both zero
+    k = 10_000
+    default_alpha = 0.02 * k  # 200
+    default_beta = 0.98 * k  # 9800
     print(f'\nNow Executing Clarke Model Based on Quantities')
     for (lower, upper), inputs in inputs_by_quantity.items():
         print(f'   Calculating for Quantity Range:  {(lower, upper)}')
-        res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
-                                                        inputs.b,
-                                                        inputs.B,
-                                                        inputs.Nbar,
-                                                        inputs.freq,
-                                                        inputs.theta,
-                                                        inputs.R,
-                                                        inputs.start_val,
-                                                        inputs.se)
+        params = run_clarke_bb_group_model(
+            inputs.ty,
+            inputs.b,
+            inputs.B,
+            inputs.Nbar,
+            inputs.freq,
+            inputs.theta,
+            inputs.R,
+            inputs.start_val,
+            inputs.se,
+        )
 
-    return res, pis_df, inputs_by_quantity
+        alpha = params.get("alpha", 0)
+        beta = params.get("beta", 0)
+
+        if alpha == 0 and beta == 0:
+            # Create a warning message
+            warning_msg = (
+                f"Fitted alpha and beta were zero for quantity range {(lower, upper)}; "
+                f"values displayed above are defaults "
+                f"for a mean rate ≈ 0.02 and 95% CI = [0.0175,0.0229]."
+            )
+            warnings.append(((lower, upper), warning_msg))
+
+            # override
+            params["alpha"] = default_alpha
+            params["beta"] = default_beta
+
+        res[(lower, upper)] = params
+
+    return res, pis_df, inputs_by_quantity, warnings
 
 
 

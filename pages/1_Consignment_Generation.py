@@ -2,10 +2,9 @@
 
 from pathlib import Path
 import itertools
-import re
 import shutil
 import yaml
-from typing import List, Optional
+from typing import Optional
 
 import altair as alt
 import numpy as np
@@ -68,17 +67,6 @@ def _unique_path(path: Path) -> Path:
         candidate = path.with_name(f"{stem}_{i}{suffix}")
         if not candidate.exists():
             return candidate
-
-
-def _is_tmp_consignment_path(path: Optional[Path]) -> bool:
-    if path is None:
-        return False
-    try:
-        resolved = Path(path).resolve()
-        consignment_root = CONSIGNMENT_ROOT.resolve()
-        return str(resolved).startswith(str(consignment_root))
-    except Exception:
-        return False
 
 
 def _save_rbs_to_tmp(
@@ -229,6 +217,178 @@ def _build_rbs_dataset(seed_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _init_page_state(state: dict) -> None:
+    state.setdefault("consignment_source", "synthetic")
+    state.setdefault("consignment_base_name", "consignment")
+    state.setdefault("pending_rbs_upload", None)
+    state.setdefault("use_custom_producer_grouping", True)
+    state.setdefault("manual_consignments", [])
+    state.setdefault("manual_units", [])
+
+
+def _load_reference_config() -> tuple[list[str], list[str], list[str]]:
+    config = yaml.safe_load(Path("config.yml").read_text())
+    parameter_based = config.get("consignment", {}).get("parameter_based", {})
+    return (
+        parameter_based.get("origins", []),
+        parameter_based.get("ports", []),
+        parameter_based.get("flowers", []),
+    )
+
+
+def _render_consignment_summary(df: pd.DataFrame, *, include_info_message: bool = False) -> None:
+    if df is None or df.empty:
+        return
+
+    summary_specs = [
+        ("INSPECTION_NUMBER", "Consignments", "Number of unique consignments in the dataset."),
+        ("PATHWAY", "Pathways", "Number of unique shipment pathways represented in the dataset."),
+        ("INSPECTION_LOCATION_NAME", "Locations", "Number of unique inspection locations represented in the dataset."),
+        ("COUNTRY_OF_ORIGIN_NAME", "Countries", "Number of unique countries of origin represented in the dataset."),
+    ]
+    metric_cols = st.columns(4)
+    for idx, (column, label, help_text) in enumerate(summary_specs):
+        if column in df.columns:
+            with metric_cols[idx]:
+                render_metric_card(label, f"{df[column].nunique():,}", help_text)
+
+    totals_specs = [
+        ("TOTAL_PLANT_QUANTITY", "Total plant units", "Total plant units across all rows in the dataset."),
+        ("TOTAL_SAMPLING_UNITS", "Total sampling units", "Total sampling units across all rows in the dataset."),
+    ]
+    totals_cols = st.columns(2)
+    for idx, (column, label, help_text) in enumerate(totals_specs):
+        if column in df.columns:
+            with totals_cols[idx]:
+                render_metric_card(label, f"{int(df[column].sum()):,}", help_text)
+
+    if include_info_message:
+        st.info("Save or generate to view rich plots in the Saved consignments tab.")
+
+
+def _render_quantity_sampling_heatmap(df: pd.DataFrame) -> None:
+    quantity_col = None
+    sampling_units_col = None
+    if "QUANTITY" in df.columns and "SAMPLING_UNITS_FOR_INSPECTION_UNIT" in df.columns:
+        quantity_col = "QUANTITY"
+        sampling_units_col = "SAMPLING_UNITS_FOR_INSPECTION_UNIT"
+    elif "TOTAL_PLANT_QUANTITY" in df.columns and "TOTAL_SAMPLING_UNITS" in df.columns:
+        quantity_col = "TOTAL_PLANT_QUANTITY"
+        sampling_units_col = "TOTAL_SAMPLING_UNITS"
+
+    if not quantity_col or not sampling_units_col:
+        st.info("Need both quantity and sampling units for inspection unit to render the heat map.")
+        return
+
+    quantities = df[quantity_col].dropna().to_numpy()
+    sampling_units = df[sampling_units_col].dropna().to_numpy()
+    if quantities.size == 0 or sampling_units.size != quantities.size:
+        st.info("Need both quantity and sampling units for inspection unit to render the heat map.")
+        return
+
+    q_min, q_max = float(quantities.min()), float(quantities.max())
+    s_min, s_max = float(sampling_units.min()), float(sampling_units.max())
+    q_bins = np.linspace(q_min, q_max, num=21) if q_min != q_max else np.array([q_min, q_max + 1])
+    s_bins = np.linspace(s_min, s_max, num=11) if s_min != s_max else np.array([s_min, s_max + 1])
+    heat, q_edges, s_edges = np.histogram2d(quantities, sampling_units, bins=[q_bins, s_bins])
+    heat_df = pd.DataFrame(
+        {
+            "plant_bin_start": np.repeat(q_edges[:-1], len(s_edges) - 1),
+            "plant_bin_end": np.repeat(q_edges[1:], len(s_edges) - 1),
+            "sample_bin_start": np.tile(s_edges[:-1], len(q_edges) - 1),
+            "sample_bin_end": np.tile(s_edges[1:], len(q_edges) - 1),
+            "frequency": heat.flatten(),
+        }
+    )
+    chart = (
+        alt.Chart(heat_df)
+        .mark_rect()
+        .encode(
+            x=alt.X(
+                "plant_bin_start:Q",
+                bin=alt.Bin(binned=True, step=float(q_bins[1] - q_bins[0])),
+                title="Plant units",
+            ),
+            x2="plant_bin_end:Q",
+            y=alt.Y(
+                "sample_bin_start:Q",
+                bin=alt.Bin(binned=True, step=float(s_bins[1] - s_bins[0])),
+                title="Sample units",
+            ),
+            y2="sample_bin_end:Q",
+            color=alt.Color(
+                "frequency:Q",
+                title="Number of inspection units",
+                scale=alt.Scale(
+                    domain=[0, 1, float(heat_df["frequency"].max()) if not heat_df.empty else 1.0],
+                    range=["#d9d9d9", "#deebf7", "#08519c"],
+                ),
+            ),
+        )
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+
+def _render_saved_consignment_preview(df: pd.DataFrame) -> None:
+    st.dataframe(df, use_container_width=True, height=500)
+    st.markdown("### Summary statistics")
+    _render_consignment_summary(df)
+
+    st.markdown("### Distributions")
+    plots_two_col = st.columns(2)
+    with plots_two_col[0]:
+        plot_subcols = st.columns(3)
+        if "COUNTRY_OF_ORIGIN_NAME" in df.columns:
+            plot_subcols[0].markdown("**Top origins**")
+            plot_subcols[0].bar_chart(df["COUNTRY_OF_ORIGIN_NAME"].value_counts().head(10).rename("Count"))
+        if "INSPECTION_LOCATION_NAME" in df.columns:
+            plot_subcols[1].markdown("**Top inspection locations**")
+            plot_subcols[1].bar_chart(df["INSPECTION_LOCATION_NAME"].value_counts().head(10).rename("Count"))
+        if "PROPAGATIVE_MATERIAL_TYPE" in df.columns:
+            plot_subcols[2].markdown("**Top material types**")
+            plot_subcols[2].bar_chart(df["PROPAGATIVE_MATERIAL_TYPE"].value_counts().head(10).rename("Count"))
+    with plots_two_col[1]:
+        st.markdown("**Plant units vs sample units**")
+        _render_quantity_sampling_heatmap(df)
+
+
+def _build_manual_consignment_seed(
+    manual_units: list[dict],
+    consignment_uid: str,
+    *,
+    detection_level: float,
+    confidence_level: float,
+) -> pd.DataFrame:
+    rows = []
+    for unit in manual_units:
+        total_sampling_units = int(unit["sample_units"])
+        total_plants = total_sampling_units * int(unit["plants_per_sample"])
+        required_boxes = max(1, int(total_sampling_units * detection_level * confidence_level))
+        rows.append(
+            {
+                "INSPECTION_NUMBER": consignment_uid,
+                "INSPECTION_ID": consignment_uid,
+                "INSPECTION_LOCATION_NAME": unit["port"],
+                "PATHWAY": unit["pathway"],
+                "COUNTRY_OF_ORIGIN_NAME": unit["origin"],
+                "PROPAGATIVE_MATERIAL_TYPE": unit["material"],
+                "TOTAL_SAMPLING_UNITS": total_sampling_units,
+                "TOTAL_PLANT_QUANTITY": total_plants,
+                "TOTAL_PLANTS_CONTAMINATED": int(round(total_plants * 0.02)),
+                "PRODUCER": unit["producer"],
+                "CREATED_DATETIME": "00:00.0",
+                "IS_RBS": 1,
+                "RBS_STATUS": "RBS",
+                "SIMULATED_CONTAMINATION_RATE": 0.02,
+                "DETECTION_LEVEL": detection_level,
+                "CONFIDENCE_LEVEL": confidence_level,
+                "REQUIRED_NUMBER_OF_BOXES": int(required_boxes),
+                "action": 0,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 st.set_page_config(page_title="Consignment Generation", layout="wide")
 init_state()
 
@@ -236,10 +396,7 @@ state = get_slippage_state()
 render_sidebar_navigation()
 apply_shared_page_styles()
 paths = state["paths"]
-state.setdefault("consignment_source", "synthetic")
-state.setdefault("consignment_base_name", "consignment")
-state.setdefault("pending_rbs_upload", None)
-state.setdefault("use_custom_producer_grouping", True)
+_init_page_state(state)
 default_producer_grouping = Path("data_input/producer_grouping.csv")
 if "producer_grouping_path" not in state:
     state["producer_grouping_path"] = default_producer_grouping if default_producer_grouping.exists() else None
@@ -252,11 +409,7 @@ elif isinstance(state["paths"].rbs_data, (str, Path)):
     current_rbs = Path(state["paths"].rbs_data)
 
 pending_manual_rbs = state.get("pending_manual_rbs") if isinstance(state.get("pending_manual_rbs"), pd.DataFrame) else None
-synthetic_options: SyntheticOptions = state["synthetic_options"]
-config = yaml.safe_load(Path("config.yml").read_text())
-config_origins = config.get("consignment", {}).get("parameter_based", {}).get("origins", [])
-config_ports = config.get("consignment", {}).get("parameter_based", {}).get("ports", [])
-config_materials = config.get("consignment", {}).get("parameter_based", {}).get("flowers", [])
+config_origins, config_ports, config_materials = _load_reference_config()
 
 st.warning(
     "**Test Deployment Notice: This is a test deployment with limited functionality and is under active development. "
@@ -317,7 +470,7 @@ with ingest_tab:
             # Collect user mapping for each missing column
             for missing in missing_cols:
                 st.session_state["col_mapping"][missing] = st.selectbox(
-                    f"Select a column from your data to use for required '{missing}':",
+                    f"Please choose a column from your uploaded data for required field '{missing}':",
                     options=[""] + list(rbs_df.columns),
                     key=f"map_{missing}"
                 )
@@ -344,45 +497,13 @@ with ingest_tab:
             elif update_clicked and not mappings_ready:
                 st.error("Please provide a mapping for all missing columns before updating.")
 
+        else:
+            state["pending_rbs_upload"] = rbs_df
+            st.success(f"Loaded {len(rbs_df):,} RBS records. Save below to persist to tmp/consignments.")
+
     if rbs_df is not None and not rbs_df.empty:
         st.dataframe(rbs_df.head(25), use_container_width=True, height=300)
-        # Inline summary (mirrors Page 3 layout: table + stats together)
-        metrics_top = st.columns(4)
-        if "INSPECTION_NUMBER" in rbs_df.columns:
-            with metrics_top[0]:
-                render_metric_card(
-                    "Consignments",
-                    f"{rbs_df['INSPECTION_NUMBER'].nunique():,}",
-                    "Number of unique consignments in the uploaded RBS data.",
-                )
-        if "PATHWAY" in rbs_df.columns:
-            with metrics_top[1]:
-                render_metric_card(
-                    "Pathways",
-                    f"{rbs_df['PATHWAY'].nunique():,}",
-                    "Number of unique shipment pathways represented in the uploaded data.",
-                )
-        if "INSPECTION_LOCATION_NAME" in rbs_df.columns:
-            with metrics_top[2]:
-                render_metric_card(
-                    "Locations",
-                    f"{rbs_df['INSPECTION_LOCATION_NAME'].nunique():,}",
-                    "Number of unique inspection locations represented in the uploaded data.",
-                )
-        if "COUNTRY_OF_ORIGIN_NAME" in rbs_df.columns:
-            with metrics_top[3]:
-                render_metric_card(
-                    "Countries",
-                    f"{rbs_df['COUNTRY_OF_ORIGIN_NAME'].nunique():,}",
-                    "Number of unique countries of origin represented in the uploaded data.",
-                )
-
-        totals_cards = st.columns(2)
-        if "TOTAL_PLANT_QUANTITY" in rbs_df.columns:
-            totals_cards[0].metric("Total plant units", f"{int(rbs_df['TOTAL_PLANT_QUANTITY'].sum()):,}")
-        if "TOTAL_SAMPLING_UNITS" in rbs_df.columns:
-            totals_cards[1].metric("Total sampling units", f"{int(rbs_df['TOTAL_SAMPLING_UNITS'].sum()):,}")
-        st.info("Save or generate to view rich plots in the Saved consignments tab.")
+        _render_consignment_summary(rbs_df, include_info_message=True)
     else:
         st.info("Upload .csv data file here.")
 
@@ -502,20 +623,11 @@ with ingest_tab:
                 st.success(msg)
             else:
                 st.warning(msg)
-
-
-    current_pis_path = paths.pis_data
-    current_rbs_path = paths.rbs_data
-    pis_ready = current_pis_path is not None and Path(current_pis_path).exists()
-    rbs_ready = current_rbs_path is not None and Path(current_rbs_path).exists()
-
 with manual_tab:
     st.subheader("Define consignments one by one")
     st.info(
         "Add inspection units first (one port, one origin, one material per unit), then bundle them into a consignment."
     )
-    state.setdefault("manual_consignments", [])
-    state.setdefault("manual_units", [])
     consignment_name = st.text_input(
         "Consignment name/ID (unique per consignment)",
         value=f"CONS-{len(state['manual_consignments'])+1:03d}",
@@ -577,35 +689,12 @@ with manual_tab:
         disabled=not state["manual_units"],
     ):
         consignment_uid = consignment_name or f"CONS-{len(state['manual_consignments'])+1:03d}"
-        rows = []
-        for idx, unit in enumerate(state["manual_units"]):
-            total_sampling_units = int(unit["sample_units"])
-            total_plants = total_sampling_units * int(unit["plants_per_sample"])
-            required_boxes = max(1, int(total_sampling_units * detection_level * confidence_level))
-            rows.append(
-                {
-                    "INSPECTION_NUMBER": consignment_uid,
-                    "INSPECTION_ID": consignment_uid,
-                    "INSPECTION_LOCATION_NAME": unit["port"],
-                    "PATHWAY": unit["pathway"],
-                    "COUNTRY_OF_ORIGIN_NAME": unit["origin"],
-                    "PROPAGATIVE_MATERIAL_TYPE": unit["material"],
-                    "TOTAL_SAMPLING_UNITS": total_sampling_units,
-                    "TOTAL_PLANT_QUANTITY": total_plants,
-                    "TOTAL_PLANTS_CONTAMINATED": int(round(total_plants * 0.02)),
-                    "PRODUCER": unit["producer"],
-                    "CREATED_DATETIME": "00:00.0",
-                    "IS_RBS": 1,
-                    "RBS_STATUS": "RBS",
-                    "SIMULATED_CONTAMINATION_RATE": 0.02,
-                    "DETECTION_LEVEL": detection_level,
-                    "CONFIDENCE_LEVEL": confidence_level,
-                    "REQUIRED_NUMBER_OF_BOXES": int(required_boxes),
-                    "action": 0,
-                }
-            )
-
-        seed_df = pd.DataFrame(rows)
+        seed_df = _build_manual_consignment_seed(
+            state["manual_units"],
+            consignment_uid,
+            detection_level=detection_level,
+            confidence_level=confidence_level,
+        )
         rbs_df = _build_rbs_dataset(seed_df)
 
         state["manual_consignments"].append(
@@ -622,7 +711,7 @@ with manual_tab:
         state["manual_rbs_preview"] = combined_rbs.head(200)
         state["pending_manual_rbs"] = combined_rbs
         st.success(
-            f"Saved consignment '{consignment_uid}' with {len(rows)} inspection units. "
+            f"Saved consignment '{consignment_uid}' with {len(seed_df)} inspection units. "
             "Use the generation button below to write the RBS file to tmp."
         )
 
@@ -671,131 +760,7 @@ with saved_tab:
         st.caption(f"Location: {sel}")
         try:
             full_df = pd.read_csv(sel)
-            st.dataframe(full_df, use_container_width=True, height=500)
-            # Summary under the table (single column)
-            st.markdown("### Summary statistics")
-            stats_cols = st.columns(4)
-            if "INSPECTION_NUMBER" in full_df.columns:
-                with stats_cols[0]:
-                    render_metric_card(
-                        "Consignments",
-                        f"{full_df['INSPECTION_NUMBER'].nunique():,}",
-                        "Number of unique consignments in the saved file.",
-                    )
-            if "PATHWAY" in full_df.columns:
-                with stats_cols[1]:
-                    render_metric_card(
-                        "Pathways",
-                        f"{full_df['PATHWAY'].nunique():,}",
-                        "Number of unique shipment pathways represented in the saved file.",
-                    )
-            if "INSPECTION_LOCATION_NAME" in full_df.columns:
-                with stats_cols[2]:
-                    render_metric_card(
-                        "Locations",
-                        f"{full_df['INSPECTION_LOCATION_NAME'].nunique():,}",
-                        "Number of unique inspection locations represented in the saved file.",
-                    )
-            if "COUNTRY_OF_ORIGIN_NAME" in full_df.columns:
-                with stats_cols[3]:
-                    render_metric_card(
-                        "Countries",
-                        f"{full_df['COUNTRY_OF_ORIGIN_NAME'].nunique():,}",
-                        "Number of unique countries of origin represented in the saved file.",
-                    )
-            totals_cols = st.columns(2)
-            if "TOTAL_PLANT_QUANTITY" in full_df.columns:
-                with totals_cols[0]:
-                    render_metric_card(
-                        "Total plant units",
-                        f"{int(full_df['TOTAL_PLANT_QUANTITY'].sum()):,}",
-                        "Total plant units across all rows in the saved file.",
-                    )
-            if "TOTAL_SAMPLING_UNITS" in full_df.columns:
-                with totals_cols[1]:
-                    render_metric_card(
-                        "Total sampling units",
-                        f"{int(full_df['TOTAL_SAMPLING_UNITS'].sum()):,}",
-                        "Total sampling units across all rows in the saved file.",
-                    )
-
-            st.markdown("### Distributions")
-            plots_two_col = st.columns(2)
-            with plots_two_col[0]:
-                plot_subcols = st.columns(3)
-                if "COUNTRY_OF_ORIGIN_NAME" in full_df.columns:
-                    plot_subcols[0].markdown("**Top origins**")
-                    plot_subcols[0].bar_chart(full_df["COUNTRY_OF_ORIGIN_NAME"].value_counts().head(10).rename("Count"))
-                if "INSPECTION_LOCATION_NAME" in full_df.columns:
-                    plot_subcols[1].markdown("**Top inspection locations**")
-                    plot_subcols[1].bar_chart(full_df["INSPECTION_LOCATION_NAME"].value_counts().head(10).rename("Count"))
-                if "PROPAGATIVE_MATERIAL_TYPE" in full_df.columns:
-                    plot_subcols[2].markdown("**Top material types**")
-                    plot_subcols[2].bar_chart(full_df["PROPAGATIVE_MATERIAL_TYPE"].value_counts().head(10).rename("Count"))
-            with plots_two_col[1]:
-                quantity_col = None
-                sampling_units_col = None
-                if "QUANTITY" in full_df.columns and "SAMPLING_UNITS_FOR_INSPECTION_UNIT" in full_df.columns:
-                    quantity_col = "QUANTITY"
-                    sampling_units_col = "SAMPLING_UNITS_FOR_INSPECTION_UNIT"
-                elif "TOTAL_PLANT_QUANTITY" in full_df.columns and "TOTAL_SAMPLING_UNITS" in full_df.columns:
-                    quantity_col = "TOTAL_PLANT_QUANTITY"
-                    sampling_units_col = "TOTAL_SAMPLING_UNITS"
-
-                if quantity_col and sampling_units_col:
-                    st.markdown("**Plant units vs sample units**")
-                    quantities = full_df[quantity_col].dropna().to_numpy()
-                    sampling_units = full_df[sampling_units_col].dropna().to_numpy()
-                    if quantities.size > 0 and sampling_units.size == quantities.size and sampling_units.size > 0:
-                        q_min, q_max = float(quantities.min()), float(quantities.max())
-                        s_min, s_max = float(sampling_units.min()), float(sampling_units.max())
-                        q_bins = np.linspace(q_min, q_max, num=21) if q_min != q_max else np.array([q_min, q_max + 1])
-                        s_bins = np.linspace(s_min, s_max, num=11) if s_min != s_max else np.array([s_min, s_max + 1])
-                        heat, q_edges, s_edges = np.histogram2d(quantities, sampling_units, bins=[q_bins, s_bins])
-                        heat_df = pd.DataFrame(
-                            {
-                                "plant_bin_start": np.repeat(q_edges[:-1], len(s_edges) - 1),
-                                "plant_bin_end": np.repeat(q_edges[1:], len(s_edges) - 1),
-                                "sample_bin_start": np.tile(s_edges[:-1], len(q_edges) - 1),
-                                "sample_bin_end": np.tile(s_edges[1:], len(q_edges) - 1),
-                                "frequency": heat.flatten(),
-                            }
-                        )
-                        chart = (
-                            alt.Chart(heat_df)
-                            .mark_rect()
-                            .encode(
-                                x=alt.X(
-                                    "plant_bin_start:Q",
-                                    bin=alt.Bin(binned=True, step=float(q_bins[1] - q_bins[0])),
-                                    title="Plant units",
-                                ),
-                                x2="plant_bin_end:Q",
-                                y=alt.Y(
-                                    "sample_bin_start:Q",
-                                    bin=alt.Bin(binned=True, step=float(s_bins[1] - s_bins[0])),
-                                    title="Sample units",
-                                ),
-                                y2="sample_bin_end:Q",
-                                color=alt.Color(
-                                    "frequency:Q",
-                                    title="Number of inspection units",
-                                    scale=alt.Scale(
-                                        domain=[
-                                            0,
-                                            1,
-                                            float(heat_df["frequency"].max()) if not heat_df.empty else 1.0,
-                                        ],
-                                        range=["#d9d9d9", "#deebf7", "#08519c"],
-                                    ),
-                                ),
-                            )
-                        )
-                        st.altair_chart(chart, use_container_width=True)
-                    else:
-                        st.info("Need both quantity and sampling units for inspection unit to render the heat map.")
-                else:
-                    st.info("Need both quantity and sampling units for inspection unit to render the heat map.")
+            _render_saved_consignment_preview(full_df)
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Unable to preview file: {exc}")
 
