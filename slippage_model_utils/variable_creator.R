@@ -116,7 +116,7 @@ write_result_dfs <- function(result, use_parquet, temp_dir = NULL) {
   return(cleaned_result)
 }
 
-# ===== Text Processing Helper Functions =====
+# ===== Helper Functions =====
 
 remove_extra_chars <- function(suffix_string, prefix_string, text) {
   text <- gsub(suffix_string, "", text)
@@ -124,6 +124,83 @@ remove_extra_chars <- function(suffix_string, prefix_string, text) {
   text <- str_squish(text)
   return(text)
 }
+
+top_strata_fit <- function(df, tbl_col,
+                           maxStratCount = -1,
+                           minActionRate = -1,
+                           minRecords    = -1,
+                           rank_by = c("action_rate", "count", "action_count")) {
+
+  rank_by <- match.arg(rank_by)
+
+  stopifnot(tbl_col %in% names(df))
+  stopifnot("action" %in% names(df))
+
+  x <- df[[tbl_col]]
+  y <- as.integer(df[["action"]])
+
+  tmp <- data.frame(
+    level = as.character(x),
+    action = y,
+    stringsAsFactors = FALSE
+  )
+
+  agg <- aggregate(
+    action ~ level,
+    data = tmp,
+    FUN = function(z) c(n = length(z), sum = sum(z))
+  )
+
+  agg$count <- agg$action[, "n"]
+  agg$action_sum <- agg$action[, "sum"]
+  agg$action <- NULL
+  agg$action_rate <- agg$action_sum / agg$count
+
+  if (!is.na(minActionRate) && minActionRate >= 0) {
+    agg <- agg[agg$action_rate >= minActionRate, , drop = FALSE]
+  }
+
+  if (!is.na(minRecords) && minRecords >= 0) {
+    agg <- agg[agg$count >= minRecords, , drop = FALSE]
+  }
+
+  if (!is.na(maxStratCount) && maxStratCount >= 0) {
+    if (rank_by == "action_rate") {
+      agg <- agg[order(-agg$action_rate), , drop = FALSE]
+    } else if (rank_by == "count") {
+      agg <- agg[order(-agg$count), , drop = FALSE]
+    } else {  # action_count
+      agg <- agg[order(-agg$action_sum, -agg$count, -agg$action_rate), , drop = FALSE]
+    }
+
+    agg <- head(agg, maxStratCount)
+  }
+
+  list(
+    keep_levels = agg$level,
+    summary = agg
+  )
+}
+
+top_strata_apply <- function(df, tbl_col, keep_levels,
+                             ref = "Reference", missing = "missing",
+                             train_levels = NULL) {
+  stopifnot(tbl_col %in% names(df))
+  x <- df[[tbl_col]]
+
+  x_chr <- as.character(x)
+  x_chr[is.na(x_chr) | x_chr == ""] <- missing
+  x_chr[!(x_chr %in% keep_levels)] <- ref
+
+  if (is.null(train_levels)) {
+    levs <- sort(unique(c(keep_levels, ref, missing)))
+  } else {
+    levs <- train_levels
+  }
+
+  factor(x_chr, levels = levs)
+}
+
 
 # ===== Main Functions =====
 
@@ -254,6 +331,97 @@ generate_quantity_binaries <- function(df,
   return(list(result_df = dt))
 }
 
+
+
+# ===== Creating Producer Group Top Feature  =====
+
+generate_producer_top_strata_features <- function(
+  df,
+  maxStratCount = -1,
+  minActionRate = -1,
+  minRecords = -1
+) {
+  if (is.null(df)) {
+    stop("df argument is required")
+  }
+
+  if (!is.data.frame(df)) {
+    stop("df must be a data.frame")
+  }
+
+  required_cols <- c("action", "PRODUCER_GROUP_NAME1")
+  missing_cols <- setdiff(required_cols, names(df))
+  if (length(missing_cols) > 0) {
+    stop(paste0("Missing required columns: ", paste(missing_cols, collapse = ", ")))
+  }
+
+  fit_prod <- top_strata_fit(
+    df,
+    tbl_col = "PRODUCER_GROUP_NAME1",
+    maxStratCount = maxStratCount,
+    minActionRate = minActionRate,
+    minRecords = minRecords,
+    rank_by = "count"
+  )
+
+  df$PRODUCER_GROUP_TOP <- top_strata_apply(
+    df,
+    "PRODUCER_GROUP_NAME1",
+    keep_levels = fit_prod$keep_levels
+  )
+
+  df$PRODUCER_GROUP_TOP <- as.character(df$PRODUCER_GROUP_TOP)
+
+  list(result_df = df)
+}
+
+
+# ===== Creating IMPORTER_NAME_TOP Feature  =====
+
+generate_importer_top_strata_features <- function(
+  df,
+  maxStratCount = -1,
+  minActionRate = -1,
+  minRecords = -1
+) {
+  if (is.null(df)) {
+    stop("df argument is required")
+  }
+
+  if (!is.data.frame(df)) {
+    stop("df must be a data.frame")
+  }
+
+  required_cols <- c("action", "IMPORTER_NAME1")
+  missing_cols <- setdiff(required_cols, names(df))
+  if (length(missing_cols) > 0) {
+    stop(paste0("Missing required columns: ", paste(missing_cols, collapse = ", ")))
+  }
+
+  fit_import <- top_strata_fit(
+    df,
+    tbl_col = "IMPORTER_NAME1",
+    maxStratCount = maxStratCount,
+    minActionRate = minActionRate,
+    minRecords = minRecords,
+    rank_by = "count"
+  )
+
+  df$IMPORTER_NAME_TOP <- top_strata_apply(
+    df,
+    "IMPORTER_NAME1",
+    keep_levels = fit_import$keep_levels
+  )
+
+  df$IMPORTER_NAME_TOP <- as.character(df$IMPORTER_NAME_TOP)
+
+  list(result_df = df)
+}
+
+
+
+
+
 # ===== Main Execution =====
 
 # Read DataFrames from file paths
@@ -271,11 +439,18 @@ tryCatch({
     func_name,
     "basic_text_preproc" = do.call(basic_text_preproc, all_args),
     "generate_quantity_binaries" = do.call(generate_quantity_binaries, all_args),
+    "generate_producer_top_strata_features" = do.call(generate_producer_top_strata_features, all_args),
+    "generate_importer_top_strata_features" = do.call(generate_importer_top_strata_features, all_args),
     {
       list(
         error = paste("Unknown function:", func_name),
         status = "error",
-        available_functions = c("basic_text_preproc", "generate_quantity_binaries")
+        available_functions = c(
+        "basic_text_preproc",
+        "generate_quantity_binaries",
+        "generate_producer_top_strata_features",
+        "generate_importer_top_strata_features"
+        )
       )
     }
   )
