@@ -41,7 +41,7 @@ def main(df1=None):
 
     # Have already generated synthetic consignments you want to use?  Set to True, otherwise set to False (and
     # num_consignments_to_simulate will be generated)
-    synthetic_data_generated = False
+    synthetic_data_generated = True
 
     # Are Clark model parameters cached and saved? True if yes, and False if not
     clark_parameters_cached = True
@@ -106,7 +106,7 @@ def main(df1=None):
         print(f'   Total Time (seconds): {total_time_seconds}')
         print(f'   Total Time (minutes): {time_minutes}')
 
-        config["consignment"]["input_file"]["file_name"] = "slippage_data/Synthetic_Base.csv"
+        config["consignment"]["input_file"]["file_name"] = str(data_dir  / "Synthetic_Base.csv")
     else:
         ### Synthetic data generation
         historical = False
@@ -445,7 +445,7 @@ def main(df1=None):
                 synth_data.to_parquet(data_dir / "Synthetic_Base_Use.parquet", compression='snappy', index=False)
                 synth_data.to_csv(data_dir / "Synthetic_Base_Use.csv", index=False)
 
-                config["consignment"]["input_file"]["file_name"] = "slippage_data/Synthetic_Base_Use.csv"
+                config["consignment"]["input_file"]["file_name"] = "development_files/slippage_data/Synthetic_Base_Use.csv"
 
                 # Run one scenario analysis simulation
                 detailed_bool = True
