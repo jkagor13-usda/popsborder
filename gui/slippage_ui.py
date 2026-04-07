@@ -171,7 +171,7 @@ def record_pipeline_error(message: str):
 
 
 
-def run_pipeline(experiment_dir):
+def run_pipeline(experiment_dir, progress_callback=None):
     """Execute the pipeline. If experiment_dir is provided, load all inputs from that folder."""
     state = get_slippage_state()
     paths: SlippagePaths = state["paths"]
@@ -212,6 +212,7 @@ def run_pipeline(experiment_dir):
             exp_paths,
             seed=run_seed,
             num_simulations=engine_options.get("num_simulations", 1),
+            progress_callback=progress_callback,
         )
     except Exception as exc:  # pylint: disable=broad-except
         try:

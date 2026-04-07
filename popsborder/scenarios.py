@@ -54,6 +54,7 @@ def run_scenarios(
     compliance_table=None,
     detailed=False,
     output_root=None,
+    progress_callback=None,
 ):
     """Run scenarios based on the configuration and list of scenarios
 
@@ -110,6 +111,7 @@ def run_scenarios(
             rng=scenario_rng,
             detailed=detailed,
             output_dir=output_dir,
+            progress_callback=progress_callback,
         )
         if detailed:
             # The result is tuple of details ([0]) and simulation totals ([1]).

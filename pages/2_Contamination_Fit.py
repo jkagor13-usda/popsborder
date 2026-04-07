@@ -95,6 +95,15 @@ def _next_param_name(store: dict, base: str = "contamination_param_set") -> str:
         idx += 1
     return f"{base}_{idx}"
 
+
+def _average_contamination_rate_percent(rate: Optional[float]) -> Optional[float]:
+    if rate is None:
+        return None
+    try:
+        return float(rate) * 100.0
+    except Exception:  # pylint: disable=broad-except
+        return None
+
 def _save_param_set_fall_back(name: str, alpha: float, beta: float, theta: float, sample_unit_rate: Optional[float] = None) -> str:
     store = _read_param_store()
     name = 'FALL_BACK_CONTAMINATION_PARAMETERS'
@@ -103,6 +112,7 @@ def _save_param_set_fall_back(name: str, alpha: float, beta: float, theta: float
     entry = {"alpha": alpha, "beta": beta, "theta": theta}
     if sample_unit_rate is not None:
         entry["sample_unit_contamination_rate"] = sample_unit_rate
+        entry["average_contamination_rate"] = _average_contamination_rate_percent(sample_unit_rate)
     store[name] = entry
     _write_param_store(store)
     st.session_state["last_saved_param_set"] = name
@@ -120,6 +130,7 @@ def _save_param_set_fit(name: str, res: Dict[Tuple, Any], inputs_by_quantity: Di
             "beta": res[key]['beta'],
             "theta": inputs_by_quantity[key].theta,
             "mu": res[key]['mu'],
+            "average_contamination_rate": _average_contamination_rate_percent(res[key].get('mu')),
             "D": res[key]['D'],
             "rho": res[key]['rho'],
             "J": inputs_by_quantity[key].B,
@@ -137,6 +148,7 @@ def _save_param_set_assign(name: str, alpha: float, beta: float, theta: float, s
     entry = {"alpha": alpha, "beta": beta, "theta": theta}
     if sample_unit_rate is not None:
         entry["sample_unit_contamination_rate"] = sample_unit_rate
+        entry["average_contamination_rate"] = _average_contamination_rate_percent(sample_unit_rate)
     store[name] = entry
     _write_param_store(store)
     st.session_state["last_saved_param_set"] = name

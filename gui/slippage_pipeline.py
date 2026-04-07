@@ -7,7 +7,7 @@ import pickle
 from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .runtime_warnings import suppress_optional_dependency_warnings
 
@@ -294,14 +294,21 @@ def run_slippage_pipeline(
     *,
     seed: int = 42,
     num_simulations: int = 1,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
 ) -> PipelineResult:
     """Execute the pipeline using files inside a specific experiment folder."""
+
+    def _report_progress(percent: int, message: str, details: Optional[Dict[str, Any]] = None) -> None:
+        if progress_callback is None:
+            return
+        progress_callback(max(0, min(100, int(percent))), message, details or {})
 
     experiment_dir = exp_paths.experiment_dir
     scenario_table = exp_paths.scenario_table
     config_path = exp_paths.config or (DEFAULT_DATA_DIR / CONFIG_FILENAME)
 
     # --- Load scenarios ---
+    _report_progress(5, "Loading scenario table")
     scenarios = load_scenario_dataframe(scenario_table)
     if isinstance(scenarios, pd.DataFrame):
         scenarios = scenarios.to_dict(orient="records")
@@ -380,6 +387,7 @@ def run_slippage_pipeline(
 
     # --- Resolve base files (consignment / compliance / config) ---
     # Candidate consignment paths: explicit, plus any scenario references that exist
+    _report_progress(15, "Resolving experiment inputs")
     cons_candidates: List[Path] = []
     if exp_paths.consignment and exp_paths.consignment.exists():
         cons_candidates.append(exp_paths.consignment)
@@ -430,10 +438,17 @@ def run_slippage_pipeline(
     unique_cons_files = list({str(Path(p)): p for p in cons_candidates}.values())
     counts = [_infer_num_consignments(p) for p in unique_cons_files] if unique_cons_files else []
     num_consignments_default = min(counts) if counts else 1
+    planned_consignment_counts = []
+    for rec in scenarios:
+        rec_cons_path = _scenario_path(rec, "consignment/input_file/file_name")
+        planned_consignment_counts.append(_infer_num_consignments(rec_cons_path) if rec_cons_path else 1)
+    total_planned_shipments = max(sum(planned_consignment_counts) * max(num_simulations, 1), 1)
+    total_planned_replications = max(len(scenarios) * max(num_simulations, 1), 1)
 
     run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = experiment_dir / f"output_{run_timestamp}"
     output_dir.mkdir(parents=True, exist_ok=True)
+    _report_progress(25, "Prepared output directory")
 
     def _run(
         cfg: Dict[str, Any],
@@ -443,6 +458,7 @@ def run_slippage_pipeline(
         num_sims: int,
         comp_table: Dict[str, Any],
         seed_override: Optional[int] = None,
+        progress_update=None,
     ):
         return run_scenarios(
             config=cfg,
@@ -453,6 +469,7 @@ def run_slippage_pipeline(
             compliance_table=comp_table,
             detailed=True,
             output_root=output_dir,
+            progress_callback=progress_update,
         )
 
     # --- Core executor (supports a single retry config) ---
@@ -461,17 +478,42 @@ def run_slippage_pipeline(
     def _execute_all(base_cfg: Dict[str, Any]) -> Tuple[List[Tuple[Any, Dict, Dict]], List[int]]:
         scenario_results_raw: List[Tuple[Any, Dict, Dict]] = []
         consignment_counts: List[int] = []
+        total_scenarios = len(scenarios)
 
-        for rec0 in scenarios:
+        for scenario_idx, rec0 in enumerate(scenarios, start=1):
+            scenario_name = str(rec0.get("name", f"Scenario {scenario_idx}"))
+            progress_start = 25 + int(((scenario_idx - 1) / max(total_scenarios, 1)) * 60)
+            _report_progress(progress_start, f"Running {scenario_name} ({scenario_idx}/{total_scenarios})")
             rec = _normalize_inspection(_apply_contam_defaults(rec0, base_cfg))
 
             rec_cons_path = _scenario_path(rec, "consignment/input_file/file_name")
             rec_comp_path = _scenario_path(rec, "inspection/compliance_table/file_name")
             rec_num_consignments = _infer_num_consignments(rec_cons_path) if rec_cons_path else 1
             consignment_counts.append(rec_num_consignments)
+            shipments_before_scenario = sum(planned_consignment_counts[: scenario_idx - 1]) * max(num_simulations, 1)
 
             cfg_local = _build_cfg_for_scenario(base_cfg, rec_cons_path, rec_comp_path)
             comp_table = load_compliance_policy(rec_comp_path) if rec_comp_path else compliance_table
+
+            def _scenario_progress(replication_current: int, replications_total: int, shipments_processed: int, shipments_total: int) -> None:
+                global_replication_current = (
+                    (scenario_idx - 1) * max(num_simulations, 1) + replication_current
+                )
+                global_shipments_processed = shipments_before_scenario + (
+                    max(replication_current - 1, 0) * rec_num_consignments
+                ) + shipments_processed
+                percent = 25 + int((global_shipments_processed / total_planned_shipments) * 60)
+                _report_progress(
+                    percent,
+                    f"Running {scenario_name} ({scenario_idx}/{total_scenarios})",
+                    {
+                        "replications_completed": global_replication_current,
+                        "replications_total": total_planned_replications,
+                        "shipments_processed": min(global_shipments_processed, total_planned_shipments),
+                        "shipments_total": total_planned_shipments,
+                        "scenario_name": scenario_name,
+                    },
+                )
 
             # Aggregated run
             last_exc: Optional[Exception] = None
@@ -485,9 +527,25 @@ def run_slippage_pipeline(
                             num_sims=num_simulations,
                             comp_table=comp_table,
                             seed_override=seed + retry_idx if seed is not None else None,
+                            progress_update=_scenario_progress,
                         )
                     )
                     last_exc = None
+                    progress_end = 25 + int((scenario_idx / max(total_scenarios, 1)) * 60)
+                    _report_progress(
+                        progress_end,
+                        f"Completed {scenario_name} ({scenario_idx}/{total_scenarios})",
+                        {
+                            "replications_completed": scenario_idx * max(num_simulations, 1),
+                            "replications_total": total_planned_replications,
+                            "shipments_processed": min(
+                                shipments_before_scenario + (rec_num_consignments * max(num_simulations, 1)),
+                                total_planned_shipments,
+                            ),
+                            "shipments_total": total_planned_shipments,
+                            "scenario_name": scenario_name,
+                        },
+                    )
                     break
                 except ValueError as exc:
                     if "a <= 0" not in str(exc):
@@ -532,6 +590,16 @@ def run_slippage_pipeline(
             )
         raise ValueError("No scenario results were generated.")
 
+    _report_progress(
+        90,
+        "Building results tables",
+        {
+            "replications_completed": total_planned_replications,
+            "replications_total": total_planned_replications,
+            "shipments_processed": total_planned_shipments,
+            "shipments_total": total_planned_shipments,
+        },
+    )
     scenario_results = [(result, cfg) for _details, result, cfg in scenario_results_raw]
 
     results_df = save_scenario_result_to_pandas(
@@ -567,6 +635,16 @@ def run_slippage_pipeline(
         pd.DataFrame(runs_records).to_csv(all_runs_output_path, index=False)
         output_files.append(all_runs_output_path)
 
+    _report_progress(
+        100,
+        "Simulation complete",
+        {
+            "replications_completed": total_planned_replications,
+            "replications_total": total_planned_replications,
+            "shipments_processed": total_planned_shipments,
+            "shipments_total": total_planned_shipments,
+        },
+    )
     fit = ClarkeFit(alpha=0.0, beta=0.0, theta=float("inf"), raw_result={"source": "scenario_table"})
     total_cons = sum(consignment_counts) if consignment_counts else num_consignments_default
 
