@@ -28,8 +28,6 @@ Modifications:
     - synchronize_contamination_arrays_from_plants(): Synchronize sample-unit and plant arrays to match plant-level contamination truth.
     - num_units_to_contaminate(): Estimates number of units to contaminate given a contamination rate ina configuration
 """
-from pyasn1.type.namedtype import OptionalNamedType
-
 # This program is free software; you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
 # Foundation; either version 2 of the License, or (at your option) any later
