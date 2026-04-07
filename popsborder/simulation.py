@@ -57,6 +57,7 @@ Modifications:
 import random
 import types
 from collections import Counter
+from typing import Callable, Optional
 
 import numpy as np
 import pandas as pd
@@ -98,6 +99,7 @@ def simulation(
     pretty=None,
     detailed=False,
     output_dir_rep=None,
+    shipment_progress_callback: Optional[Callable[[int, int], None]] = None,
 ):
     """Simulate consignments, their contamination, and their inspection
 
@@ -163,12 +165,14 @@ def simulation(
 
     prop = 0
     increment = 0.1
+    if shipment_progress_callback is not None:
+        shipment_progress_callback(0, num_consignments)
+
     for i in range(num_consignments):
         if i == int(prop*num_consignments):
             percent_complete = int(prop*100)
             print(f'   {percent_complete}% complete ({i+1} out of {num_consignments} consignments)')
             prop += increment
-        #print(f'\nSimulating Consignment {i+1} out of {num_consignments} total consignments')
         try:
             consignment = consignment_generator.generate_consignment()
             #print(f"   Generated consignment with {consignment.num_inspection_units} inspection units and {consignment.num_sample_units} sample units")
@@ -348,6 +352,9 @@ def simulation(
         except RuntimeError as e:
             print(f"Stopped simulation early: {e}")
             pass
+        finally:
+            if shipment_progress_callback is not None:
+                shipment_progress_callback(i + 1, num_consignments)
 
     # Write out simulated data
     pis_sim_data.finalize_dataframes()
@@ -487,6 +494,7 @@ def run_simulation(
     pretty=None,
     detailed=False,
     output_dir=None,
+    progress_callback: Optional[Callable[[int, int, int, int], None]] = None,
 ):
     """Run the simulation function specified number of times
 
@@ -562,6 +570,9 @@ def run_simulation(
     # Define a dictionary to store each replication output
     sim_rep_outputs = {}
 
+    if progress_callback is not None:
+        progress_callback(0, num_simulations, 0, num_consignments)
+
     for i in range(num_simulations):
         print(f'\n\n======================================================================')
         print(f'======= RUNNING REPLICATION {i + 1} OUT OF {num_simulations} =========')
@@ -580,7 +591,17 @@ def run_simulation(
             pretty=pretty,
             detailed=detailed,
             output_dir_rep=output_dir_rep,
+            shipment_progress_callback=(
+                lambda processed, total, replication_index=i: progress_callback(
+                    replication_index + 1,
+                    num_simulations,
+                    processed,
+                    total,
+                )
+            ) if progress_callback is not None else None,
         )
+        if progress_callback is not None:
+            progress_callback(i + 1, num_simulations, num_consignments, num_consignments)
 
         ##############################
         ### Additional rbs metrics ###
