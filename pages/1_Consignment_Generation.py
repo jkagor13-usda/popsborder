@@ -330,11 +330,21 @@ def _render_quantity_sampling_heatmap(df: pd.DataFrame) -> None:
 
 
 def _render_saved_consignment_preview(df: pd.DataFrame) -> None:
+    render_labeled_help(
+        "Saved consignment preview",
+        "Shows the rows stored in the selected saved consignment file from tmp/consignments.",
+    )
     st.dataframe(df, use_container_width=True, height=500)
-    st.markdown("### Summary statistics")
+    render_labeled_help(
+        "Summary statistics",
+        "Summarizes unique consignments, pathways, locations, countries, and the total plant and sampling units in the selected file.",
+    )
     _render_consignment_summary(df)
 
-    st.markdown("### Distributions")
+    render_labeled_help(
+        "Distributions",
+        "Shows the most common origins, inspection locations, and material types, plus the relationship between plant units and sample units.",
+    )
     plots_two_col = st.columns(2)
     with plots_two_col[0]:
         plot_subcols = st.columns(3)
@@ -422,12 +432,12 @@ render_page_intro(
     "Generated outputs are written to <i>tmp/consignments</i>."
 )
 
-saved_tab, ingest_tab, producer_grouping_tab, manual_tab= st.tabs(
+saved_tab, ingest_tab, manual_tab, producer_grouping_tab = st.tabs(
     [
-        "Saved consignments",
-        "Generate consignments based on data",
-        "Producer grouping",
-        "Define consignments manually",
+        "Saved Consignments",
+        "Data-Driven Generation",
+        "Manual Generation",
+        "Producer Grouping",
     ]
 )
 
@@ -438,6 +448,8 @@ with ingest_tab:
     pis_df: Optional[pd.DataFrame] = state.get("pis_data")
     rbs_df: Optional[pd.DataFrame] = state.get("pending_rbs_upload")
 
+    st.subheader("Generate consignments based on data")
+    st.write("Upload a CSV, map any missing fields, and save or generate consignments for downstream pages.")
     render_labeled_help(
         "Upload consignment data",
         "Upload data (as .csv file) that will be saved directly or used as input for synthetic consignment generation.",
@@ -469,10 +481,16 @@ with ingest_tab:
 
             # Collect user mapping for each missing column
             for missing in missing_cols:
+                render_labeled_help(
+                    f"Map required field: {missing}",
+                    "Choose the uploaded column that should be used for this required field before updating the file.",
+                    compact=True,
+                )
                 st.session_state["col_mapping"][missing] = st.selectbox(
                     f"Please choose a column from your uploaded data for required field '{missing}':",
                     options=[""] + list(rbs_df.columns),
-                    key=f"map_{missing}"
+                    key=f"map_{missing}",
+                    label_visibility="collapsed",
                 )
 
             # Check if all mappings are filled
@@ -481,6 +499,11 @@ with ingest_tab:
             if not mappings_ready:
                 st.warning("You must select a column for each missing required field OR add the column to your data and reupload.")
 
+            render_labeled_help(
+                "Update Data Fields/Columns",
+                "Apply the selected field mappings and load the cleaned data into the current session.",
+                compact=True,
+            )
             update_clicked = st.button("Update Data Fields/Columns")
 
             if update_clicked and mappings_ready:
@@ -579,6 +602,11 @@ with ingest_tab:
             (state.get("pending_rbs_upload") is not None and not state.get("pending_rbs_upload").empty)
             or has_tmp_saved_consignments
         )
+        render_labeled_help(
+            "Generate synthetic consignments",
+            "Create synthetic consignments from the uploaded data and save them to tmp/consignments.",
+            compact=True,
+        )
         if st.button(
             "Generate synthetic consignments",
             type="primary",
@@ -610,6 +638,11 @@ with ingest_tab:
             (state.get("pending_rbs_upload") is not None and not state.get("pending_rbs_upload").empty)
             or any(CONSIGNMENT_ROOT.glob("*.csv"))
         )
+        render_labeled_help(
+            "Save uploaded consignments",
+            "Persist the uploaded historical consignments into tmp/consignments without generating new data.",
+            compact=True,
+        )
         if st.button(
             "Save uploaded consignments",
             type="primary",
@@ -625,38 +658,93 @@ with ingest_tab:
                 st.warning(msg)
 with manual_tab:
     st.subheader("Define consignments one by one")
+    st.write("Build inspection units manually, combine them into consignments, and export the resulting RBS file.")
+    render_labeled_help(
+        "Manual Generation",
+        "Create consignments manually by adding inspection units one at a time, then combine them into a saved RBS consignment dataset.",
+    )
     st.info(
         "Add inspection units first (one port, one origin, one material per unit), then bundle them into a consignment."
+    )
+    render_labeled_help(
+        "Consignment name/ID",
+        "Unique identifier used to group the inspection units below into a single consignment record.",
     )
     consignment_name = st.text_input(
         "Consignment name/ID (unique per consignment)",
         value=f"CONS-{len(state['manual_consignments'])+1:03d}",
+        label_visibility="collapsed",
     )
 
     with st.form("inspection_unit_form"):
         c1, c2 = st.columns(2)
-        port = c1.selectbox(
-            "Port of entry",
-            options=config_ports or ["Miami PIS"],
-            index=0,
-        )
-        origin = c2.selectbox(
-            "Country of origin",
-            options=config_origins or ["Japan"],
-            index=0,
-        )
+        with c1:
+            render_labeled_help("Port of entry", "Port or inspection location assigned to this inspection unit.")
+            port = st.selectbox(
+                "Port of entry",
+                options=config_ports or ["Miami PIS"],
+                index=0,
+                label_visibility="collapsed",
+            )
+        with c2:
+            render_labeled_help("Country of origin", "Country of origin assigned to this inspection unit.")
+            origin = st.selectbox(
+                "Country of origin",
+                options=config_origins or ["Japan"],
+                index=0,
+                label_visibility="collapsed",
+            )
+        render_labeled_help("Propagative material type", "Propagative material type assigned to this inspection unit.")
         material = st.selectbox(
             "Propagative material type",
             options=config_materials or ["Bulb, Corm, Rhizome, Tuberous Stem; Rooted Plant (including grafted)"],
             index=0,
+            label_visibility="collapsed",
         )
-        pathway = st.selectbox("Pathway", ["Air", "Sea", "Land"], index=1)
-        sample_units = c1.number_input(
-            "Sample units (per inspection unit)", min_value=1, max_value=5000, value=200, step=10
+        render_labeled_help("Pathway", "Transport pathway used for this inspection unit.")
+        pathway = st.selectbox(
+            "Pathway",
+            ["Air", "Sea", "Land"],
+            index=1,
+            label_visibility="collapsed",
         )
-        plants_per_sample = c2.number_input("Plants per sample unit", min_value=1, max_value=1000, value=5, step=1)
-        producer = st.text_input("Producer name", value="User Defined Producer")
-        add_unit = st.form_submit_button("Add inspection unit", type="secondary", use_container_width=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            render_labeled_help("Sample units (per inspection unit)", "Number of sampling units contained in this inspection unit.")
+            sample_units = st.number_input(
+                "Sample units (per inspection unit)",
+                min_value=1,
+                max_value=5000,
+                value=200,
+                step=10,
+                label_visibility="collapsed",
+            )
+        with c2:
+            render_labeled_help("Plants per sample unit", "Number of plants represented by each sample unit in this inspection unit.")
+            plants_per_sample = st.number_input(
+                "Plants per sample unit",
+                min_value=1,
+                max_value=1000,
+                value=5,
+                step=1,
+                label_visibility="collapsed",
+            )
+        render_labeled_help("Producer name", "Producer name assigned to this inspection unit.")
+        producer = st.text_input(
+            "Producer name",
+            value="User Defined Producer",
+            label_visibility="collapsed",
+        )
+        render_labeled_help(
+            "Add inspection unit",
+            "Add the inspection unit above to the current consignment draft.",
+            compact=True,
+        )
+        add_unit = st.form_submit_button(
+            "Add inspection unit",
+            type="secondary",
+            use_container_width=True,
+        )
 
     if add_unit:
         state["manual_units"].append(
@@ -679,8 +767,9 @@ with manual_tab:
     st.markdown("---")
     detection_level = 0.01
     confidence_level = 0.8
-    st.caption(
-        "Required inspection units are auto-computed."
+    render_labeled_help(
+        "Build consignment from inspection units above",
+        "Combine the current inspection units into one consignment. Required inspection units are auto-computed from the fixed detection and confidence settings.",
     )
     if st.button(
         "Build consignment from inspection units above",
@@ -717,16 +806,29 @@ with manual_tab:
 
     if state.get("manual_consignments"):
         st.subheader("Current consignments")
+        render_labeled_help(
+            "Current consignments",
+            "Review the consignments you have assembled in this session before previewing or saving the combined RBS dataset.",
+        )
         summary_rows = [
             {"Consignment": c["name"], "Inspection units": len(c["seed"])}
             for c in state["manual_consignments"]
         ]
         st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
 
+    render_labeled_help(
+        "Synthetic RBS preview",
+        "Preview the combined RBS records generated from the current manual consignments and download the CSV before saving it to tmp/consignments.",
+    )
     rbs_preview = state.get("manual_rbs_preview")
     with st.expander("Synthetic RBS preview", expanded=False):
         if rbs_preview is not None:
             st.dataframe(rbs_preview, use_container_width=True)
+            render_labeled_help(
+                "Download RBS dataset",
+                "Download the currently assembled manual RBS dataset as a CSV before saving it to tmp/consignments.",
+                compact=True,
+            )
             st.download_button(
                 "Download RBS dataset",
                 data=rbs_preview.to_csv(index=False).encode("utf-8"),
@@ -736,13 +838,25 @@ with manual_tab:
         else:
             st.info("Create a seed dataset to preview and download the generated RBS file.")
 
+    render_labeled_help(
+        "Consignment input file base name",
+        "Base name used when saving the manual consignment RBS CSV into tmp/consignments for downstream pages.",
+    )
     manual_base = st.text_input(
         "Consignment input file base name (manual)",
         value=st.session_state.get("consignment_base_name_manual", "Manual"),
         key="consignment_base_name_manual",
-        help="Used to name RBS files in tmp/consignments (e.g., <name>.csv).",
+        label_visibility="collapsed",
     ) or "Manual"
-    if st.button("Save manual consignments", type="primary", key="save_consignment_manual"):
+    render_labeled_help(
+        "Save manual consignments",
+        "Write the current manual consignment RBS dataset to tmp/consignments so it can be used by downstream pages.",
+    )
+    if st.button(
+        "Save manual consignments",
+        type="primary",
+        key="save_consignment_manual",
+    ):
         ok, msg = _save_manual_rbs(pending_manual_rbs, base_name=manual_base)
         if ok:
             st.success(msg)
@@ -752,32 +866,52 @@ with manual_tab:
 # Saved consignments tab
 with saved_tab:
     st.subheader("Saved consignments")
+    st.write("Review saved RBS CSVs in tmp/consignments and preview their contents.")
     saved_files = sorted(CONSIGNMENT_ROOT.glob("*.csv"))
     if not saved_files:
         st.info("No consignment files saved yet in tmp/consignments.")
     else:
-        sel = st.selectbox("Select a saved consignment file", saved_files, format_func=lambda p: p.name)
-        st.caption(f"Location: {sel}")
+        render_labeled_help(
+            "Select a saved consignment file",
+            "Choose a saved RBS consignment CSV from tmp/consignments to preview its rows, summary metrics, and distributions.",
+        )
+        sel = st.selectbox(
+            "Select a saved consignment file",
+            saved_files,
+            format_func=lambda p: p.name,
+            label_visibility="collapsed",
+        )
         try:
             full_df = pd.read_csv(sel)
             _render_saved_consignment_preview(full_df)
+            st.caption(f"Location: {sel}")
+            render_labeled_help(
+                "Delete this consignment file",
+                "Remove the selected saved consignment CSV from tmp/consignments.",
+            )
+            if st.button("Delete this consignment file", type="secondary"):
+                try:
+                    sel.unlink()
+                    st.success(f"Deleted {sel.name}")
+                    st.rerun()
+                except Exception as exc:  # pylint: disable=broad-except
+                    st.error(f"Unable to delete consignment file: {exc}")
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Unable to preview file: {exc}")
 
 with producer_grouping_tab:
     st.subheader("Producer grouping")
-    st.caption("Optional producer grouping used during synthetic consignment generation on Page 1.")
+    st.write("Optionally provide producer grouping data to guide synthetic consignment generation.")
 
-    if default_producer_grouping.exists():
-        st.caption(f"Default file available: {default_producer_grouping}")
-    else:
-        st.info("No default producer grouping file found in data_input.")
-
+    render_labeled_help(
+        "Upload custom producer grouping CSV",
+        "Optional producer grouping used during synthetic consignment generation on Page 1. Expected columns include PRODUCER_NAME and a grouping column.",
+    )
     producer_grouping_upload = st.file_uploader(
         "Upload custom producer grouping CSV",
         type=["csv"],
         key="producer_grouping_upload",
-        help="Expected columns include PRODUCER_NAME and grouping.",
+        label_visibility="collapsed",
     )
     if producer_grouping_upload is not None:
         producer_grouping_path = TMP_DIR / "producer_grouping.csv"
@@ -792,7 +926,11 @@ with producer_grouping_tab:
         try:
             producer_grouping_df = pd.read_csv(current_grouping_path)
             st.dataframe(producer_grouping_df.head(50), use_container_width=True, height=320)
-            st.metric("Rows", f"{len(producer_grouping_df):,}")
+            st.metric(
+                "Rows",
+                f"{len(producer_grouping_df):,}",
+                help="Number of rows available in the current producer grouping file used during synthetic generation.",
+            )
         except Exception as exc:  # pylint: disable=broad-except
             st.warning(f"Unable to preview producer grouping file: {exc}")
 

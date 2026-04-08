@@ -161,16 +161,25 @@ render_page_intro(
     "Ingest the compliance lookup table, configure low/medium/high types, and review RBS parameters."
 )
 
-tabs = st.tabs(["Saved RBS compliance policy", "Upload table", "Create policy manually"])
+tabs = st.tabs(["Saved RBS Compliance Policy", "Upload Table", "Create Policy Manually"])
 
 with tabs[0]:
     st.subheader("Saved RBS compliance policy")
+    st.write("Open an existing policy file to review the stored rules and preview the generated table.")
     saved_files = sorted(COMPLIANCE_ROOT.glob("*.pkl"))
     if not saved_files:
         st.info("No RBS compliance policies saved yet in tmp/compliance.")
     else:
-        sel = st.selectbox("Select a saved RBS compliance policy", saved_files, format_func=lambda p: p.name)
-        st.caption(f"Location: {sel}")
+        render_labeled_help(
+            "Select a saved RBS compliance policy",
+            "Choose a previously saved compliance policy file to inspect its stored rules and preview table.",
+        )
+        sel = st.selectbox(
+            "Select a saved RBS compliance policy",
+            saved_files,
+            format_func=lambda p: p.name,
+            label_visibility="collapsed",
+        )
         try:
             with open(sel, "rb") as handle:
                 policy = pickle.load(handle)
@@ -194,11 +203,24 @@ with tabs[0]:
                 policy_df = pd.DataFrame(policy_rows)
                 if not policy_df.empty:
                     st.dataframe(policy_df, use_container_width=True, height=320)
+            st.caption(f"Location: {sel}")
+            render_labeled_help(
+                "Delete this policy",
+                "Remove the selected saved RBS compliance policy file from tmp/compliance.",
+            )
+            if st.button("Delete this policy", type="secondary"):
+                try:
+                    sel.unlink()
+                    st.success(f"Deleted {sel.name}")
+                    st.rerun()
+                except Exception as exc:  # pylint: disable=broad-except
+                    st.error(f"Unable to delete policy: {exc}")
         except Exception as exc:  # pylint: disable=broad-except
             st.info(f"Unable to preview this policy file: {exc}")
 
 with tabs[1]:
-    
+    st.subheader("Upload table")
+    st.write("Upload compliance tables and their detection or confidence mappings for a new policy.")
     render_labeled_help(
         "Compliance level upload",
         "Upload the table that defines the compliance category assigned to each policy combination, such as origin and propagative material type.",
@@ -260,6 +282,10 @@ with tabs[1]:
         label_visibility="collapsed",
     )
     can_save_uploaded_policy = compliance_upload is not None and mapping_upload is not None
+    render_labeled_help(
+        "Save policy",
+        "Create and persist a combined compliance policy file from the uploaded table and mapping inputs.",
+    )
     if st.button("Save policy", type="secondary", disabled=not can_save_uploaded_policy):
         try:
             if compliance_upload is None or mapping_upload is None:
@@ -285,6 +311,7 @@ with tabs[1]:
 
 with tabs[2]:
     st.subheader("Manual Creation of RBS Compliance Policy ")
+    st.write("Build a custom compliance policy by selecting feature values and assigning policy levels.")
 
     rbs_path = state["paths"].rbs_data
     rbs_cols = []
@@ -297,7 +324,16 @@ with tabs[2]:
     if not rbs_cols:
         rbs_cols = ["Origin Location Country Name", "Propagative Material type", "Pathway", "Inspection Location"]
 
-    multi_cols = st.multiselect("Select feature columns to combine", options=rbs_cols, default=rbs_cols[:2])
+    render_labeled_help(
+        "Select feature columns to combine",
+        "Choose the compliance feature columns that will be cross-joined into manually created policy rows.",
+    )
+    multi_cols = st.multiselect(
+        "Select feature columns to combine",
+        options=rbs_cols,
+        default=rbs_cols[:2],
+        label_visibility="collapsed",
+    )
     selections = []
     for col_name in multi_cols:
         values = []
@@ -306,10 +342,23 @@ with tabs[2]:
                 values = sorted(rbs_df[col_name].dropna().astype(str).unique().tolist())
             except Exception:  # pylint: disable=broad-except
                 values = []
-        selected_vals = st.multiselect(f"Values for {col_name}", options=values or [], key=f"comb_vals_{col_name}")
+        render_labeled_help(
+            f"Values for {col_name}",
+            f"Choose the values for {col_name} that should be included in the manual compliance policy.",
+        )
+        selected_vals = st.multiselect(
+            f"Values for {col_name}",
+            options=values or [],
+            key=f"comb_vals_{col_name}",
+            label_visibility="collapsed",
+        )
         selections.append({"column": col_name, "values": selected_vals})
 
-    level_choice = st.selectbox("Compliance level for the new rows", ["Low", "Medium", "High"])
+    render_labeled_help(
+        "Compliance level for the new rows",
+        "Assign one compliance level to every row generated from the selected feature combinations.",
+    )
+    level_choice = st.selectbox("Compliance level for the new rows", ["Low", "Medium", "High"], label_visibility="collapsed")
 
     detection_value = st.slider(
         "Detection Level",
@@ -329,6 +378,10 @@ with tabs[2]:
         help="Confidence Level for Hypergeometric Sampling."
     )
 
+    render_labeled_help(
+        "Add rows to compliance table",
+        "Generate manual compliance rows from the selected feature combinations and append them to the working table below.",
+    )
     if st.button("Add rows to compliance table", type="primary"):
         rows = []
         selected_cols = [s["column"] for s in selections]
@@ -368,8 +421,20 @@ with tabs[2]:
 
 
     manual_df = state.get("manual_compliance_df")
-    manual_name = st.text_input("Save as name (manual)", value="manual_compliance_policy")
+    render_labeled_help(
+        "Save as name (manual)",
+        "File name used when saving the manually built compliance policy.",
+    )
+    manual_name = st.text_input(
+        "Save as name (manual)",
+        value="manual_compliance_policy",
+        label_visibility="collapsed",
+    )
     can_save_manual_policy = manual_df is not None and not manual_df.empty
+    render_labeled_help(
+        "Save manual policy",
+        "Write the manually assembled compliance policy to disk so it can be reused on downstream pages.",
+    )
     if st.button("Save manual policy", type="secondary", disabled=not can_save_manual_policy):
         target_path = COMPLIANCE_SOURCE_ROOT / f"{manual_name}.csv"
         target_path.parent.mkdir(parents=True, exist_ok=True)

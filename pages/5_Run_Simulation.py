@@ -642,6 +642,7 @@ render_page_intro("Execute the slippage pipeline and compare policies based on s
 selected_experiment = None
 with st.sidebar:
     st.subheader("Execution options")
+    st.write("Choose the replication count and pick which saved experiment package to run.")
     simulations = st.number_input(
         "Simulation replications",
         min_value=1,
@@ -873,6 +874,15 @@ if simulation_summary_runs_source is not None and simulation_summary_record_runs
 
 
 st.header("Results Summary")
+st.write("Review the scenario-level results, progress details, and aggregated slippage outcomes from the completed run.")
+render_labeled_help(
+    "Results Summary",
+    "Review the combined scenario results after the pipeline finishes, including slippage, inspection workload, and action-level outcomes.",
+)
+render_labeled_help(
+    "Expand all sections",
+    "Open the slippage, inspection workload, and action level sections at the same time.",
+)
 expand_all_summary_sections = st.toggle(
     "Expand all sections",
     value=False,
@@ -886,11 +896,15 @@ if simulation_summary_runs_source is not None and not simulation_summary_runs_so
         for replication in simulation_summary_runs_source["replication"].dropna().unique().tolist()
     )
     summary_view_options = ["Mean", "Median"] + [f"Replication {replication + 1}" for replication in available_replications]
+    render_labeled_help(
+        "Simulation summary view",
+        "Choose whether the summary uses scenario means, scenario medians, or the results from one replication only.",
+    )
     simulation_summary_view = st.selectbox(
         "Simulation summary view",
         options=summary_view_options,
         key="simulation_summary_view",
-        help="Choose whether the simulation summary shows the mean, median, or a single replication.",
+        label_visibility="collapsed",
     )
     if simulation_summary_view == "Mean":
         numeric_cols = simulation_summary_runs_source.select_dtypes(include=[np.number]).columns.tolist()
