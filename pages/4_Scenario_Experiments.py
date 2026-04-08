@@ -267,10 +267,6 @@ with tabs[0]:
             preview = pd.read_csv(sel)
             st.dataframe(preview, use_container_width=True)
             st.caption(f"Path: {sel}")
-            render_labeled_help(
-                "Delete this experiment set",
-                "Remove the selected experiment package directory from tmp/experiments.",
-            )
             if st.button("Delete this experiment set", type="secondary"):
                 try:
                     shutil.rmtree(sel.parent)

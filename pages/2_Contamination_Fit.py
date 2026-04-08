@@ -288,10 +288,14 @@ def _render_pis_summary(pis_df: pd.DataFrame) -> None:
     action_ones = int((pis_df[action_col] == 1).sum()) if action_col else 0
 
     stats = st.columns(4)
-    stats[0].metric("Rows", f"{n_rows}")
-    stats[1].metric("Unique inspections", f"{unique_inspections}")
-    stats[2].metric("Rows with action = 1", f"{action_ones}")
-    stats[3].metric("Total sampling units", f"{total_sampling:,}")
+    with stats[0]:
+        render_metric_card("Rows", f"{n_rows}", "Total number of consignment rows available in the selected input file.")
+    with stats[1]:
+        render_metric_card("Unique inspections", f"{unique_inspections}", "Number of distinct inspections represented in the selected input file.")
+    with stats[2]:
+        render_metric_card("Rows with action = 1", f"{action_ones}", "Number of rows where the action indicator equals 1 in the selected input file.")
+    with stats[3]:
+        render_metric_card("Total sampling units", f"{total_sampling:,}", "Total number of sampling units across the selected input file.")
 
     if total_plants:
         st.caption(f"Total plant units: {int(total_plants):,}")
@@ -517,9 +521,9 @@ with fit_tab:
     with fit_cols[0]:
         render_labeled_help(
             "Fit contamination parameters",
-            "Estimate the beta-binomial contamination parameters from the selected consignment dataset.",
+            "Estimate the beta-binomial contamination parameters from the selected consignment dataset. Theta is fixed to inf (no clustering) for manual contamination assignment.",
         )
-        if st.button("Fit contamination parameters*", type="primary"):
+        if st.button("Fit contamination parameters", type="primary"):
             if paths.pis_data is None or paths.rbs_data is None:
                 st.error("Upload PIS data and select an RBS file before fitting.")
             else:
@@ -551,16 +555,18 @@ with fit_tab:
     inputs_by_quantity: Optional[Dict[Any, Any]] = slippage_state.get("inputs_by_quantity")
     if fit_to_show is None and fall_back_fit_to_show is not None:
         metrics = st.columns(3)
-        metrics[0].metric("Alpha", f"{fall_back_fit_to_show.alpha:.6f}")
-        metrics[1].metric("Beta", f"{fall_back_fit_to_show.beta:.6f}")
-        metrics[2].metric("Theta", f"{fall_back_fit_to_show.theta}")
+        with metrics[0]:
+            render_metric_card("Alpha", f"{fall_back_fit_to_show.alpha:.6f}", "Alpha parameter of the fallback beta-binomial contamination distribution.")
+        with metrics[1]:
+            render_metric_card("Beta", f"{fall_back_fit_to_show.beta:.6f}", "Beta parameter of the fallback beta-binomial contamination distribution.")
+        with metrics[2]:
+            render_metric_card("Theta", f"{fall_back_fit_to_show.theta}", "Theta clustering parameter of the fallback beta-binomial contamination distribution.")
         st.markdown("<div style='height: 1.25rem;'></div>", unsafe_allow_html=True)
         st.altair_chart(
             _beta_chart(fall_back_fit_to_show.alpha, fall_back_fit_to_show.beta, "Beta-Binomial Probability Density Function"),
             use_container_width=True,
         )
 
-    st.markdown("**Save fitted parameters**")
     render_labeled_help(
         "Parameter set name",
         "Name used when saving the fitted contamination parameter set for later reuse on Page 5.",
@@ -696,8 +702,6 @@ with assign_tab:
             render_metric_card("Alpha", f"{adj_alpha:.6f}", "Alpha parameter of the beta-binomial distribution.")
         with col4:
             render_metric_card("Beta", f"{adj_beta:.6f}", "Beta parameter of the beta-binomial distribution.")
-        st.caption("*Theta is fixed to inf (no clustering) for manual contamination assignment.")
-
         st.write("")
         st.write("")
         st.altair_chart(
@@ -830,10 +834,6 @@ with saved_tab:
         sel = st.selectbox("Select a saved set", saved_keys, index=default_idx, label_visibility="collapsed")
         params = saved.get(sel, {})
         _render_saved_parameters(sel, params)
-        render_labeled_help(
-            "Delete this saved set",
-            "Remove the selected contamination parameter set from the temporary parameter store.",
-        )
         if st.button("Delete this saved set", type="secondary"):
             try:
                 updated = dict(saved)

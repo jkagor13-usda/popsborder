@@ -885,10 +885,6 @@ with saved_tab:
             full_df = pd.read_csv(sel)
             _render_saved_consignment_preview(full_df)
             st.caption(f"Location: {sel}")
-            render_labeled_help(
-                "Delete this consignment file",
-                "Remove the selected saved consignment CSV from tmp/consignments.",
-            )
             if st.button("Delete this consignment file", type="secondary"):
                 try:
                     sel.unlink()

@@ -204,10 +204,6 @@ with tabs[0]:
                 if not policy_df.empty:
                     st.dataframe(policy_df, use_container_width=True, height=320)
             st.caption(f"Location: {sel}")
-            render_labeled_help(
-                "Delete this policy",
-                "Remove the selected saved RBS compliance policy file from tmp/compliance.",
-            )
             if st.button("Delete this policy", type="secondary"):
                 try:
                     sel.unlink()
