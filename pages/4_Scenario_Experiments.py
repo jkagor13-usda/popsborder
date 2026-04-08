@@ -49,6 +49,8 @@ render_page_intro(
     "Build, review, and save experiment-ready scenario tables. "
     "Scenario bundles are written to <i>tmp/experiments</i> for execution on Page 5."
 )
+if st.session_state.get("page4_save_success"):
+    st.success(st.session_state.pop("page4_save_success"))
 
 # --- Helpers ------------------------------------------------------------------
 def _slugify(name: str) -> str:
@@ -490,7 +492,8 @@ with tabs[2]:
             st.caption(f"Copied files to {scenario_dir}: {', '.join(copied)}")
 
             _update_state_paths(scenario_table=scenario_path)
-            st.success(f"Experiment saved to {scenario_path}")
+            st.session_state["page4_save_success"] = f"Experiment saved to {scenario_path}"
+            st.rerun()
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Failed to save experiment: {exc}")
 
