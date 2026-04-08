@@ -35,12 +35,21 @@ st.success(
     "Start with **Consignment Generation** to upload curated PIS/RBS files and generate synthetic consignments "
     "or define consignments from scratch."
 )
-if st.button(
-    "Open Consignment Generation",
-    type="primary",
-    help="Upload PIS/RBS data, create synthetic consignments, or define consignments manually",
-):
-    st.switch_page("pages/1_Consignment_Generation.py")
+entry_cols = st.columns(2)
+with entry_cols[0]:
+    if st.button(
+        "Open Consignment Generation",
+        type="primary",
+        help="Upload PIS/RBS data, create synthetic consignments, or define consignments manually",
+    ):
+        st.switch_page("pages/1_Consignment_Generation.py")
+with entry_cols[1]:
+    if st.button(
+        "Open Glossary",
+        type="secondary",
+        help="Browse app terminology and definitions used across the workflow",
+    ):
+        st.switch_page("pages/6_Glossary.py")
 st.markdown(
     """
 **Workflow overview**
@@ -55,6 +64,8 @@ st.markdown(
   Summarize scenarios and set simulation controls (number of simulations, seed).
 - **Page 5 - Run Simulation**
   Execute the pipeline, review slippage metrics, and compare inspection policies.
+- **Glossary**
+  Review definitions for terminology used across the workflow, results, and saved inputs.
 """
 )
 
