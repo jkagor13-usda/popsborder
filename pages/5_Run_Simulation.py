@@ -1857,5 +1857,5 @@ with nav_cols[1]:
     if st.button("Previous Page", type="primary", key="nav_back_page5"):
         st.switch_page("pages/4_Scenario_Experiments.py")
 with nav_cols[2]:
-    if st.button("Finish and Return Home", type="primary", key="nav_finish"):
-        st.switch_page("frontend.py")
+    if st.button("Next Page", type="primary", key="nav_forward_page6"):
+        st.switch_page("pages/6_Glossary.py")

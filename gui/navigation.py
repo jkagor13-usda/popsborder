@@ -12,3 +12,4 @@ def render_sidebar_navigation():
         st.page_link("pages/3_Inspection_Process.py", label="Page 3 - Inspection Process")
         st.page_link("pages/4_Scenario_Experiments.py", label="Page 4 - Scenario Experiments")
         st.page_link("pages/5_Run_Simulation.py", label="Page 5 - Run Simulation")
+        st.page_link("pages/6_Glossary.py", label="Glossary")
