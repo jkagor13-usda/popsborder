@@ -29,7 +29,7 @@ from popsborder.inspections import normalize_rbs_variables_against_consignment, 
 # Import utility functions for contamination module
 from slippage_model_utils.r_script_wrapper import *
 from slippage_model_utils.clarke_model_support_functions import *
-from slippage_model_utils.engineered_feature_creator import  create_engineered_features
+from slippage_model_utils.engineered_feature_creator import  create_engineered_features, map_group_to_shortest_name
 from slippage_model_utils.paths import BoxPaths, DefaultPaths
 from pathlib import Path
 import pickle
@@ -94,14 +94,53 @@ def main():
         synth_out_path = data_dir / "Synthetic_PIS_SampleQuantity.csv"
         config["consignment"]["input_file"]["file_name"] = "development_files/slippage_data/Synthetic_PIS_SampleQuantity.csv"
 
-    # # Pull in the VariableCreator object to use R code to create engineered columns
+    ### Creating of Engineered Features ###
+    # Create features from the R script using the R wrapper
+    creator = RVariableCreator()
+
+    print(f'  Cleaning (and grouping where applicable) Categorical Names')
+    print(f'      Cleaning Producer Name')
+    synth_data['PRODUCER_NAME_RAW'] = synth_data['PRODUCER_NAME']
+    synth_data['PRODUCER_NAME1'] = creator.batch_basic_text_preproc(text_fields=synth_data['PRODUCER_NAME_RAW'])
+
+    producer_group_mapping = producer_group_mapping.rename(
+        columns={"PRODUCER_NAME": "name", "grouping": "group"}
+    )
+
+    print(f'      Creating producer group mappings')
+    synth_data = creator.entity_resolution(
+        df=synth_data,
+        entity_resolution_lookup_table=producer_group_mapping,
+        use_parquet=False,  # or True, as you prefer
+    )
+
+    print(f'      Cleaning Importer Name')
+    # Create a raw IMPORTER_NAME column with the original importer name
+    synth_data['IMPORTER_NAME_RAW'] = synth_data['IMPORTER_NAME']
+
+    # Update the IMPORTER_NAME column with the cleaned version.
+    synth_data['IMPORTER_NAME1'] = creator.batch_basic_text_preproc(synth_data['IMPORTER_NAME_RAW'])
+
+    # Reconstruct risk units based on configuration specification
+    synth_data['PRODUCER_NAME'] = synth_data['PRODUCER_GROUP_NAME1']
+    synth_data['IMPORTER_NAME'] = synth_data['IMPORTER_NAME1']
+    synth_data = construct_risk_units(config=config, data=synth_data)
+
+    # Pull in the VariableCreator object to use R code to create engineered columns based on created risk units
     synth_data = create_engineered_features(
         synth_data=synth_data,
         producer_group_mapping=producer_group_mapping
     )
 
-    synth_data = construct_risk_units(config=config, data=synth_data)
-    synth_data.to_parquet(data_dir / "Synthetic_PIS_SampleQuantity.parquet", compression='snappy', index=False)
+    # Create the actual producer name that will be used to reference in the compliance table.
+    synth_data = map_group_to_shortest_name(
+        synth_data=synth_data,
+        group_col="PRODUCER_GROUP_TOP",
+        producer_group_mapping=producer_group_mapping,
+        output_col="PRODUCER_GROUP_TOP",  # or None to overwrite
+    )
+
+    synth_data.to_parquet(data_dir / "Synthetic_Base.parquet", compression='snappy', index=False)
     synth_data.to_csv(synth_out_path)
 
 
