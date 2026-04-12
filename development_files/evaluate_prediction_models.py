@@ -35,13 +35,13 @@ def main(df1=None):
     start = time.time()
     #### Main Input Parameter ######
     # Specify how many consignments you want to generate
-    num_consignments_to_simulate = 3000
+    num_consignments_to_simulate = 20
     # Specify how many replications you want the simulation to execute
     num_replications = 50
 
     # Have already generated synthetic consignments you want to use?  Set to True, otherwise set to False (and
     # num_consignments_to_simulate will be generated)
-    synthetic_data_generated = True
+    synthetic_data_generated = False
 
     # Are Clark model parameters cached and saved? True if yes, and False if not
     clark_parameters_cached = True
@@ -132,7 +132,7 @@ def main(df1=None):
             synth_data = synthetic_data_generator.input_data[synthetic_data_generator.input_data["INSPECTION_NUMBER"].isin(included_inspection_nums)]
             synth_data.loc[:, 'Row_ID'] = 'CR-' + (synth_data.index + 1).astype(str)
             synth_out_path = data_dir / "Historical_PIS_SampleQuantity.csv"
-            config["consignment"]["input_file"]["file_name"] = "slippage_data/Historical_PIS_SampleQuantity.csv"
+            config["consignment"]["input_file"]["file_name"] = str(synth_out_path)
         else:
             print(f'\nStarting Consignment Generation Process of {num_consignments_to_simulate} Requested Consignments...')
             synth_data = synthetic_data_generator.generate_from_input_data(
@@ -140,10 +140,13 @@ def main(df1=None):
                 sampling_method="sequential"
             )
             synth_out_path = data_dir / "Synthetic_Base.csv"
-            config["consignment"]["input_file"]["file_name"] = "slippage_data/Synthetic_Base.csv"
+            #synth_out_path = data_dir / "Synthetic_TEST.csv"
+            config["consignment"]["input_file"]["file_name"] = str(synth_out_path)
 
         synth_data.to_parquet(data_dir / "Synthetic_Base_after_generate.parquet", compression='snappy', index=False)
         synth_data.to_csv(data_dir / "Synthetic_Base_after_generate.csv")
+        # synth_data.to_parquet(data_dir / "Synthetic_Base_after_generate_TEST.parquet", compression='snappy', index=False)
+        # synth_data.to_csv(data_dir / "Synthetic_Base_after_generate_TEST.csv")
         total_time_seconds = time.time() - start
         time_minutes = total_time_seconds / 60
         time_hours = time_minutes / 60
@@ -154,7 +157,6 @@ def main(df1=None):
         print(f'   Total Time (hours): {time_hours}')
         print(f'   Total Time (days): {time_days}')
 
-        ### Creating of Engineered Features ###
         # Create features from the R script using the R wrapper
         creator = RVariableCreator()
 
@@ -197,12 +199,13 @@ def main(df1=None):
             synth_data=synth_data,
             group_col="PRODUCER_GROUP_TOP",
             producer_group_mapping=producer_group_mapping,
-            output_col="PRODUCER_GROUP_TOP",  # or None to overwrite
+            output_col="PRODUCER_GROUP_NAME_SHORT",  # or None to overwrite
         )
 
         # Create a producer_group column
-        synth_data['producer_group'] = synth_data['PRODUCER_GROUP_TOP']
+        synth_data['producer_group'] = synth_data['PRODUCER_GROUP_NAME_SHORT']
 
+        #synth_data.to_parquet(data_dir / "Synthetic_Base_TEST.parquet", compression='snappy', index=False)
         synth_data.to_parquet(data_dir / "Synthetic_Base.parquet", compression='snappy', index=False)
         synth_data.to_csv(synth_out_path)
 
@@ -411,76 +414,178 @@ def main(df1=None):
 
                 temp_compliance_table = pd.read_csv(compliance_table_path)
 
+                # Helper to count "Reference" in a column
+                def count_reference(df: pd.DataFrame, col: str) -> int:
+                    return (df[col] == "Reference").sum()
+
+                # --- PRODUCER GROUP ---
+
                 if "prod_group_name" in temp_compliance_table.columns:
+                    col = "producer_group"
+                    comp_col = "prod_group_name"
+
+                    before_ref = count_reference(synth_data, col)
+
                     # Find values in synth_data that are NOT in temp_compliance_table
-                    mask = ~synth_data["producer_group"].isin(temp_compliance_table["prod_group_name"])
+                    mask = ~synth_data[col].isin(temp_compliance_table[comp_col])
 
                     # Collect the values that will be replaced (unique)
-                    replaced_values = synth_data.loc[mask, "producer_group"].unique()
+                    replaced_values = synth_data.loc[mask, col].unique()
 
                     # Create a DataFrame for these values
                     replaced_df = pd.DataFrame(replaced_values, columns=["Replaced_Producer_Group"])
-
-                    # Write to CSV
                     replaced_df.to_csv(data_dir / "replaced_producer_group_from_prod_group_name.csv", index=False)
 
                     # Replace those values with "Reference"
-                    synth_data.loc[mask, "producer_group"] = "Reference"
+                    synth_data.loc[mask, col] = "Reference"
+
+                    after_ref = count_reference(synth_data, col)
+
+                    print(f"[Producer groups vs {comp_col}] 'Reference' count before: {before_ref}, after: {after_ref}")
 
                     # Check if ALL values in synth_data are in temp_compliance_table
-                    all_present = synth_data["producer_group"].isin(temp_compliance_table["prod_group_name"]).all()
-
+                    all_present = synth_data[col].isin(temp_compliance_table[comp_col]).all()
                     if all_present:
                         print("✓ All producer groups are valid!")
                     else:
                         print("✗ Some producer groups are missing from temp_compliance_table")
+
                 elif "PRODUCER_GROUP_TOP" in temp_compliance_table.columns:
+                    col = "producer_group"
+                    comp_col = "PRODUCER_GROUP_TOP"
+
+                    before_ref = count_reference(synth_data, col)
+
                     # Find values in synth_data that are NOT in temp_compliance_table
-                    mask = ~synth_data["producer_group"].isin(temp_compliance_table["PRODUCER_GROUP_TOP"])
+                    mask = ~synth_data[col].isin(temp_compliance_table[comp_col])
 
                     # Collect the values that will be replaced (unique)
-                    replaced_values = synth_data.loc[mask, "producer_group"].unique()
+                    replaced_values = synth_data.loc[mask, col].unique()
 
                     # Create a DataFrame for these values
                     replaced_df = pd.DataFrame(replaced_values, columns=["Replaced_Producer_Group"])
-
-                    # Write to CSV
                     replaced_df.to_csv(data_dir / "replaced_producer_group_from_PRODUCER_GROUP_TOP.csv", index=False)
 
                     # Replace those values with "Reference"
-                    synth_data.loc[mask, "producer_group"] = "Reference"
+                    synth_data.loc[mask, col] = "Reference"
+
+                    after_ref = count_reference(synth_data, col)
+
+                    print(f"[Producer groups vs {comp_col}] 'Reference' count before: {before_ref}, after: {after_ref}")
 
                     # Check if ALL values in synth_data are in temp_compliance_table
-                    all_present = synth_data["producer_group"].isin(temp_compliance_table["PRODUCER_GROUP_TOP"]).all()
-
+                    all_present = synth_data[col].isin(temp_compliance_table[comp_col]).all()
                     if all_present:
                         print("✓ All producer groups are valid!")
                     else:
                         print("✗ Some producer groups are missing from temp_compliance_table")
+
+                # --- IMPORTER NAME ---
+
                 if "IMPORTER_NAME_TOP" in temp_compliance_table.columns:
+                    col = "IMPORTER_NAME"
+                    comp_col = "IMPORTER_NAME_TOP"
+
+                    before_ref = count_reference(synth_data, col)
+
                     # Find values in synth_data that are NOT in temp_compliance_table
-                    mask = ~synth_data["IMPORTER_NAME"].isin(temp_compliance_table["IMPORTER_NAME_TOP"])
+                    mask = ~synth_data[col].isin(temp_compliance_table[comp_col])
 
                     # Collect the replaced rows (both columns)
                     replaced_df = synth_data.loc[mask, ["IMPORTER_NAME", "IMPORTER_NAME_RAW"]].drop_duplicates()
-
-                    # Rename columns for clarity
-                    replaced_df.rename(columns={"IMPORTER_NAME": "Replaced_Importer_Name",
-                                                "IMPORTER_NAME_RAW": "Raw_Importer_Name"}, inplace=True)
-
-                    # Write to CSV
+                    replaced_df.rename(
+                        columns={
+                            "IMPORTER_NAME": "Replaced_Importer_Name",
+                            "IMPORTER_NAME_RAW": "Raw_Importer_Name",
+                        },
+                        inplace=True,
+                    )
                     replaced_df.to_csv(data_dir / "replaced_importer_names.csv", index=False)
 
                     # Replace those values with "Reference"
-                    synth_data.loc[mask, "IMPORTER_NAME"] = "Reference"
+                    synth_data.loc[mask, col] = "Reference"
+
+                    after_ref = count_reference(synth_data, col)
+
+                    print(f"[Importer names vs {comp_col}] 'Reference' count before: {before_ref}, after: {after_ref}")
 
                     # Check if ALL values in synth_data are in temp_compliance_table
-                    all_present = synth_data["IMPORTER_NAME"].isin(temp_compliance_table["IMPORTER_NAME_TOP"]).all()
-
+                    all_present = synth_data[col].isin(temp_compliance_table[comp_col]).all()
                     if all_present:
                         print("✓ All importer names are valid!")
                     else:
                         print("✗ Some importer names are missing from temp_compliance_table")
+
+                # if "prod_group_name" in temp_compliance_table.columns:
+                #     # Find values in synth_data that are NOT in temp_compliance_table
+                #     mask = ~synth_data["producer_group"].isin(temp_compliance_table["prod_group_name"])
+                #
+                #     # Collect the values that will be replaced (unique)
+                #     replaced_values = synth_data.loc[mask, "producer_group"].unique()
+                #
+                #     # Create a DataFrame for these values
+                #     replaced_df = pd.DataFrame(replaced_values, columns=["Replaced_Producer_Group"])
+                #
+                #     # Write to CSV
+                #     replaced_df.to_csv(data_dir / "replaced_producer_group_from_prod_group_name.csv", index=False)
+                #
+                #     # Replace those values with "Reference"
+                #     synth_data.loc[mask, "producer_group"] = "Reference"
+                #
+                #     # Check if ALL values in synth_data are in temp_compliance_table
+                #     all_present = synth_data["producer_group"].isin(temp_compliance_table["prod_group_name"]).all()
+                #
+                #     if all_present:
+                #         print("✓ All producer groups are valid!")
+                #     else:
+                #         print("✗ Some producer groups are missing from temp_compliance_table")
+                # elif "PRODUCER_GROUP_TOP" in temp_compliance_table.columns:
+                #     # Find values in synth_data that are NOT in temp_compliance_table
+                #     mask = ~synth_data["producer_group"].isin(temp_compliance_table["PRODUCER_GROUP_TOP"])
+                #
+                #     # Collect the values that will be replaced (unique)
+                #     replaced_values = synth_data.loc[mask, "producer_group"].unique()
+                #
+                #     # Create a DataFrame for these values
+                #     replaced_df = pd.DataFrame(replaced_values, columns=["Replaced_Producer_Group"])
+                #
+                #     # Write to CSV
+                #     replaced_df.to_csv(data_dir / "replaced_producer_group_from_PRODUCER_GROUP_TOP.csv", index=False)
+                #
+                #     # Replace those values with "Reference"
+                #     synth_data.loc[mask, "producer_group"] = "Reference"
+                #
+                #     # Check if ALL values in synth_data are in temp_compliance_table
+                #     all_present = synth_data["producer_group"].isin(temp_compliance_table["PRODUCER_GROUP_TOP"]).all()
+                #
+                #     if all_present:
+                #         print("✓ All producer groups are valid!")
+                #     else:
+                #         print("✗ Some producer groups are missing from temp_compliance_table")
+                # if "IMPORTER_NAME_TOP" in temp_compliance_table.columns:
+                #     # Find values in synth_data that are NOT in temp_compliance_table
+                #     mask = ~synth_data["IMPORTER_NAME"].isin(temp_compliance_table["IMPORTER_NAME_TOP"])
+                #
+                #     # Collect the replaced rows (both columns)
+                #     replaced_df = synth_data.loc[mask, ["IMPORTER_NAME", "IMPORTER_NAME_RAW"]].drop_duplicates()
+                #
+                #     # Rename columns for clarity
+                #     replaced_df.rename(columns={"IMPORTER_NAME": "Replaced_Importer_Name",
+                #                                 "IMPORTER_NAME_RAW": "Raw_Importer_Name"}, inplace=True)
+                #
+                #     # Write to CSV
+                #     replaced_df.to_csv(data_dir / "replaced_importer_names.csv", index=False)
+                #
+                #     # Replace those values with "Reference"
+                #     synth_data.loc[mask, "IMPORTER_NAME"] = "Reference"
+                #
+                #     # Check if ALL values in synth_data are in temp_compliance_table
+                #     all_present = synth_data["IMPORTER_NAME"].isin(temp_compliance_table["IMPORTER_NAME_TOP"]).all()
+                #
+                #     if all_present:
+                #         print("✓ All importer names are valid!")
+                #     else:
+                #         print("✗ Some importer names are missing from temp_compliance_table")
 
 
                 synth_data.to_parquet(data_dir / "Synthetic_Base_Use.parquet", compression='snappy', index=False)
