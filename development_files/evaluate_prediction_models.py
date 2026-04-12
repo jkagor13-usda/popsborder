@@ -200,6 +200,9 @@ def main(df1=None):
             output_col="PRODUCER_GROUP_TOP",  # or None to overwrite
         )
 
+        # Create a producer_group column
+        synth_data['producer_group'] = synth_data['PRODUCER_GROUP_TOP']
+
         synth_data.to_parquet(data_dir / "Synthetic_Base.parquet", compression='snappy', index=False)
         synth_data.to_csv(synth_out_path)
 
