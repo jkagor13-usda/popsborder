@@ -154,14 +154,15 @@ def main(df1=None):
         print(f'   Total Time (hours): {time_hours}')
         print(f'   Total Time (days): {time_days}')
 
+        # Reconstruct risk units based on configuration specification
+        synth_data = construct_risk_units(config=config, data=synth_data)
 
-        # # Pull in the VariableCreator object to use R code to create engineered columns
+        # Pull in the VariableCreator object to use R code to create engineered columns based on created risk units
         synth_data = create_engineered_features(
-            synth_data = synth_data,
-            producer_group_mapping = producer_group_mapping
+            synth_data=synth_data,
+            producer_group_mapping=producer_group_mapping
         )
 
-        synth_data = construct_risk_units(config=config, data=synth_data)
         synth_data.to_parquet(data_dir / "Synthetic_Base.parquet", compression='snappy', index=False)
         synth_data.to_csv(synth_out_path)
 

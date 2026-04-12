@@ -877,6 +877,77 @@ class RVariableCreator:
 
         raise ValueError("R did not return processed_text")
 
+
+    def entity_resolution(
+        self,
+        df: pd.DataFrame,
+        entity_resolution_lookup_table: pd.DataFrame,
+        use_parquet: bool = True,
+        timeout_sec: float = 120.0,
+    ) -> pd.DataFrame:
+        """
+        Call the R entity_resolution function to create PRODUCER_GROUP_NAME and PRODUCER_GROUP_NAME1.
+
+        Args:
+            df: main DataFrame; must contain:
+                 - PRODUCER_NAME
+                 - PRODUCER_NAME1
+                 - QUANTITY
+                 - COUNTRY_OF_ORIGIN_NAME
+                 - PROPAGATIVE_MATERIAL_TYPE
+                 - INSPECTION_NUMBER
+            entity_resolution_lookup_table: DataFrame with columns 'name' and 'group'.
+
+        Returns:
+            DataFrame with PRODUCER_GROUP_NAME and PRODUCER_GROUP_NAME1 appended.
+        """
+        required_dt = {
+            "PRODUCER_NAME",
+            "PRODUCER_NAME1",
+            "QUANTITY",
+            "COUNTRY_OF_ORIGIN_NAME",
+            "PROPAGATIVE_MATERIAL_TYPE",
+            "INSPECTION_NUMBER",
+        }
+        missing_dt = required_dt - set(df.columns)
+        if missing_dt:
+            raise ValueError(
+                f"df missing required columns for entity_resolution: {missing_dt}"
+            )
+
+        required_lookup = {"name", "group"}
+        missing_lookup = required_lookup - set(entity_resolution_lookup_table.columns)
+        if missing_lookup:
+            raise ValueError(
+                "entity_resolution_lookup_table missing required columns: "
+                f"{missing_lookup}"
+            )
+
+        args: Dict[str, Any] = {
+            "dt": df,
+            "entity_resolution_lookup_table": entity_resolution_lookup_table,
+        }
+
+        result = self._call_r_function_df(
+            "entity_resolution",
+            args=args,
+            timeout_sec=timeout_sec,
+            use_parquet=use_parquet,
+        )
+
+        if isinstance(result, dict) and result.get("status") == "error":
+            raise ValueError(f"R function error: {result.get('error')}")
+
+        if "result_df" in result:
+            result_df = result["result_df"]
+            if isinstance(result_df, pd.DataFrame):
+                return result_df
+            raise ValueError(f"Expected DataFrame, got {type(result_df)}")
+
+        raise ValueError(f"No 'result_df' in result: {result.keys()}")
+
+
+
     def generate_quantity_binaries(
         self,
         df: pd.DataFrame,

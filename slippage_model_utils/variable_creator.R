@@ -6,9 +6,12 @@ suppressPackageStartupMessages({
   library(stringr)
   library(dplyr)
   library(arrow)  # For Parquet support
+  library(data.table)
 })
 
-# ===== Parse Command Line Arguments =====
+######################################################
+# ===== Parse Command Line Arguments Functions ===== #
+######################################################
 
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 1) {
@@ -58,7 +61,9 @@ func_args <- input$args
 df_args <- input$df_args
 use_parquet <- if (!is.null(input$use_parquet)) input$use_parquet else FALSE
 
-# ===== Helper Functions for File I/O =====
+#######################################################
+# ===== Helper Functions for File I/O to Python ===== #
+######################################################
 
 # Read DataFrames from file paths (Parquet or CSV)
 read_df_args <- function(df_paths, use_parquet) {
@@ -116,7 +121,40 @@ write_result_dfs <- function(result, use_parquet, temp_dir = NULL) {
   return(cleaned_result)
 }
 
-# ===== Helper Functions =====
+###################################
+### ===== Helper Functions ===== ##
+###################################
+
+# Simple fcoalesce function to mimic the data.table fcoalesce function
+fcoalesce <- function(x, y) {
+  ifelse(is.na(x), y, x)
+}
+
+
+run_fixed_preprocessing <- function( dat, rbs.start.date, rbs.end.date )
+{
+  #
+  # Goal: establish copy of data that is properly filtered that is not changed.
+  # Filtering:
+  #   - Select data within specified time frame
+  #   - PM type != tissue culture (pre-specified as highest-compliance)
+  #   - - Quantity units == Plant Units
+  # Filtering to a restricted time, plant unit-quantities only
+  dat_time <- dat %>%
+    filter(INSPECTION_DATETIME >= as.Date(rbs.start.date) &
+             INSPECTION_DATETIME <= as.Date(rbs.end.date) )
+  dat_filtered <- dat_time %>%
+    filter(PROPAGATIVE_MATERIAL_TYPE != "Meristem or Callus Tissue Culture (micropropagated/in vitro culture)",
+           QUANTITY_UNITS_NAME %in% "Plant Units")
+  # Basic text preprocessing
+  setDT(dat_filtered)
+  dat_filtered[, IMPORTER_NAME1 := basic_text_preproc(dat_filtered$IMPORTER_NAME)]
+  dat_filtered[, PRODUCER_NAME1 := basic_text_preproc(dat_filtered$PRODUCER_NAME)]
+
+  return(dat_filtered)
+}
+
+
 
 remove_extra_chars <- function(suffix_string, prefix_string, text) {
   text <- gsub(suffix_string, "", text)
@@ -201,9 +239,11 @@ top_strata_apply <- function(df, tbl_col, keep_levels,
   factor(x_chr, levels = levs)
 }
 
+###################################################
+### ===== Main Functions Called by Python ===== ###
+###################################################
 
-# ===== Main Functions =====
-
+# ===== Basic Text Pre-Processing Function ===== #
 basic_text_preproc <- function(text_field, suffix_string = NULL, prefix_string = NULL) {
   text <- text_field
   text <- tolower(text)
@@ -240,7 +280,118 @@ basic_text_preproc <- function(text_field, suffix_string = NULL, prefix_string =
   ))
 }
 
-# ===== Quantity Threshold Binary Function =====
+
+
+
+# ===== Producer Mapping ===== #
+entity_resolution <- function(dt, entity_resolution_lookup_table) {
+  # Basic argument checks
+  if (is.null(dt)) {
+    stop("dt argument is required")
+  }
+  if (!is.data.frame(dt)) {
+    stop("dt must be a data.frame")
+  }
+  if (is.null(entity_resolution_lookup_table)) {
+    stop("entity_resolution_lookup_table argument is required")
+  }
+  if (!is.data.frame(entity_resolution_lookup_table)) {
+    stop("entity_resolution_lookup_table must be a data.frame")
+  }
+
+  # Required columns in dt
+  required_dt_cols <- c(
+    "PRODUCER_NAME",
+    "PRODUCER_NAME1",
+    "QUANTITY",
+    "COUNTRY_OF_ORIGIN_NAME",
+    "PROPAGATIVE_MATERIAL_TYPE",
+    "INSPECTION_NUMBER"
+  )
+  missing_dt <- setdiff(required_dt_cols, names(dt))
+  if (length(missing_dt) > 0) {
+    stop(paste("dt is missing required columns:", paste(missing_dt, collapse = ", ")))
+  }
+
+  # Required columns in lookup
+  required_lookup_cols <- c("name", "group")
+  missing_lookup <- setdiff(required_lookup_cols, names(entity_resolution_lookup_table))
+  if (length(missing_lookup) > 0) {
+    stop(paste(
+      "entity_resolution_lookup_table is missing required columns:",
+      paste(missing_lookup, collapse = ", ")
+    ))
+  }
+
+  # Convert to data.table
+  dt <- as.data.table(dt)
+  entity_resolution_lookup_table <- as.data.table(entity_resolution_lookup_table)
+
+  # Left join and create grouped user names
+  dt[
+    entity_resolution_lookup_table,
+    PRODUCER_GROUP_NAME := fcoalesce(i.group, PRODUCER_NAME),
+    on = .(PRODUCER_NAME = name)
+  ]
+
+  # Choose producer group with largest quantity per modeling unit
+  tot <- dt[, .(
+    total_quantity = sum(QUANTITY, na.rm = TRUE),
+    nr_rows = .N
+  ),
+  by = .(
+    COUNTRY_OF_ORIGIN_NAME,
+    PROPAGATIVE_MATERIAL_TYPE,
+    INSPECTION_NUMBER,
+    PRODUCER_GROUP_NAME
+  )]
+
+  best1 <- tot[order(-total_quantity, -nr_rows), .SD[1],
+               by = .(
+                 COUNTRY_OF_ORIGIN_NAME,
+                 PROPAGATIVE_MATERIAL_TYPE,
+                 INSPECTION_NUMBER
+               )]
+
+  best1 <- best1[, .(
+    COUNTRY_OF_ORIGIN_NAME,
+    PROPAGATIVE_MATERIAL_TYPE,
+    INSPECTION_NUMBER,
+    PRODUCER_GROUP_NAME_best = PRODUCER_GROUP_NAME
+  )]
+
+  dt <- best1[dt, on = .(
+    COUNTRY_OF_ORIGIN_NAME,
+    PROPAGATIVE_MATERIAL_TYPE,
+    INSPECTION_NUMBER
+  )]
+
+  dt[, PRODUCER_GROUP_NAME1 := PRODUCER_GROUP_NAME_best][, PRODUCER_GROUP_NAME_best := NULL]
+
+  # Convert back to data.frame, avoid factors
+  dt <- as.data.frame(dt, stringsAsFactors = FALSE)
+  if (is.factor(dt$PRODUCER_GROUP_NAME)) {
+    dt$PRODUCER_GROUP_NAME <- as.character(dt$PRODUCER_GROUP_NAME)
+  }
+  if (is.factor(dt$PRODUCER_GROUP_NAME1)) {
+    dt$PRODUCER_GROUP_NAME1 <- as.character(dt$PRODUCER_GROUP_NAME1)
+  }
+
+  list(result_df = dt)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+# ===== Quantity Threshold Binary Function ===== #
 
 generate_quantity_binaries <- function(df,
                                       quantity_threshold = 200,
@@ -333,7 +484,7 @@ generate_quantity_binaries <- function(df,
 
 
 
-# ===== Creating Producer Group Top Feature  =====
+# ===== Creating Producer Group Top Feature Function  ===== #
 
 generate_producer_top_strata_features <- function(
   df,
@@ -376,7 +527,7 @@ generate_producer_top_strata_features <- function(
 }
 
 
-# ===== Creating IMPORTER_NAME_TOP Feature  =====
+# ===== Creating IMPORTER_NAME_TOP Feature Function  ===== #
 
 generate_importer_top_strata_features <- function(
   df,
@@ -421,8 +572,9 @@ generate_importer_top_strata_features <- function(
 
 
 
-
-# ===== Main Execution =====
+##################################
+### ===== Main Execution ===== ###
+##################################
 
 # Read DataFrames from file paths
 tryCatch({
@@ -441,6 +593,7 @@ tryCatch({
     "generate_quantity_binaries" = do.call(generate_quantity_binaries, all_args),
     "generate_producer_top_strata_features" = do.call(generate_producer_top_strata_features, all_args),
     "generate_importer_top_strata_features" = do.call(generate_importer_top_strata_features, all_args),
+    "entity_resolution"              = do.call(entity_resolution, all_args),
     {
       list(
         error = paste("Unknown function:", func_name),
@@ -449,7 +602,8 @@ tryCatch({
         "basic_text_preproc",
         "generate_quantity_binaries",
         "generate_producer_top_strata_features",
-        "generate_importer_top_strata_features"
+        "generate_importer_top_strata_features",
+        "entity_resolution"
         )
       )
     }
