@@ -35,7 +35,7 @@ def main(df1=None):
     start = time.time()
     #### Main Input Parameter ######
     # Specify how many consignments you want to generate
-    num_consignments_to_simulate = 20
+    num_consignments_to_simulate = 3000
     # Specify how many replications you want the simulation to execute
     num_replications = 50
 
