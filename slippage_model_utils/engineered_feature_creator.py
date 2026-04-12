@@ -3,6 +3,84 @@ from slippage_model_utils.r_script_wrapper import RVariableCreator
 import pandas as pd
 from pathlib import Path
 import re
+from typing import Dict
+
+
+def build_shortest_name_lookup(producer_group_mapping: pd.DataFrame) -> Dict[str, str]:
+    """
+    For each group in producer_group_mapping, find the shortest 'name' string.
+
+    Returns:
+        dict: {group_value_as_str -> shortest_name}
+    """
+    # Ensure required columns exist
+    required = {"name", "group"}
+    missing = required - set(producer_group_mapping.columns)
+    if missing:
+        raise ValueError(f"producer_group_mapping missing columns: {missing}")
+
+    # Drop NA in required columns
+    pgm = producer_group_mapping.dropna(subset=["name", "group"]).copy()
+
+    # Coerce 'group' to string to standardize key type
+    pgm["group_str"] = pgm["group"].astype(str)
+
+    # Compute length of name and pick shortest per group_str
+    shortest = (
+        pgm.assign(name_len=pgm["name"].astype(str).str.len())
+           .sort_values(["group_str", "name_len", "name"])
+           .drop_duplicates(subset=["group_str"], keep="first")
+    )
+
+    # Build mapping: group_str -> name
+    return dict(zip(shortest["group_str"], shortest["name"]))
+
+
+def map_group_to_shortest_name(
+    synth_data: pd.DataFrame,
+    group_col: str,
+    producer_group_mapping: pd.DataFrame,
+    output_col: str = None,
+    default_value: str = "Reference",
+) -> pd.DataFrame:
+    """
+    Map group IDs in synth_data[group_col] to the shortest 'name' for that group
+    from producer_group_mapping, with type harmonization and a default for missing.
+
+    Args:
+        synth_data: DataFrame with a column of group IDs (e.g., 'PRODUCER_GROUP_TOP').
+        group_col: Column in synth_data that contains group values (numeric or string).
+        producer_group_mapping: DataFrame with 'name' and 'group' columns.
+        output_col: Name of the output column. If None, overwrites group_col.
+        default_value: Value to use when group_col value is not found in mapping
+                      (e.g., "Reference").
+
+    Returns:
+        Updated synth_data with the mapped column added/overwritten.
+    """
+    if group_col not in synth_data.columns:
+        raise ValueError(f"{group_col} not found in synth_data")
+
+    # Build lookup {group_str -> shortest name}
+    group_to_shortest_name = build_shortest_name_lookup(producer_group_mapping)
+
+    # Determine target column name
+    if output_col is None:
+        output_col = group_col
+
+    # Coerce group_col to string to align with mapping keys
+    group_values_str = synth_data[group_col].astype(str)
+
+    # Map; values not found will become NaN
+    mapped = group_values_str.map(group_to_shortest_name)
+
+    # Fill missing mappings with default_value (e.g. "Reference")
+    mapped = mapped.fillna(default_value)
+
+    synth_data[output_col] = mapped
+
+    return synth_data
+
 
 
 def create_engineered_features(
@@ -20,25 +98,7 @@ def create_engineered_features(
     # Create features from the R script using the R wrapper
     creator = RVariableCreator()
 
-    print(f'      Cleaning Producer Name')
-    # Create a raw IMPORTER_NAME column with the original importer name
-    synth_data['PRODUCER_NAME_RAW'] = synth_data['PRODUCER_NAME']
-
-    # Update the IMPORTER_NAME column with the cleaned version.
-    synth_data['PRODUCER_NAME1'] = creator.batch_basic_text_preproc(synth_data['PRODUCER_NAME_RAW'])
-
-
-    producer_group_mapping = producer_group_mapping.rename(
-        columns={"PRODUCER_NAME": "name", "grouping": "group"}
-    )
-
-    print(f'   Creating producer group mappings')
-    synth_data = creator.entity_resolution(
-        df=synth_data,
-        entity_resolution_lookup_table=producer_group_mapping,
-        use_parquet=False,  # or True, as you prefer
-    )
-
+    print(f'      Creating PRODUCER_GROUP_TOP feature')
     synth_data = creator.generate_producer_top_strata_features(
         df=synth_data,
         max_strat_count=50,
@@ -47,13 +107,7 @@ def create_engineered_features(
         use_parquet=False,
     )
 
-    print(f'      Cleaning Importer Name')
-    # Create a raw IMPORTER_NAME column with the original importer name
-    synth_data['IMPORTER_NAME_RAW'] = synth_data['IMPORTER_NAME']
-
-    # Update the IMPORTER_NAME column with the cleaned version.
-    synth_data['IMPORTER_NAME1'] = creator.batch_basic_text_preproc(synth_data['IMPORTER_NAME_RAW'])
-
+    print(f'      Creating IMPORTER_TOP feature')
     synth_data = creator.generate_importer_top_strata_features(
         df=synth_data,
         max_strat_count=50,
