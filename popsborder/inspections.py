@@ -316,7 +316,7 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
             if len(config["inspection"]["rbs_calculator_grouping_variables"][pis_station]) == 0:
                 default_list = ['origin', 'material_type']
                 warnings.warn(
-                    f"PIS Station ---{port_name}--- for the consignment not found in config."
+                    f"PIS Station ---{port_name}--- for the consignment found in config."
                     f"However, no grouping variables found in the config, so risk unit group variables being defaulted to...{default_list}",
                     UserWarning,
                     stacklevel=2
