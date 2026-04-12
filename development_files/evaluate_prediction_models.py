@@ -41,7 +41,7 @@ def main(df1=None):
 
     # Have already generated synthetic consignments you want to use?  Set to True, otherwise set to False (and
     # num_consignments_to_simulate will be generated)
-    synthetic_data_generated = False
+    synthetic_data_generated = True
 
     # Are Clark model parameters cached and saved? True if yes, and False if not
     clark_parameters_cached = True
