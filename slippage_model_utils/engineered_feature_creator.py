@@ -102,17 +102,17 @@ def create_engineered_features(
     synth_data = creator.generate_producer_top_strata_features(
         df=synth_data,
         max_strat_count=50,
-        min_action_rate=-1.0,
-        min_records=10,
+        min_action_rate=0.02,
+        min_records=5,
         use_parquet=False,
     )
 
-    print(f'      Creating IMPORTER_TOP feature')
+    print(f'      Creating IMPORTER_NAME_TOP feature')
     synth_data = creator.generate_importer_top_strata_features(
         df=synth_data,
         max_strat_count=50,
-        min_action_rate=-1.0,
-        min_records=10,
+        min_action_rate=0.02,
+        min_records=5,
         use_parquet=False,
     )
 

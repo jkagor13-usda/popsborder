@@ -164,9 +164,9 @@ remove_extra_chars <- function(suffix_string, prefix_string, text) {
 }
 
 top_strata_fit <- function(df, tbl_col,
-                           maxStratCount = -1,
-                           minActionRate = -1,
-                           minRecords    = -1,
+                           maxStratCount = 50,
+                           minActionRate = 0.02,
+                           minRecords    = 5,
                            rank_by = c("action_rate", "count", "action_count")) {
 
   rank_by <- match.arg(rank_by)
