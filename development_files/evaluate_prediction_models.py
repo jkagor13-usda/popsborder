@@ -41,7 +41,7 @@ def main(df1=None):
 
     # Have already generated synthetic consignments you want to use?  Set to True, otherwise set to False (and
     # num_consignments_to_simulate will be generated)
-    synthetic_data_generated = True
+    synthetic_data_generated = False
 
     # Are Clark model parameters cached and saved? True if yes, and False if not
     clark_parameters_cached = True
@@ -109,11 +109,11 @@ def main(df1=None):
         config["consignment"]["input_file"]["file_name"] = str(data_dir  / "Synthetic_Base.csv")
     else:
         ### Synthetic data generation
-        historical = False
+        historical = True
 
         synthetic_data_generator = SyntheticConsignmentDataGenerator(config=config,
                                                                      producer_group_mapping=producer_group_mapping,
-                                                                     input_data_file=pis_data_updated)
+                                                                     input_data_file=pis_data_test_path)
 
         total_time_seconds = time.time() - start
         time_minutes = total_time_seconds / 60
@@ -126,10 +126,10 @@ def main(df1=None):
         print(f'   Total Time (days): {time_days}')
 
         if historical:
-            df_pis_data = pd.read_csv(pis_data_updated)
-            num_consignments_to_simulate = len(df_pis_data["INSPECTION_NUMBER"].unique())
-            included_inspection_nums = synthetic_data_generator.input_data["INSPECTION_NUMBER"].sample(n=num_consignments_to_simulate)
-            synth_data = synthetic_data_generator.input_data[synthetic_data_generator.input_data["INSPECTION_NUMBER"].isin(included_inspection_nums)]
+            synth_data = pd.read_csv(pis_data_test_path)
+            #num_consignments_to_simulate = len(df_pis_data["INSPECTION_NUMBER"].unique())
+            #included_inspection_nums = synthetic_data_generator.input_data["INSPECTION_NUMBER"].sample(n=num_consignments_to_simulate)
+            #synth_data = synthetic_data_generator.input_data[synthetic_data_generator.input_data["INSPECTION_NUMBER"].isin(included_inspection_nums)]
             synth_data.loc[:, 'Row_ID'] = 'CR-' + (synth_data.index + 1).astype(str)
             synth_out_path = data_dir / "Historical_PIS_SampleQuantity.csv"
             config["consignment"]["input_file"]["file_name"] = str(synth_out_path)
@@ -143,10 +143,10 @@ def main(df1=None):
             #synth_out_path = data_dir / "Synthetic_TEST.csv"
             config["consignment"]["input_file"]["file_name"] = str(synth_out_path)
 
-        synth_data.to_parquet(data_dir / "Synthetic_Base_after_generate.parquet", compression='snappy', index=False)
-        synth_data.to_csv(data_dir / "Synthetic_Base_after_generate.csv")
-        # synth_data.to_parquet(data_dir / "Synthetic_Base_after_generate_TEST.parquet", compression='snappy', index=False)
-        # synth_data.to_csv(data_dir / "Synthetic_Base_after_generate_TEST.csv")
+        # synth_data.to_parquet(data_dir / "Synthetic_Base_after_generate.parquet", compression='snappy', index=False)
+        # synth_data.to_csv(data_dir / "Synthetic_Base_after_generate.csv")
+        synth_data.to_parquet(data_dir / "Synthetic_Base_after_generate_TEST.parquet", compression='snappy', index=False)
+        synth_data.to_csv(data_dir / "Synthetic_Base_after_generate_TEST.csv")
         total_time_seconds = time.time() - start
         time_minutes = total_time_seconds / 60
         time_hours = time_minutes / 60
@@ -205,8 +205,8 @@ def main(df1=None):
         # Create a producer_group column
         synth_data['producer_group'] = synth_data['PRODUCER_GROUP_NAME_SHORT']
 
-        #synth_data.to_parquet(data_dir / "Synthetic_Base_TEST.parquet", compression='snappy', index=False)
-        synth_data.to_parquet(data_dir / "Synthetic_Base.parquet", compression='snappy', index=False)
+        # #synth_data.to_parquet(data_dir / "Synthetic_Base_TEST.parquet", compression='snappy', index=False)
+        # synth_data.to_parquet(data_dir / "Synthetic_Base.parquet", compression='snappy', index=False)
         synth_data.to_csv(synth_out_path)
 
 
