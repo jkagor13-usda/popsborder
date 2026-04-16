@@ -15,13 +15,13 @@ GLOSSARY_TERMS = [
     },
     {
         "group": "Consignments",
-        "term": "Consignment name/ID",
-        "definition": "The unique label for a consignment.",
+        "term": "Inspection unit",
+        "definition": "The single lowest, readily-distinguishable taxon, cultivar, or variety that is clearly defined as being from one source and in similar condition on the invoice, packing list, or phytosanitary certificate.",
     },
     {
         "group": "Consignments",
-        "term": "Inspection unit",
-        "definition": "The single lowest, readily-distinguishable taxon, cultivar, or variety that is clearly defined as being from one source and in similar condition on the invoice, packing list, or phytosanitary certificate.",
+        "term": "Consignment name/ID",
+        "definition": "The unique label for a consignment.",
     },
     {
         "group": "Consignments",
@@ -130,7 +130,7 @@ GLOSSARY_TERMS = [
     },
     {
         "group": "Contamination",
-        "term": "Theta",
+        "term": "Theta", # Is this needed? I don't see it mentioned anywhere to the user
         "definition": "A clustering parameter for the contamination model; in manual assignment it is fixed to infinity.",
     },
     {
