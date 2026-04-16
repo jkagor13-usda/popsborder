@@ -84,6 +84,16 @@ GLOSSARY_TERMS = [
         "definition": "The saved CSV output used by downstream pages for consignment, policy, and scenario workflows.", # Joe - I'll need your help on better describing what this actually is
     },
     {
+        "group": "Consignments",
+        "term": "Multinomial Sequential",
+        "definition": "An approach to generate synthetic consignments that samples from multinomial distributions", # Joe - Please review
+    },
+    {
+        "group": "Consignments",
+        "term": "Gaussian Mixure",
+        "definition": "An approach to generate synthetic consignments that samples from gaussian distributions", # Joe - Please review
+    },
+    {
         "group": "Contamination",
         "term": "Contaminated",
         "definition": "Whether an item (e.g., plant, sampling unit) had at least one pest, pathogen, or other contaminate.",
