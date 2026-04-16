@@ -11,27 +11,27 @@ GLOSSARY_TERMS = [
     {
         "group": "Consignments",
         "term": "Consignment",
-        "definition": "A named bundle of inspection units saved as one input file for downstream pages.",
-    },
-    {
-        "group": "Consignments",
-        "term": "Inspection unit",
-        "definition": "One unit with a single port, origin, material type, pathway, and sampling quantity.",
+        "definition": "A named bundle of inspection units; also called a shipment.",
     },
     {
         "group": "Consignments",
         "term": "Consignment name/ID",
-        "definition": "The unique label used to group inspection units into one consignment.",
+        "definition": "The unique label for a consignment.",
+    },
+    {
+        "group": "Consignments",
+        "term": "Inspection unit",
+        "definition": "The single lowest, readily-distinguishable taxon, cultivar, or variety that is clearly defined as being from one source and in similar condition on the invoice, packing list, or phytosanitary certificate.",
     },
     {
         "group": "Consignments",
         "term": "Synthetic consignments",
-        "definition": "Consignments generated from an uploaded seed file instead of being entered manually.",
+        "definition": "Fake consignments generated to mimic realistic consignments.",
     },
     {
         "group": "Consignments",
         "term": "Historical consignments",
-        "definition": "Uploaded consignment records preserved as-is for reuse in later pages.",
+        "definition": "Actual consignments from past inspections at plant inspection stations.",
     },
     {
         "group": "Consignments",
@@ -40,43 +40,53 @@ GLOSSARY_TERMS = [
     },
     {
         "group": "Consignments",
-        "term": "Producer grouping",
-        "definition": "An optional CSV that groups producers so synthetic generation can preserve producer structure.",
+        "term": "Producer grouping file",
+        "definition": "An optional CSV file that groups producers; generally this file is used for entity resolition (maps raw names to groups that represent resolved entity names).", # JOE: "before it said so synthetic generation can preserve producer structure"; are groups used in synthetic generation?
     },
     {
         "group": "Consignments",
         "term": "Port of entry",
-        "definition": "The inspection location assigned to an inspection unit.",
+        "definition": "An official location where goods can legally enter the country.", # JOE: before it said "The inspection location assigned to an inspection unit." PIS != POE. Should we change the word on the consignment generation page
     },
     {
         "group": "Consignments",
         "term": "Country of origin",
-        "definition": "The source country assigned to an inspection unit.",
+        "definition": "The source country of an inspection unit.",
     },
     {
         "group": "Consignments",
-        "term": "Propagative material type",
-        "definition": "The plant material category assigned to an inspection unit.",
+        "term": "Propagative material type", # Joe - the manual entry page lists PMs that are not the usual PM types. They look like taxa.
+        "definition": "A class of propogative materials (e.g., unrooted cutting, tissue culture) as defined by PPQ.",
     },
     {
         "group": "Consignments",
-        "term": "Pathway",
-        "definition": "The transport route used for an inspection unit, such as air, sea, or land.",
+        "term": "Pathway", # Joe - these don't look like the normal pathways. Is this expected?
+        "definition": "The transport route used for a consignment (e.g., Airport - Aircraft - Cargo - PIS)",
     },
     {
         "group": "Consignments",
-        "term": "Sample units (per inspection unit)",
-        "definition": "The number of sample units contained in one inspection unit.",
+        "term": "Sample units",
+        "definition": "A sample unit is an individual member (e.g., box), selected from a population (e.g., boxes on a consignment), that is inspected.",
+    },
+    {
+        "group": "Consignments",
+        "term": "Sample units per inspection unit",
+        "definition": "The number of sample units associated with a single inspection unit.",
     },
     {
         "group": "Consignments",
         "term": "Plants per sample unit",
-        "definition": "How many plants each sample unit represents.",
+        "definition": "How many plants are within each sample unit.",
     },
     {
         "group": "Consignments",
         "term": "RBS dataset",
-        "definition": "The saved CSV output used by downstream pages for consignment, policy, and scenario workflows.",
+        "definition": "The saved CSV output used by downstream pages for consignment, policy, and scenario workflows.", # Joe - I'll need your help on better describing what this actually is
+    },
+    {
+        "group": "Contamination",
+        "term": "Contaminated",
+        "definition": "Whether an item (e.g., plant, sampling unit) had at least one pest, pathogen, or other contaminate.",
     },
     {
         "group": "Contamination",
@@ -90,23 +100,23 @@ GLOSSARY_TERMS = [
     },
     {
         "group": "Contamination",
-        "term": "Parameter set name",
+        "term": "Contamination parameter set name",
         "definition": "The name assigned to a saved contamination parameter set.",
     },
     {
         "group": "Contamination",
         "term": "Average contamination rate",
-        "definition": "The contamination rate expressed as a percentage.",
+        "definition": "Given an uncertain contamination rate, the mean of the distribution describing the contamination rate.",
     },
     {
         "group": "Contamination",
         "term": "Alpha",
-        "definition": "A beta-binomial shape parameter that helps control contamination probability.",
+        "definition": "A beta-binomial shape parameter that helps control contamination rate.",
     },
     {
         "group": "Contamination",
         "term": "Beta",
-        "definition": "The beta-binomial shape parameter paired with alpha.",
+        "definition": "The beta-binomial shape parameter paired with alpha, representing the uncertainty about the contamination rate.",
     },
     {
         "group": "Contamination",
@@ -116,72 +126,72 @@ GLOSSARY_TERMS = [
     {
         "group": "Contamination",
         "term": "Beta-binomial",
-        "definition": "The probability distribution used in the app to model contamination counts.",
+        "definition": "The probability distribution used in the app to model uncertain contamination rates.",
     },
     {
         "group": "Contamination",
-        "term": "Beta-binomial PDF",
+        "term": "Beta-binomial Probability Density Function (PDF)",
         "definition": "The chart that visualizes the fitted or saved beta-binomial contamination distribution.",
     },
     {
         "group": "Contamination",
-        "term": "Saved contamination parameter sets",
-        "definition": "Stored contamination definitions written to the temporary JSON parameter store.",
+        "term": "Saved contamination parameter sets", # Is this necessary? I don't see it on the pages & we've already defined a parameter set
+        "definition": "Stored contamination definitions written to the temporary JSON parameter store.", # Is it really temporary? If I relaunch the app, will they be there?
     },
     {
         "group": "Compliance",
         "term": "RBS compliance policy",
-        "definition": "A saved policy file that maps feature combinations to compliance behavior used downstream.",
+        "definition": "A policy that maps feature combinations of risk units to compliance levels.",
     },
     {
         "group": "Compliance",
         "term": "Compliance level upload",
-        "definition": "The CSV that defines which compliance category applies to each policy combination.",
+        "definition": "A CSV that defines an RBS compliance policy.",
     },
     {
         "group": "Compliance",
         "term": "Detection/confidence mapping",
-        "definition": "The CSV that maps compliance categories to detection and confidence values.",
+        "definition": "The CSV that maps compliance levels to detection and confidence values used in hypergeometric sampling.",
     },
     {
         "group": "Compliance",
         "term": "Feature columns",
-        "definition": "Columns from the source data used to build compliance-policy rows.",
+        "definition": "Attributes of risk units used to determine their compliance level.",
     },
     {
         "group": "Compliance",
         "term": "Compliance level",
-        "definition": "The policy category assigned to generated rows, typically Low, Medium, or High.",
+        "definition": "The policy category assigned to risk units, typically Poor, Low, Medium, or High.",
     },
     {
         "group": "Compliance",
         "term": "Detection level",
-        "definition": "A numeric value used by the inspection logic to represent detection strength.",
+        "definition": "The smallest proportion of contaminated items in a finite lot that would be expected to be detected by the sampling plan.",
     },
     {
         "group": "Compliance",
         "term": "Confidence level",
-        "definition": "A numeric value used by the inspection logic to represent confidence.",
+        "definition": "The probability that the sampling plan will detect contamination when contamination is present at the detection level.",
     },
     {
         "group": "Compliance",
-        "term": "Values for <column>",
-        "definition": "The allowed values selected for a chosen feature column when manually building a policy.",
+        "term": "Values for <feature>",
+        "definition": "The allowed values selected for a chosen feature when manually building a policy.",
     },
     {
         "group": "Scenarios And Experiments",
         "term": "Experiment package",
-        "definition": "A saved bundle of scenario rows and copied input files stored under tmp/experiments.",
+        "definition": "A bundle of scenario rows and associated input files/parameters.",
     },
     {
         "group": "Scenarios And Experiments",
-        "term": "Experiment set",
+        "term": "Experiment set", # It is not clear to me if/how this is different than the experiment package
         "definition": "The named folder that contains one saved experiment package.",
     },
     {
         "group": "Scenarios And Experiments",
         "term": "Scenario table",
-        "definition": "The CSV file containing the scenario rows for a saved experiment package.",
+        "definition": "A table describing the scenario rows for a saved experiment package.",
     },
     {
         "group": "Scenarios And Experiments",
@@ -195,20 +205,14 @@ GLOSSARY_TERMS = [
     },
     {
         "group": "Scenarios And Experiments",
-        "term": "Contamination parameter set",
-        "definition": "The saved contamination settings selected for a scenario or run.",
-    },
-    {
-        "group": "Scenarios And Experiments",
-        "term": "Consignment (RBS) file",
-        "definition": "The consignment CSV used as the input file for a scenario.",
-    },
-    {
-        "group": "Scenarios And Experiments",
         "term": "Files available",
-        "definition": "The inventory of selectable files currently available for building scenarios.",
+        "definition": "The inventory of selectable datasets/parameter sets currently available for building scenarios.",
     },
     {
+        "group": "Simulation",
+        "term": "Action",
+        "definition": "Action is taken when an actionable contaminate and/or pest was identified within the sampling units.",
+    },{
         "group": "Simulation",
         "term": "Execution options",
         "definition": "The sidebar section where you choose replications and the experiment package to run.",
@@ -216,7 +220,7 @@ GLOSSARY_TERMS = [
     {
         "group": "Simulation",
         "term": "Simulation replications",
-        "definition": "The number of times each scenario is rerun to estimate variation.",
+        "definition": "the number of times the same scenario is run to produce stable, reliable results despite randomness.",
     },
     {
         "group": "Simulation",
@@ -231,42 +235,42 @@ GLOSSARY_TERMS = [
     {
         "group": "Simulation",
         "term": "Run summary",
-        "definition": "The KPI section summarizing scenarios, replications, shipments, inspections, and totals.",
+        "definition": "The section summarizing performance across scenarios, replications, shipments, inspections, and totals.",
     },
     {
         "group": "Simulation",
-        "term": "Shipments per replication",
+        "term": "Shipments per replication", # Why use the term shipments here?
         "definition": "The number of consignments processed in each replication.",
     },
     {
         "group": "Simulation",
         "term": "Simulation summary view",
-        "definition": "The control that switches the results display between mean, median, or one replication.",
+        "definition": "The control that switches the results to display either mean across replications, median across replications, or a single selected replication.",
     },
     {
         "group": "Simulation Results",
         "term": "Slippage",
-        "definition": "In this app, contaminated units that evade detection rather than a generic loss metric.",
+        "definition": "Contaminated units (e.g., plants, sampling units) that evade detection.",
     },
     {
         "group": "Simulation Results",
-        "term": "Slippage Level",
-        "definition": "Results showing missed contaminated units at the consignment, inspection, sample, and plant levels.",
+        "term": "Slippage Level Results",
+        "definition": "Results showing missed contaminated units at the consignment, inspection, sample, and plant levels.", # Joe - I am going to need some help here. It is not clear to me what I am looking at. Doesn't seem to match description.
     },
     {
         "group": "Simulation Results",
-        "term": "Action Level",
-        "definition": "Results showing intercepted versus slipped outcomes by level.",
+        "term": "Action Level Results", # Does it make sense to name this section something else? Like "Interceptions"?
+        "definition": "Results showing intercepted versus slipped outcomes by level.", 
     },
     {
         "group": "Simulation Results",
-        "term": "Contamination Level",
-        "definition": "Results showing contaminated versus clean counts and percentages by level.",
+        "term": "Contamination Level Results",
+        "definition": "Results showing contaminated versus clean counts and percentages by level.", # Joe - I am going to need some help here. It is not clear to me what I am looking at
     },
     {
         "group": "Simulation Results",
-        "term": "Inspection Workload Level",
-        "definition": "Results showing inspection workload and completion metrics.",
+        "term": "Inspection Workload Level Results",
+        "definition": "Results showing inspection workload and completion metrics.", # Joe - I am going to need some help here. It is not clear to me what I am looking at
     },
     {
         "group": "Simulation Results",
@@ -276,22 +280,37 @@ GLOSSARY_TERMS = [
     {
         "group": "Simulation Results",
         "term": "Slipped",
-        "definition": "Contaminated units not detected by the inspection process at the reported level.",
+        "definition": "Contaminated units not detected by the inspection process at the reported level, representing slippage.",
+    },
+    {
+        "group": "Simulation Results",
+        "term": "95% Interval",
+        "definition": "A 95% confidence interval for the mean of the metric of interest; computed assuming a normal distribution.",
+    },
+    {
+        "group": "Simulation Results",
+        "term": "lower",
+        "definition": "The minimum observed value across all replications", # Joe - is this correct?
+    },
+    {
+        "group": "Simulation Results",
+        "term": "upper",
+        "definition": "The maximum observed value across all replications", # Joe - is this correct?
+    },
+    {
+        "group": "Simulation Results",
+        "term": "Workload",
+        "definition": "The number of items inspected.", 
     },
     {
         "group": "App Notes",
         "term": "RBS",
-        "definition": "An app-specific acronym used throughout the consignment, compliance, and scenario workflow. The code uses the acronym but does not expand it.",
+        "definition": "Risk-based Sampling",
     },
     {
         "group": "App Notes",
         "term": "PIS",
-        "definition": "An app-specific acronym used for input and workflow labels. The code uses the acronym but does not expand it.",
-    },
-    {
-        "group": "App Notes",
-        "term": "Slippage UI state",
-        "definition": "The shared session-state container that tracks paths, options, results, and loaded data across pages.",
+        "definition": "Plant Inspection Station",
     },
 ]
 
