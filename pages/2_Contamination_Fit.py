@@ -648,7 +648,7 @@ with assign_tab:
 
         st.write("")
         render_labeled_help(
-            "% Confidence in Specified Contamination Rate",
+            "% Confidence in Specified Contamination Rate", # Is this the correct term to use? If I specify 100% confidence, the distribution does not collapse to have zero confidence
             "(0% = No Confidence, 100% = Full Confidence)",
         )
 
