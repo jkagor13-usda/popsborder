@@ -1347,7 +1347,7 @@ class PISSimData:
                 # 'CONTAMINATED_UNITS_FOUND': inspection_result.contaminated_sample_units_completion,
             }
 
-            # Add to collections (efficient batch approach)
+            # Add to collections (efficient for batch processing)
             self.rbs_records.append(rbs_record)
 
 
