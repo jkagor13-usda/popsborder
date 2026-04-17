@@ -85,6 +85,7 @@ def map_group_to_shortest_name(
 
 def create_engineered_features(
     synth_data: pd.DataFrame = None,
+    dt_train: pd.DataFrame =None,
     producer_group_mapping: pd.DataFrame=None,
 ) -> pd.DataFrame:
 
@@ -101,6 +102,7 @@ def create_engineered_features(
     print(f'      Creating PRODUCER_GROUP_TOP feature')
     synth_data = creator.generate_producer_top_strata_features(
         df=synth_data,
+        dt_train=dt_train,
         max_strat_count=50,
         min_action_rate=0.02,
         min_records=5,
@@ -110,6 +112,7 @@ def create_engineered_features(
     print(f'      Creating IMPORTER_NAME_TOP feature')
     synth_data = creator.generate_importer_top_strata_features(
         df=synth_data,
+        dt_train=dt_train,
         max_strat_count=50,
         min_action_rate=0.02,
         min_records=5,
