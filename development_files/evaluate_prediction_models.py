@@ -60,6 +60,8 @@ def main(df1=None):
 
     val_data_path = box_paths.validation_data()
     pis_data_train = val_data_path / 'train.csv'
+    pis_data_train2 = val_data_path / 'training_data_for_test_set.csv'
+
     pis_data_test_path = val_data_path / 'test.csv'
 
     ### Set up data folder and file names
@@ -113,7 +115,7 @@ def main(df1=None):
 
         synthetic_data_generator = SyntheticConsignmentDataGenerator(config=config,
                                                                      producer_group_mapping=producer_group_mapping,
-                                                                     input_data_file=pis_data_test_path)
+                                                                     input_data_file=pis_data_train)
 
         total_time_seconds = time.time() - start
         time_minutes = total_time_seconds / 60
@@ -160,10 +162,17 @@ def main(df1=None):
         # Create features from the R script using the R wrapper
         creator = RVariableCreator()
 
+        # Read in training data used to create producer and importer top variables
+        dt_train = pd.read_csv(pis_data_train2)
+
         print(f'  Cleaning (and grouping where applicable) Categorical Names')
         print(f'      Cleaning Producer Name')
         synth_data['PRODUCER_NAME_RAW'] = synth_data['PRODUCER_NAME']
         synth_data['PRODUCER_NAME1'] = creator.batch_basic_text_preproc(text_fields=synth_data['PRODUCER_NAME_RAW'])
+
+        # # Clean producer name for training data
+        # dt_train['PRODUCER_NAME_RAW'] = dt_train['PRODUCER_NAME']
+        # dt_train['PRODUCER_NAME1'] = creator.batch_basic_text_preproc(text_fields=dt_train['PRODUCER_NAME_RAW'])
 
         producer_group_mapping = producer_group_mapping.rename(
             columns={"PRODUCER_NAME": "name", "grouping": "group"}
@@ -183,6 +192,12 @@ def main(df1=None):
         # Update the IMPORTER_NAME column with the cleaned version.
         synth_data['IMPORTER_NAME1'] = creator.batch_basic_text_preproc(synth_data['IMPORTER_NAME_RAW'])
 
+        # # Create a raw IMPORTER_NAME column with the original importer name
+        # dt_train['IMPORTER_NAME_RAW'] = dt_train['IMPORTER_NAME']
+        #
+        # # Update the IMPORTER_NAME column with the cleaned version.
+        # dt_train['IMPORTER_NAME1'] = creator.batch_basic_text_preproc(dt_train['IMPORTER_NAME_RAW'])
+
         # Reconstruct risk units based on configuration specification
         synth_data['PRODUCER_NAME'] = synth_data['PRODUCER_GROUP_NAME1']
         synth_data['IMPORTER_NAME'] = synth_data['IMPORTER_NAME1']
@@ -191,19 +206,20 @@ def main(df1=None):
         # Pull in the VariableCreator object to use R code to create engineered columns based on created risk units
         synth_data = create_engineered_features(
             synth_data=synth_data,
+            dt_train=dt_train,
             producer_group_mapping=producer_group_mapping
         )
 
         # Create the actual producer name that will be used to reference in the compliance table.
-        synth_data = map_group_to_shortest_name(
-            synth_data=synth_data,
-            group_col="PRODUCER_GROUP_TOP",
-            producer_group_mapping=producer_group_mapping,
-            output_col="PRODUCER_GROUP_NAME_SHORT",  # or None to overwrite
-        )
+        # synth_data = map_group_to_shortest_name(
+        #     synth_data=synth_data,
+        #     group_col="PRODUCER_GROUP_TOP",
+        #     producer_group_mapping=producer_group_mapping,
+        #     output_col="PRODUCER_GROUP_NAME_SHORT",  # or None to overwrite
+        # )
 
         # Create a producer_group column
-        synth_data['producer_group'] = synth_data['PRODUCER_GROUP_NAME_SHORT']
+        synth_data['producer_group'] = synth_data['PRODUCER_GROUP_TOP']
 
         # #synth_data.to_parquet(data_dir / "Synthetic_Base_TEST.parquet", compression='snappy', index=False)
         # synth_data.to_parquet(data_dir / "Synthetic_Base.parquet", compression='snappy', index=False)
