@@ -125,12 +125,6 @@ write_result_dfs <- function(result, use_parquet, temp_dir = NULL) {
 ### ===== Helper Functions ===== ##
 ###################################
 
-# Simple fcoalesce function to mimic the data.table fcoalesce function
-fcoalesce <- function(x, y) {
-  ifelse(is.na(x), y, x)
-}
-
-
 run_fixed_preprocessing <- function( dat, rbs.start.date, rbs.end.date )
 {
   #
@@ -164,9 +158,9 @@ remove_extra_chars <- function(suffix_string, prefix_string, text) {
 }
 
 top_strata_fit <- function(df, tbl_col,
-                           maxStratCount = 50,
-                           minActionRate = 0.02,
-                           minRecords    = 5,
+                           maxStratCount = NULL,
+                           minActionRate = NULL,
+                           minRecords    = NULL,
                            rank_by = c("action_rate", "count", "action_count")) {
 
   rank_by <- match.arg(rank_by)
@@ -177,48 +171,31 @@ top_strata_fit <- function(df, tbl_col,
   x <- df[[tbl_col]]
   y <- as.integer(df[["action"]])
 
-  tmp <- data.frame(
-    level = as.character(x),
-    action = y,
-    stringsAsFactors = FALSE
-  )
-
-  agg <- aggregate(
-    action ~ level,
-    data = tmp,
-    FUN = function(z) c(n = length(z), sum = sum(z))
-  )
-
+  tmp <- data.frame(level = as.character(x), action = y, stringsAsFactors = FALSE)
+  agg <- aggregate(action ~ level, data = tmp, FUN = function(z) c(n = length(z), sum = sum(z)))
   agg$count <- agg$action[, "n"]
   agg$action_sum <- agg$action[, "sum"]
   agg$action <- NULL
   agg$action_rate <- agg$action_sum / agg$count
 
-  if (!is.na(minActionRate) && minActionRate >= 0) {
-    agg <- agg[agg$action_rate >= minActionRate, , drop = FALSE]
-  }
+  if (!is.null(minActionRate)) agg <- agg[agg$action_rate >= minActionRate, , drop = FALSE]
+  if (!is.null(minRecords))    agg <- agg[agg$count >= minRecords, , drop = FALSE]
 
-  if (!is.na(minRecords) && minRecords >= 0) {
-    agg <- agg[agg$count >= minRecords, , drop = FALSE]
-  }
-
-  if (!is.na(maxStratCount) && maxStratCount >= 0) {
+  if (!is.null(maxStratCount)) {
     if (rank_by == "action_rate") {
       agg <- agg[order(-agg$action_rate), , drop = FALSE]
     } else if (rank_by == "count") {
       agg <- agg[order(-agg$count), , drop = FALSE]
-    } else {  # action_count
+    } else { # action_count (matches your old function best)
       agg <- agg[order(-agg$action_sum, -agg$count, -agg$action_rate), , drop = FALSE]
     }
-
     agg <- head(agg, maxStratCount)
   }
 
-  list(
-    keep_levels = agg$level,
-    summary = agg
-  )
+  list(keep_levels = agg$level, summary = agg)
 }
+
+
 
 top_strata_apply <- function(df, tbl_col, keep_levels,
                              ref = "Reference", missing = "missing",
@@ -230,6 +207,7 @@ top_strata_apply <- function(df, tbl_col, keep_levels,
   x_chr[is.na(x_chr) | x_chr == ""] <- missing
   x_chr[!(x_chr %in% keep_levels)] <- ref
 
+  # Make factor with consistent levels across datasets
   if (is.null(train_levels)) {
     levs <- sort(unique(c(keep_levels, ref, missing)))
   } else {
@@ -238,6 +216,72 @@ top_strata_apply <- function(df, tbl_col, keep_levels,
 
   factor(x_chr, levels = levs)
 }
+
+
+get_name_groups <- function(x) {
+  # entity resolution function to replace names from a table with group names.
+  #  The function replaces each name with the shortest name in its group.
+  #  The function should normally be called after basic preprocessing such as
+  #   making names lower case, removing punctuation as in the function
+  #   'basic_text_preproc()'
+  #  The resultant group variable is to be used as a model predictor in place
+  #    of the original set of ungrouped names
+  # Input: The argument x is a 2-column matrix, with names in 1st column,
+  #         code numbers in 2nd column
+  # Output: a 3-column data frame whose first two columns are the input columns,
+  #         and the 3rd column is group names to be used for modeling
+  # For the code numbers, positive numbers are group numbers. Zero or negative
+  #  numbers indicate that the the corresponding name is not grouped with others
+  #### Format x as a data frame with fixed column names
+  x <- as.data.frame(x, stringsAsFactors = FALSE)
+  if (ncol(x) != 2) stop("Input must have exactly 2 columns.")
+  names(x) <- c("str", "grp")
+  x$str <- as.character(x$str)
+  x$grp <- as.numeric(x$grp)
+  setDT(x)
+  #### Function to find the shortest name in each group:
+  pick_shortest <- function(v) {
+    v <- as.character(v)
+    v <- v[!is.na(v)]
+    if (length(v) == 0) return(NA_character_)
+    m <- min(nchar(v))
+    sort(v[nchar(v) == m])[1]
+  }
+  #### Make corrections for repeated negative group numbers that should be grouped
+  next_group_nr <- max(x$grp) + 1
+  group_nr_counts <- x[grp<0, .(grp_count = .N), by = grp][grp_count > 1]
+  negative_groups_to_merge <- group_nr_counts |> pull(grp)
+  for (j in 1:length(negative_groups_to_merge)) {
+    x[grp == negative_groups_to_merge[j], grp := next_group_nr]
+    next_group_nr <- next_group_nr + 1
+  }
+  #### Apply pick_shortest() to compute group names for positive group numbers
+  group_name <- tapply(
+    x$str[x$grp > 0],
+    x$grp[x$grp > 0],
+    pick_shortest
+  )
+  #### Default: group name is the original string
+  x$group_name <- x$str
+
+  #### Replace only where group number is positive
+  positive <- which(x$grp > 0)
+  x$group_name[positive] <- unname(group_name[as.character(x$grp[positive])])
+
+  # Sort by original strings
+  o <- order(x$str, na.last = TRUE)
+  out <- data.frame(
+    string = x$str[o],
+    grp    = x$grp[o],
+    group  = x$group_name[o],
+    stringsAsFactors = FALSE
+  )
+  setDT(out)
+  colnames(out) <- c("name", "group number", "group")
+  out
+}
+
+
 
 ###################################################
 ### ===== Main Functions Called by Python ===== ###
@@ -285,47 +329,12 @@ basic_text_preproc <- function(text_field, suffix_string = NULL, prefix_string =
 
 # ===== Producer Mapping ===== #
 entity_resolution <- function(dt, entity_resolution_lookup_table) {
-  # Basic argument checks
-  if (is.null(dt)) {
-    stop("dt argument is required")
-  }
-  if (!is.data.frame(dt)) {
-    stop("dt must be a data.frame")
-  }
-  if (is.null(entity_resolution_lookup_table)) {
-    stop("entity_resolution_lookup_table argument is required")
-  }
-  if (!is.data.frame(entity_resolution_lookup_table)) {
-    stop("entity_resolution_lookup_table must be a data.frame")
-  }
 
-  # Required columns in dt
-  required_dt_cols <- c(
-    "PRODUCER_NAME",
-    "PRODUCER_NAME1",
-    "QUANTITY",
-    "COUNTRY_OF_ORIGIN_NAME",
-    "PROPAGATIVE_MATERIAL_TYPE",
-    "INSPECTION_NUMBER"
-  )
-  missing_dt <- setdiff(required_dt_cols, names(dt))
-  if (length(missing_dt) > 0) {
-    stop(paste("dt is missing required columns:", paste(missing_dt, collapse = ", ")))
-  }
-
-  # Required columns in lookup
-  required_lookup_cols <- c("name", "group")
-  missing_lookup <- setdiff(required_lookup_cols, names(entity_resolution_lookup_table))
-  if (length(missing_lookup) > 0) {
-    stop(paste(
-      "entity_resolution_lookup_table is missing required columns:",
-      paste(missing_lookup, collapse = ", ")
-    ))
-  }
-
-  # Convert to data.table
+    # Convert to data.table
   dt <- as.data.table(dt)
   entity_resolution_lookup_table <- as.data.table(entity_resolution_lookup_table)
+
+  entity_resolution_lookup_table <- get_name_groups(entity_resolution_lookup_table[, .(name, group)])
 
   # Left join and create grouped user names
   dt[
@@ -334,48 +343,15 @@ entity_resolution <- function(dt, entity_resolution_lookup_table) {
     on = .(PRODUCER_NAME = name)
   ]
 
-  # Choose producer group with largest quantity per modeling unit
-  tot <- dt[, .(
-    total_quantity = sum(QUANTITY, na.rm = TRUE),
-    nr_rows = .N
-  ),
-  by = .(
-    COUNTRY_OF_ORIGIN_NAME,
-    PROPAGATIVE_MATERIAL_TYPE,
-    INSPECTION_NUMBER,
-    PRODUCER_GROUP_NAME
-  )]
-
+  # choose producer name with largest quantity per modeling unit
+  tot <- dt[, .(total_quantity = sum(QUANTITY), nr_rows = .N),
+                      by = .(COUNTRY_OF_ORIGIN_NAME, PROPAGATIVE_MATERIAL_TYPE, INSPECTION_NUMBER, PRODUCER_GROUP_NAME)]
   best1 <- tot[order(-total_quantity, -nr_rows), .SD[1],
-               by = .(
-                 COUNTRY_OF_ORIGIN_NAME,
-                 PROPAGATIVE_MATERIAL_TYPE,
-                 INSPECTION_NUMBER
-               )]
-
-  best1 <- best1[, .(
-    COUNTRY_OF_ORIGIN_NAME,
-    PROPAGATIVE_MATERIAL_TYPE,
-    INSPECTION_NUMBER,
-    PRODUCER_GROUP_NAME_best = PRODUCER_GROUP_NAME
-  )]
-
-  dt <- best1[dt, on = .(
-    COUNTRY_OF_ORIGIN_NAME,
-    PROPAGATIVE_MATERIAL_TYPE,
-    INSPECTION_NUMBER
-  )]
-
+               by = .(COUNTRY_OF_ORIGIN_NAME, PROPAGATIVE_MATERIAL_TYPE, INSPECTION_NUMBER)]
+  best1 <- best1[, .(COUNTRY_OF_ORIGIN_NAME, PROPAGATIVE_MATERIAL_TYPE, INSPECTION_NUMBER,
+                     PRODUCER_GROUP_NAME_best = PRODUCER_GROUP_NAME)]
+  dt <- best1[dt, on = .(COUNTRY_OF_ORIGIN_NAME, PROPAGATIVE_MATERIAL_TYPE, INSPECTION_NUMBER)]
   dt[, PRODUCER_GROUP_NAME1 := PRODUCER_GROUP_NAME_best][, PRODUCER_GROUP_NAME_best := NULL]
-
-  # Convert back to data.frame, avoid factors
-  dt <- as.data.frame(dt, stringsAsFactors = FALSE)
-  if (is.factor(dt$PRODUCER_GROUP_NAME)) {
-    dt$PRODUCER_GROUP_NAME <- as.character(dt$PRODUCER_GROUP_NAME)
-  }
-  if (is.factor(dt$PRODUCER_GROUP_NAME1)) {
-    dt$PRODUCER_GROUP_NAME1 <- as.character(dt$PRODUCER_GROUP_NAME1)
-  }
 
   list(result_df = dt)
 }
@@ -488,26 +464,35 @@ generate_quantity_binaries <- function(df,
 
 generate_producer_top_strata_features <- function(
   df,
-  maxStratCount = -1,
-  minActionRate = -1,
-  minRecords = -1
+  dt_train,
+  maxStratCount = 50,
+  minActionRate = 0.02,
+  minRecords = 5
 ) {
-  if (is.null(df)) {
-    stop("df argument is required")
-  }
-
-  if (!is.data.frame(df)) {
-    stop("df must be a data.frame")
-  }
-
-  required_cols <- c("action", "PRODUCER_GROUP_NAME1")
-  missing_cols <- setdiff(required_cols, names(df))
-  if (length(missing_cols) > 0) {
-    stop(paste0("Missing required columns: ", paste(missing_cols, collapse = ", ")))
-  }
+#   if (is.null(df)) {
+#     stop("df argument is required")
+#   }
+#
+#   if (!is.data.frame(df)) {
+#     stop("df must be a data.frame")
+#   }
+#
+#   if (is.null(dt_train)) {
+#     stop("dt_train argument is required")
+#   }
+#
+#   if (!is.data.frame(dt_train)) {
+#     stop("dt_train must be a data.frame")
+#   }
+#
+#   required_cols <- c("action", "PRODUCER_GROUP_NAME1")
+#   missing_cols <- setdiff(required_cols, names(df))
+#   if (length(missing_cols) > 0) {
+#     stop(paste0("Missing required columns: ", paste(missing_cols, collapse = ", ")))
+#   }
 
   fit_prod <- top_strata_fit(
-    df,
+    dt_train,
     tbl_col = "PRODUCER_GROUP_NAME1",
     maxStratCount = maxStratCount,
     minActionRate = minActionRate,
@@ -515,13 +500,21 @@ generate_producer_top_strata_features <- function(
     rank_by = "count"
   )
 
-  df$PRODUCER_GROUP_TOP <- top_strata_apply(
-    df,
+  dt_train$PRODUCER_GROUP_TOP <- top_strata_apply(
+    dt_train,
     "PRODUCER_GROUP_NAME1",
     keep_levels = fit_prod$keep_levels
   )
+  prod_levels <- levels(dt_train$PRODUCER_GROUP_TOP)
 
-  df$PRODUCER_GROUP_TOP <- as.character(df$PRODUCER_GROUP_TOP)
+  df$PRODUCER_GROUP_TOP <- top_strata_apply(
+    df,
+    "PRODUCER_GROUP_NAME1",
+    keep_levels = fit_prod$keep_levels,
+    train_levels = prod_levels
+  )
+
+  #df$PRODUCER_GROUP_TOP <- as.character(df$PRODUCER_GROUP_TOP)
 
   list(result_df = df)
 }
@@ -531,9 +524,10 @@ generate_producer_top_strata_features <- function(
 
 generate_importer_top_strata_features <- function(
   df,
-  maxStratCount = -1,
-  minActionRate = -1,
-  minRecords = -1
+  dt_train,
+  maxStratCount = 50,
+  minActionRate = 0.02,
+  minRecords = 5
 ) {
   if (is.null(df)) {
     stop("df argument is required")
@@ -543,6 +537,14 @@ generate_importer_top_strata_features <- function(
     stop("df must be a data.frame")
   }
 
+  if (is.null(dt_train)) {
+    stop("dt_train argument is required")
+  }
+
+  if (!is.data.frame(dt_train)) {
+    stop("dt_train must be a data.frame")
+  }
+
   required_cols <- c("action", "IMPORTER_NAME1")
   missing_cols <- setdiff(required_cols, names(df))
   if (length(missing_cols) > 0) {
@@ -550,18 +552,24 @@ generate_importer_top_strata_features <- function(
   }
 
   fit_import <- top_strata_fit(
-    df,
+    dt_train,
     tbl_col = "IMPORTER_NAME1",
     maxStratCount = maxStratCount,
     minActionRate = minActionRate,
     minRecords = minRecords,
     rank_by = "count"
   )
-
+  dt_train$IMPORTER_NAME_TOP <- top_strata_apply(
+    dt_train,
+    "IMPORTER_NAME1",
+    keep_levels = fit_import$keep_levels
+  )
+  import_levels <- levels(dt_train$IMPORTER_NAME_TOP)
   df$IMPORTER_NAME_TOP <- top_strata_apply(
     df,
     "IMPORTER_NAME1",
-    keep_levels = fit_import$keep_levels
+    keep_levels = fit_import$keep_levels,
+    train_levels = import_levels
   )
 
   df$IMPORTER_NAME_TOP <- as.character(df$IMPORTER_NAME_TOP)
