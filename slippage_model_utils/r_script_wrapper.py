@@ -997,9 +997,10 @@ class RVariableCreator:
     def generate_producer_top_strata_features(
         self,
         df: pd.DataFrame,
-        max_strat_count: int = -1,
-        min_action_rate: float = -1.0,
-        min_records: int = -1,
+        dt_train: pd.DataFrame,
+        max_strat_count: int = 50,
+        min_action_rate: float = 0.02,
+        min_records: int = 5,
         use_parquet: bool = True,
         timeout_sec: float = 120.0,
     ) -> pd.DataFrame:
@@ -1011,11 +1012,16 @@ class RVariableCreator:
         """
         required = {"action", "PRODUCER_GROUP_NAME1"}
         missing = required - set(df.columns)
+        missing_train = required - set(dt_train.columns)
         if missing:
             raise ValueError(f"DataFrame missing required columns: {missing}")
 
+        if missing_train:
+            raise ValueError(f"Training DataFrame missing required columns: {missing_train}")
+
         args: Dict[str, Any] = {
             "df": df,
+            "dt_train": dt_train,
             "maxStratCount": int(max_strat_count),
             "minActionRate": float(min_action_rate),
             "minRecords": int(min_records),
@@ -1043,9 +1049,10 @@ class RVariableCreator:
     def generate_importer_top_strata_features(
         self,
         df: pd.DataFrame,
-        max_strat_count: int = -1,
-        min_action_rate: float = -1.0,
-        min_records: int = -1,
+        dt_train: pd.DataFrame,
+        max_strat_count: int = 50,
+        min_action_rate: float = 0.02,
+        min_records: int = 5,
         use_parquet: bool = True,
         timeout_sec: float = 120.0,
     ) -> pd.DataFrame:
@@ -1057,11 +1064,16 @@ class RVariableCreator:
         """
         required = {"action", "IMPORTER_NAME1"}
         missing = required - set(df.columns)
+        missing_train = required - set(dt_train.columns)
         if missing:
             raise ValueError(f"DataFrame missing required columns: {missing}")
 
+        if missing_train:
+            raise ValueError(f"Training DataFrame missing required columns: {missing_train}")
+
         args: Dict[str, Any] = {
             "df": df,
+            "dt_train": dt_train,
             "maxStratCount": int(max_strat_count),
             "minActionRate": float(min_action_rate),
             "minRecords": int(min_records),
