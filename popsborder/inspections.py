@@ -137,6 +137,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
+from numpy.random import Generator
 
 from .inputs import get_validated_effectiveness
 from slippage_model_utils.UnitAttributes import RiskUnitConfig
@@ -484,12 +485,17 @@ def sample_n(config, consignment):
     return n_units_to_inspect
 
 
-def sample_rbs(config, consignment):
+def sample_rbs(
+        config,
+        consignment,
+        rng: Generator = None,
+):
     """Set sample size to sample units from consignment using hypergeometric/detection 
     level strategy based on compliance levels. Return number of units to inspect.
 
     :param config: Configuration to be used
     :param consignment: Consignment to be inspected
+    :param rng: Random number generator
     """
 
     unit = config["inspection"]["unit"]
@@ -676,13 +682,19 @@ def select_random_indexes(unit, consignment, n_units_to_inspect):
     return indexes_to_inspect
 
 
-def select_random_indexes_rbs(unit, consignment, n_units_to_inspect):
+def select_random_indexes_rbs(
+        unit,
+        consignment,
+        n_units_to_inspect,
+        rng: Generator,
+):
     """Select units (indexes) from consignment based on sample size and
     random selection strategy.
 
     :param unit: Unit to be used for inspection (inspection_unit or sample_unit)
     :param consignment: Consignment to be inspected
     :param n_units_to_inspect: Number of units to inspect defined in sample functions.
+    :param rng: Random number generator
     """
     
     indexes_to_inspect = []
@@ -710,7 +722,9 @@ def select_random_indexes_rbs(unit, consignment, n_units_to_inspect):
                 requested = max(0, min(requested, len(sample_pool)))
                 if requested == 0:
                     continue
-                selected_sample_unit_ids.extend(random.sample(sample_pool, requested))
+                #selected_sample_unit_ids.extend(random.sample(sample_pool, requested))
+                selected = rng.choice(sample_pool, size=requested, replace=False)
+                selected_sample_unit_ids.extend(selected)
 
             # Deduplicate to avoid double-inspection if sample units appear in multiple risk groups.
             for sample_unit_id in sorted(set(selected_sample_unit_ids)):
@@ -726,9 +740,7 @@ def select_random_indexes_rbs(unit, consignment, n_units_to_inspect):
                 population = len(inspection_unit.included_unit_objects)
                 requested = n_units_to_inspect.get(inspection_unit_counter, 0)
                 requested = max(0, min(requested, population))
-                indexes_to_inspect_temp = random.sample(
-                    list(range(population)), requested
-                )
+                indexes_to_inspect_temp = list(rng.choice(list(range(population)), size=requested, replace=False))
                 inspection_units_to_inspect[inspection_unit_counter] = indexes_to_inspect_temp
                 indexes_to_inspect_temp = [x + current_idx for x in indexes_to_inspect_temp]
                 current_idx += population
@@ -790,12 +802,18 @@ def select_cluster_indexes(config, consignment, n_units_to_inspect):
     return indexes_to_inspect
 
 
-def select_units_to_inspect(config, consignment, n_units_to_inspect):
+def select_units_to_inspect(
+        config,
+        consignment,
+        n_units_to_inspect,
+        rng: Generator = None,
+):
     """Select units to inspect based on selection strategy.
 
     :param config: Configuration to be used
     :param consignment: Consignment to be inspected
     :param n_units_to_inspect: Number of units to inspect
+    :param rng: Random number generator
     """
     unit = config["inspection"]["unit"]
     selection_strategy = config["inspection"]["selection_strategy"]
@@ -803,7 +821,7 @@ def select_units_to_inspect(config, consignment, n_units_to_inspect):
 
     if sample_strategy == "rbs":
         if selection_strategy == "random":
-            return select_random_indexes_rbs(unit, consignment, n_units_to_inspect)
+            return select_random_indexes_rbs(unit, consignment, n_units_to_inspect, rng=rng)
         elif selection_strategy == "cluster":
             return select_cluster_indexes(config, consignment, n_units_to_inspect)
         elif selection_strategy == "convenience":
@@ -828,7 +846,13 @@ def inspect_sample_unit(sample_unit, effectiveness):
     return random.random() < effectiveness
 
 
-def inspect(config, consignment, n_units_to_inspect, detailed):
+def inspect(
+        config,
+        consignment,
+        n_units_to_inspect,
+        detailed,
+        rng: Generator = None,
+):
     """Inspect selected units using both end strategies (to detection, to completion)
     Return number of inspection_units opened, sample_units inspected, and contaminated sample_units found for
     each end strategy.
@@ -836,6 +860,8 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     :param config: Configuration to be used
     :param consignment: Consignment to be inspected
     :param n_units_to_inspect: Number of units to inspect defined by sample functions.
+    :param detailed: Boolean flag to indicate if details are wanted to be provided
+    :param rng: Random number generator
     """
     # Disabling warnings, possible future TODO is splitting this function.
     # pylint: disable=too-many-locals,too-many-statements
@@ -869,7 +895,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
 
     if sample_strategy == "rbs":
         indexes_to_inspect, inspection_units_to_inspect = select_units_to_inspect(
-            config, consignment, n_units_to_inspect
+            config, consignment, n_units_to_inspect, rng=rng
         )
     else:
         indexes_to_inspect = select_units_to_inspect(
@@ -1121,7 +1147,10 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     return ret
 
 
-def get_sample_function(config):
+def get_sample_function(
+        config,
+        rng: Generator = None,
+):
     """Based on config, return function to sample a consignment."""
     sample_strategy = config["inspection"]["sample_strategy"]
     if sample_strategy == "proportion":
@@ -1147,7 +1176,11 @@ def get_sample_function(config):
     elif sample_strategy == "rbs":
 
         def sample(consignment):
-            return sample_rbs(config=config, consignment=consignment)
+            return sample_rbs(
+                config=config,
+                consignment=consignment,
+                rng=rng
+            )
 
     else:
         raise RuntimeError(f"Unknown sample strategy: {sample_strategy}")

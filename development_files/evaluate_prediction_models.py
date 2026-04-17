@@ -35,13 +35,13 @@ def main(df1=None):
     start = time.time()
     #### Main Input Parameter ######
     # Specify how many consignments you want to generate
-    num_consignments_to_simulate = 3000
+    num_consignments_to_simulate = 100
     # Specify how many replications you want the simulation to execute
-    num_replications = 50
+    num_replications = 2
 
     # Have already generated synthetic consignments you want to use?  Set to True, otherwise set to False (and
     # num_consignments_to_simulate will be generated)
-    synthetic_data_generated = False
+    synthetic_data_generated = True
 
     # Are Clark model parameters cached and saved? True if yes, and False if not
     clark_parameters_cached = True
@@ -99,7 +99,8 @@ def main(df1=None):
 
 
     if synthetic_data_generated:
-        synth_data = pd.read_csv(data_dir / "Synthetic_Base.csv")
+        #synth_data = pd.read_csv(data_dir / "Synthetic_Base.csv")
+        synth_data = pd.read_csv(data_dir / "Synthetic_TEST_100.csv")
         total_time_seconds = time.time() - start
         time_minutes = total_time_seconds / 60
         time_hours = time_minutes / 60
@@ -111,7 +112,7 @@ def main(df1=None):
         config["consignment"]["input_file"]["file_name"] = str(data_dir  / "Synthetic_Base.csv")
     else:
         ### Synthetic data generation
-        historical = True
+        historical = False
 
         synthetic_data_generator = SyntheticConsignmentDataGenerator(config=config,
                                                                      producer_group_mapping=producer_group_mapping,
@@ -132,7 +133,6 @@ def main(df1=None):
             #num_consignments_to_simulate = len(df_pis_data["INSPECTION_NUMBER"].unique())
             #included_inspection_nums = synthetic_data_generator.input_data["INSPECTION_NUMBER"].sample(n=num_consignments_to_simulate)
             #synth_data = synthetic_data_generator.input_data[synthetic_data_generator.input_data["INSPECTION_NUMBER"].isin(included_inspection_nums)]
-            synth_data.loc[:, 'Row_ID'] = 'CR-' + (synth_data.index + 1).astype(str)
             synth_out_path = data_dir / "Historical_PIS_SampleQuantity.csv"
             config["consignment"]["input_file"]["file_name"] = str(synth_out_path)
         else:
@@ -141,14 +141,18 @@ def main(df1=None):
                 n_consignments=num_consignments_to_simulate,
                 sampling_method="sequential"
             )
-            synth_out_path = data_dir / "Synthetic_Base.csv"
-            #synth_out_path = data_dir / "Synthetic_TEST.csv"
+            #synth_out_path = data_dir / "Synthetic_Base.csv"
+            synth_out_path = data_dir / "Synthetic_TEST_100.csv"
             config["consignment"]["input_file"]["file_name"] = str(synth_out_path)
+        synth_data.loc[:, 'Row_ID'] = 'CR-' + (synth_data.index + 1).astype(str)
 
         # synth_data.to_parquet(data_dir / "Synthetic_Base_after_generate.parquet", compression='snappy', index=False)
         # synth_data.to_csv(data_dir / "Synthetic_Base_after_generate.csv")
-        synth_data.to_parquet(data_dir / "Synthetic_Base_after_generate_TEST.parquet", compression='snappy', index=False)
-        synth_data.to_csv(data_dir / "Synthetic_Base_after_generate_TEST.csv")
+        #synth_data.to_parquet(data_dir / "Synthetic_Base_after_generate_TEST.parquet", compression='snappy', index=False)
+        #synth_data.to_csv(data_dir / "Synthetic_Base_after_generate_TEST.csv")
+        synth_data.to_parquet(data_dir / "Synthetic_Base_after_generate_TEST_100.parquet", compression='snappy',
+                              index=False)
+        synth_data.to_csv(data_dir / "Synthetic_Base_after_generate_TEST_100.csv")
         total_time_seconds = time.time() - start
         time_minutes = total_time_seconds / 60
         time_hours = time_minutes / 60
@@ -220,8 +224,9 @@ def main(df1=None):
 
         # Create a producer_group column
         synth_data['producer_group'] = synth_data['PRODUCER_GROUP_TOP']
+        synth_data['IMPORTER_NAME'] = synth_data['IMPORTER_NAME_TOP']
 
-        # #synth_data.to_parquet(data_dir / "Synthetic_Base_TEST.parquet", compression='snappy', index=False)
+        # synth_data.to_parquet(data_dir / "Synthetic_Base_TEST.parquet", compression='snappy', index=False)
         # synth_data.to_parquet(data_dir / "Synthetic_Base.parquet", compression='snappy', index=False)
         synth_data.to_csv(synth_out_path)
 
@@ -246,40 +251,40 @@ def main(df1=None):
     #############################################################
 
     ### Generate clarke inputs via input data
-    inputs_by_quantity = gen_clarke_model_inputs(df_pis_data)
-    #
-    # # Run clarke model
-    res = {}
-    print(f'\nNow Executing Clarke Model Based on Quantities')
-    for (lower, upper), inputs in inputs_by_quantity.items():
-        print(f'   Calculating for Quantity Range:  {(lower, upper)}')
-        res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
-                                        inputs.b,
-                                        inputs.B,
-                                        inputs.Nbar,
-                                        inputs.freq,
-                                        inputs.theta,
-                                        inputs.R,
-                                        inputs.start_val,
-                                        inputs.se)
+    # inputs_by_quantity = gen_clarke_model_inputs(df_pis_data)
+    # #
+    # # # Run clarke model
+    # res = {}
+    # print(f'\nNow Executing Clarke Model Based on Quantities')
+    # for (lower, upper), inputs in inputs_by_quantity.items():
+    #     print(f'   Calculating for Quantity Range:  {(lower, upper)}')
+    #     res[(lower, upper)] = run_clarke_bb_group_model(inputs.ty,
+    #                                     inputs.b,
+    #                                     inputs.B,
+    #                                     inputs.Nbar,
+    #                                     inputs.freq,
+    #                                     inputs.theta,
+    #                                     inputs.R,
+    #                                     inputs.start_val,
+    #                                     inputs.se)
 
     # # Setting values for testing
-    # res = {}
-    # inputs_by_quantity = {}
-    # for key in [(-0.001, 10.0),
-    #             (10.0, 50.0),
-    #             (50.0, 150.0),
-    #             (150.0, 300.0),
-    #             (300.0, 579.0),
-    #             (579.0, 1000.0)]:
-    #     inputs_by_quantity[key] = {'theta': np.inf, 'B': 200}
-    #     res[key] = {
-    #         'alpha': random.uniform(0.01, 0.25),
-    #         "beta": random.uniform(2, 8),
-    #         'mu': 0.0,
-    #         'rho': 0.0,
-    #         'D': 0.0
-    #     }
+    res = {}
+    inputs_by_quantity = {}
+    for key in [(-0.001, 10.0),
+                (10.0, 50.0),
+                (50.0, 150.0),
+                (150.0, 300.0),
+                (300.0, 579.0),
+                (579.0, 1000.0)]:
+        inputs_by_quantity[key] = {'theta': np.inf, 'B': 200}
+        res[key] = {
+            'alpha': random.uniform(0.01, 0.25),
+            "beta": random.uniform(2, 8),
+            'mu': 0.0,
+            'rho': 0.0,
+            'D': 0.0
+        }
 
     print('\nFINAL CLARKE MODEL BETA-BINOMIAL PARAMETERS:')
 
@@ -341,13 +346,13 @@ def main(df1=None):
             scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/mu"] = res[key]['mu']
             scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/rho"] = res[key]['rho']
             scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/D"] = res[key]['D']
-            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[key].theta
-            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = inputs_by_quantity[
-                key].B
-            # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[
-            #     key]['theta']
+            # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[key].theta
             # scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = inputs_by_quantity[
-            #     key]['B']
+            #     key].B
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/theta"] = inputs_by_quantity[
+                key]['theta']
+            scenario[f"contamination/contamination_rate/beta_binomial_parameters/{key}/J"] = inputs_by_quantity[
+                key]['B']
 
     ####################################################################
     ####################################################################
@@ -531,77 +536,6 @@ def main(df1=None):
                         print("✓ All importer names are valid!")
                     else:
                         print("✗ Some importer names are missing from temp_compliance_table")
-
-                # if "prod_group_name" in temp_compliance_table.columns:
-                #     # Find values in synth_data that are NOT in temp_compliance_table
-                #     mask = ~synth_data["producer_group"].isin(temp_compliance_table["prod_group_name"])
-                #
-                #     # Collect the values that will be replaced (unique)
-                #     replaced_values = synth_data.loc[mask, "producer_group"].unique()
-                #
-                #     # Create a DataFrame for these values
-                #     replaced_df = pd.DataFrame(replaced_values, columns=["Replaced_Producer_Group"])
-                #
-                #     # Write to CSV
-                #     replaced_df.to_csv(data_dir / "replaced_producer_group_from_prod_group_name.csv", index=False)
-                #
-                #     # Replace those values with "Reference"
-                #     synth_data.loc[mask, "producer_group"] = "Reference"
-                #
-                #     # Check if ALL values in synth_data are in temp_compliance_table
-                #     all_present = synth_data["producer_group"].isin(temp_compliance_table["prod_group_name"]).all()
-                #
-                #     if all_present:
-                #         print("✓ All producer groups are valid!")
-                #     else:
-                #         print("✗ Some producer groups are missing from temp_compliance_table")
-                # elif "PRODUCER_GROUP_TOP" in temp_compliance_table.columns:
-                #     # Find values in synth_data that are NOT in temp_compliance_table
-                #     mask = ~synth_data["producer_group"].isin(temp_compliance_table["PRODUCER_GROUP_TOP"])
-                #
-                #     # Collect the values that will be replaced (unique)
-                #     replaced_values = synth_data.loc[mask, "producer_group"].unique()
-                #
-                #     # Create a DataFrame for these values
-                #     replaced_df = pd.DataFrame(replaced_values, columns=["Replaced_Producer_Group"])
-                #
-                #     # Write to CSV
-                #     replaced_df.to_csv(data_dir / "replaced_producer_group_from_PRODUCER_GROUP_TOP.csv", index=False)
-                #
-                #     # Replace those values with "Reference"
-                #     synth_data.loc[mask, "producer_group"] = "Reference"
-                #
-                #     # Check if ALL values in synth_data are in temp_compliance_table
-                #     all_present = synth_data["producer_group"].isin(temp_compliance_table["PRODUCER_GROUP_TOP"]).all()
-                #
-                #     if all_present:
-                #         print("✓ All producer groups are valid!")
-                #     else:
-                #         print("✗ Some producer groups are missing from temp_compliance_table")
-                # if "IMPORTER_NAME_TOP" in temp_compliance_table.columns:
-                #     # Find values in synth_data that are NOT in temp_compliance_table
-                #     mask = ~synth_data["IMPORTER_NAME"].isin(temp_compliance_table["IMPORTER_NAME_TOP"])
-                #
-                #     # Collect the replaced rows (both columns)
-                #     replaced_df = synth_data.loc[mask, ["IMPORTER_NAME", "IMPORTER_NAME_RAW"]].drop_duplicates()
-                #
-                #     # Rename columns for clarity
-                #     replaced_df.rename(columns={"IMPORTER_NAME": "Replaced_Importer_Name",
-                #                                 "IMPORTER_NAME_RAW": "Raw_Importer_Name"}, inplace=True)
-                #
-                #     # Write to CSV
-                #     replaced_df.to_csv(data_dir / "replaced_importer_names.csv", index=False)
-                #
-                #     # Replace those values with "Reference"
-                #     synth_data.loc[mask, "IMPORTER_NAME"] = "Reference"
-                #
-                #     # Check if ALL values in synth_data are in temp_compliance_table
-                #     all_present = synth_data["IMPORTER_NAME"].isin(temp_compliance_table["IMPORTER_NAME_TOP"]).all()
-                #
-                #     if all_present:
-                #         print("✓ All importer names are valid!")
-                #     else:
-                #         print("✗ Some importer names are missing from temp_compliance_table")
 
 
                 synth_data.to_parquet(data_dir / "Synthetic_Base_Use.parquet", compression='snappy', index=False)

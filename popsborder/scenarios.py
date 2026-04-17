@@ -81,9 +81,6 @@ def run_scenarios(
     """
     results = []
 
-    # Create master RNG once at the top level
-    master_rng = np.random.default_rng(seed)
-
     # Define output directory for the simulated data
     if output_root is None:
         run_ts = datetime.now().strftime("%m_%d_%Y_%H_%M_%S")
@@ -92,6 +89,14 @@ def run_scenarios(
         run_dir = Path(output_root)
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
+
+    # Master RNG from global seed
+    master_rng = np.random.default_rng(seed)
+
+    # Precompute a seed for each replication index
+    # So replication i has the same base seed across all scenarios
+    replication_seeds = master_rng.integers(2 ** 63 - 1, size=num_simulations)
+
     for record in scenario_table:
         scenario_name = record["name"]
         print(f"Running scenario: {scenario_name}")
@@ -101,14 +106,16 @@ def run_scenarios(
         output_dir = run_dir / str(scenario_name)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Spawn independent RNG for this scenario
-        scenario_rng = master_rng.spawn(1)[0]
+        scenario_rngs = [
+            np.random.default_rng(int(replication_seeds[i]))
+            for i in range(num_simulations)
+        ]
 
         result = run_simulation(
             config=scenario_config,
             num_simulations=num_simulations,
             num_consignments=num_consignments,
-            rng=scenario_rng,
+            rngs=scenario_rngs,
             detailed=detailed,
             output_dir=output_dir,
             progress_callback=progress_callback,
