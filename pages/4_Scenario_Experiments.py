@@ -15,7 +15,7 @@ import streamlit as st
 
 from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
-from gui.page_styles import apply_shared_page_styles, render_page_intro
+from gui.page_styles import apply_shared_page_styles, render_labeled_help, render_page_intro
 from gui.slippage_ui import get_slippage_state
 
 # --- Constants / setup --------------------------------------------------------
@@ -49,6 +49,8 @@ render_page_intro(
     "Build, review, and save experiment-ready scenario tables. "
     "Scenario bundles are written to <i>tmp/experiments</i> for execution on Page 5."
 )
+if st.session_state.get("page4_save_success"):
+    st.success(st.session_state.pop("page4_save_success"))
 
 # --- Helpers ------------------------------------------------------------------
 def _slugify(name: str) -> str:
@@ -242,18 +244,26 @@ def _normalize_rows(rows_df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-tabs = st.tabs(["Saved experiments", "Upload custom scenario", "Build experiments"])
+tabs = st.tabs(["Saved Experiments", "Upload Custom Scenario", "Build Experiments"])
 
 # --- Tab 1: Upload custom scenario -------------------------------------------
 with tabs[0]:
     st.subheader("Saved experiments")
+    st.write("Review saved experiment packages, preview their scenario tables, or remove a package you no longer need.")
     saved_files = list(SCENARIO_ROOT.glob("*/scenario_table.csv"))
 
     if not saved_files:
         st.info("No experiments saved yet.")
     else:
+        render_labeled_help(
+            "Select an experiment set",
+            "Choose a saved experiment package to preview its scenario table and optionally delete the entire package directory.",
+        )
         sel = st.selectbox(
-            "Select an experiment set", saved_files, format_func=lambda p: p.parent.name
+            "Select an experiment set",
+            saved_files,
+            format_func=lambda p: p.parent.name,
+            label_visibility="collapsed",
         )
         try:
             preview = pd.read_csv(sel)
@@ -271,8 +281,22 @@ with tabs[0]:
 
 with tabs[1]:
     st.subheader("Upload custom scenario table")
-    uploaded = st.file_uploader("Upload scenario CSV", type=["csv"], key="custom_scenario_upload")
-    custom_name = st.text_input("Save as experiment set name", value="custom_experiment")
+    st.write("Upload a scenario CSV and save it as a new experiment package under tmp/experiments.")
+    render_labeled_help(
+        "Upload custom scenario table",
+        "Upload a scenario CSV to create a new experiment package under tmp/experiments.",
+    )
+    uploaded = st.file_uploader(
+        "Upload scenario CSV",
+        type=["csv"],
+        key="custom_scenario_upload",
+        label_visibility="collapsed",
+    )
+    render_labeled_help(
+        "Save as experiment set name",
+        "Name used for the experiment package folder when the uploaded scenario table is saved.",
+    )
+    custom_name = st.text_input("Save as experiment set name", value="custom_experiment", label_visibility="collapsed")
 
     if uploaded:
         try:
@@ -282,6 +306,10 @@ with tabs[1]:
         except Exception:  # pylint: disable=broad-except
             st.info("Unable to preview upload.")
 
+    render_labeled_help(
+        "Save custom scenario table",
+        "Write the uploaded scenario table into a new experiment package in tmp/experiments.",
+    )
     if st.button("Save custom scenario table", type="primary", disabled=uploaded is None):
         try:
             uploaded.seek(0)
@@ -298,6 +326,8 @@ with tabs[1]:
 
 # --- Tab 2: Build experiments -------------------------------------------------
 with tabs[2]:
+    st.subheader("Build experiments")
+    st.write("Combine consignment files, contamination settings, and compliance policies into runnable scenario rows.")
     state.setdefault("experiment_rows", [])
     col_left, col_right = st.columns([2, 1])
 
@@ -307,44 +337,71 @@ with tabs[2]:
     param_keys = list(param_sets.keys())
 
     with col_left:
+        render_labeled_help(
+            "Scenario label",
+            "Unique label for the scenario row. Existing rows with the same label are replaced when you add the row.",
+        )
         scenario_label = st.text_input(
             "Scenario label",
             value=f"scenario_{len(state.get('experiment_rows', [])) + 1}",
+            label_visibility="collapsed",
         )
 
+        render_labeled_help(
+            "Consignment (RBS) file",
+            "Choose the RBS consignment CSV that should be used when this scenario runs.",
+        )
         consignment_choice = (
             st.selectbox(
                 "Consignment (RBS) file",
                 consignment_files,
                 format_func=lambda p: p.name,
+                label_visibility="collapsed",
             )
             if consignment_files
             else None
         )
 
+        render_labeled_help(
+            "Contamination parameter set",
+            "Choose the contamination parameter snapshot that should be written into the experiment table.",
+        )
         param_choice = (
-            st.selectbox("Contamination parameter set", param_keys)
+            st.selectbox("Contamination parameter set", param_keys, label_visibility="collapsed")
             if param_keys
             else None
         )
 
+        render_labeled_help(
+            "RBS compliance policy",
+            "Choose the compliance lookup file that the simulation will use for this scenario.",
+        )
         compliance_choice = (
             st.selectbox(
                 "RBS compliance policy",
                 compliance_files,
                 format_func=lambda p: p.name,
+                label_visibility="collapsed",
             )
             if compliance_files
             else None
         )
 
     with col_right:
+        render_labeled_help(
+            "Files available",
+            "Inspect the files currently available for scenario construction before adding a row.",
+        )
         with st.expander("Files available", expanded=True):
             _render_file_inventory("Consignments", consignment_files, lambda files: ", ".join(p.name for p in files))
             _render_file_inventory("Contamination", param_keys, lambda files: ", ".join(files))
             _render_file_inventory("RBS Compliance Policies", compliance_files, lambda files: ", ".join(p.name for p in files))
 
     add_ready = all([scenario_label, consignment_choice, compliance_choice, param_choice])
+    render_labeled_help(
+        "Add scenario row",
+        "Append the current selections as a scenario row, or replace an existing row with the same label.",
+    )
     if st.button("Add scenario row", type="primary", disabled=not add_ready):
         scenario_row = _build_scenario_row(scenario_label, consignment_choice, compliance_choice, param_choice, param_sets)
 
@@ -369,18 +426,34 @@ with tabs[2]:
 
     col_actions = st.columns(2)
     with col_actions[0]:
+        render_labeled_help(
+            "Clear current rows",
+            "Remove every scenario row currently staged in this session.",
+        )
         if st.button("Clear current rows", type="secondary", disabled=rows_df.empty):
             state["experiment_rows"] = []
             st.rerun()
     with col_actions[1]:
+        render_labeled_help(
+            "Remove last row",
+            "Drop only the most recently added scenario row from the current session.",
+        )
         if st.button("Remove last row", type="secondary", disabled=rows_df.empty):
             if state["experiment_rows"]:
                 state["experiment_rows"].pop()
             st.rerun()
 
-    scenario_set = st.text_input("Experiment set name (CSV)", value="experiment_set_1")
+    render_labeled_help(
+        "Experiment set name (CSV)",
+        "Folder and file name used when saving the assembled experiment package.",
+    )
+    scenario_set = st.text_input("Experiment set name (CSV)", value="experiment_set_1", label_visibility="collapsed")
     can_save = bool(scenario_set) and not rows_df.empty
 
+    render_labeled_help(
+        "Save experiment package",
+        "Write the current scenario rows and any referenced inputs into tmp/experiments as a runnable package.",
+    )
     if st.button("Save experiment package", type="primary", disabled=not can_save):
         set_slug = _slugify(scenario_set)
         scenario_dir = SCENARIO_ROOT / set_slug
@@ -419,7 +492,8 @@ with tabs[2]:
             st.caption(f"Copied files to {scenario_dir}: {', '.join(copied)}")
 
             _update_state_paths(scenario_table=scenario_path)
-            st.success(f"Experiment saved to {scenario_path}")
+            st.session_state["page4_save_success"] = f"Experiment saved to {scenario_path}"
+            st.rerun()
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Failed to save experiment: {exc}")
 

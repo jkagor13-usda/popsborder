@@ -288,10 +288,14 @@ def _render_pis_summary(pis_df: pd.DataFrame) -> None:
     action_ones = int((pis_df[action_col] == 1).sum()) if action_col else 0
 
     stats = st.columns(4)
-    stats[0].metric("Rows", f"{n_rows}")
-    stats[1].metric("Unique inspections", f"{unique_inspections}")
-    stats[2].metric("Rows with action = 1", f"{action_ones}")
-    stats[3].metric("Total sampling units", f"{total_sampling:,}")
+    with stats[0]:
+        render_metric_card("Rows", f"{n_rows}", "Total number of consignment rows available in the selected input file.")
+    with stats[1]:
+        render_metric_card("Unique inspections", f"{unique_inspections}", "Number of distinct inspections represented in the selected input file.")
+    with stats[2]:
+        render_metric_card("Rows with action = 1", f"{action_ones}", "Number of rows where the action indicator equals 1 in the selected input file.")
+    with stats[3]:
+        render_metric_card("Total sampling units", f"{total_sampling:,}", "Total number of sampling units across the selected input file.")
 
     if total_plants:
         st.caption(f"Total plant units: {int(total_plants):,}")
@@ -347,16 +351,20 @@ def _render_saved_parameters(sel: str, params: Dict[str, Any]) -> None:
             cleaned_key = clean_range_key(key)
             alpha = float(pdict.get("alpha", FALLBACK_ALPHA))
             beta = float(pdict.get("beta", FALLBACK_BETA))
+            theta = pdict.get("theta", FALLBACK_THETA)
             render_labeled_help(
                 f"Quantity Range: {cleaned_key}",
                 "Beta binomial parameters for a risk unit if the quantity of plants is within this range.",
             )
-            summary_cols = st.columns(2)
+            summary_cols = st.columns(3)
             with summary_cols[0]:
                 render_metric_card("Alpha", f"{alpha:.6f}", "Alpha parameter of the beta-binomial distribution.")
             with summary_cols[1]:
                 render_metric_card("Beta", f"{beta:.6f}", "Beta parameter of the beta-binomial distribution.")
+            with summary_cols[2]:
+                render_metric_card("Theta", f"{theta}", "Theta clustering parameter of the beta-binomial distribution.")
             if alpha + beta != 0:
+                st.markdown("<div style='height: 1.25rem;'></div>", unsafe_allow_html=True)
                 st.altair_chart(
                     _beta_chart(alpha, beta, f"Beta-binomial PDF for range {cleaned_key}"),
                     use_container_width=True,
@@ -368,12 +376,16 @@ def _render_saved_parameters(sel: str, params: Dict[str, Any]) -> None:
     if params:
         alpha = float(params.get("alpha", FALLBACK_ALPHA))
         beta = float(params.get("beta", FALLBACK_BETA))
-        summary_cols = st.columns(2)
+        theta = params.get("theta", FALLBACK_THETA)
+        summary_cols = st.columns(3)
         with summary_cols[0]:
             render_metric_card("Alpha", f"{alpha:.6f}", "Alpha parameter of the beta-binomial distribution.")
         with summary_cols[1]:
             render_metric_card("Beta", f"{beta:.6f}", "Beta parameter of the beta-binomial distribution.")
+        with summary_cols[2]:
+            render_metric_card("Theta", f"{theta}", "Theta clustering parameter of the beta-binomial distribution.")
         if alpha + beta != 0:
+            st.markdown("<div style='height: 1.25rem;'></div>", unsafe_allow_html=True)
             st.altair_chart(_beta_chart(alpha, beta, f"Beta-binomial PDF for {sel}"), use_container_width=True)
         st.info("Sets are stored in tmp/contamination/contamination_parameter_sets.json.")
 
@@ -439,20 +451,28 @@ saved_tab, fit_tab, assign_tab = st.tabs(
 # Fit contamination tab
 with fit_tab:
     st.subheader("Fit beta-binomial contamination parameters")
-    st.caption("Fits are based on the PIS action upload and RBS calculator selection in this tab.")
+    st.write("Select a consignment source, fit contamination parameters, and save the result for later reuse. Fits are based on the PIS action upload and RBS calculator selection in this tab.")
 
-    st.subheader("PIS action data upload")
     rbs_candidates = sorted((Path("tmp") / "consignments" / "source").glob("*.csv"))
+    render_labeled_help(
+        "Consignment data source",
+        "Choose whether to fit contamination parameters from the existing Page 1 consignment file or upload a new CSV for this page only.",
+    )
     rbs_source = st.radio(
         "Consignment data source",
         ["Use consignment data from Page 1", "Upload a new consignment data file"],
         index=0,
         key="page2_rbs_source",
+        label_visibility="collapsed",
     )
     if rbs_source == "Use consignment data from Page 1":
         if not rbs_candidates:
             st.warning("No consignment files found in tmp/consignments. Add one on Page 1 or upload a file below.")
         else:
+            render_labeled_help(
+                "Consignment file",
+                "Select the saved consignment CSV to use as the source data for fitting contamination parameters.",
+            )
             current_rbs = slippage_state["paths"].rbs_data
             default_idx = 0
             if current_rbs in rbs_candidates:
@@ -462,6 +482,7 @@ with fit_tab:
                 rbs_candidates,
                 index=default_idx,
                 format_func=lambda p: p.name,
+                label_visibility="collapsed",
             )
             set_paths(pis_data=chosen_rbs, rbs_data=chosen_rbs, synthetic_seed=chosen_rbs)
             paths = slippage_state["paths"]
@@ -498,7 +519,11 @@ with fit_tab:
 
     fit_cols = st.columns(2)
     with fit_cols[0]:
-        if st.button("Fit contamination parameters*", type="primary"):
+        render_labeled_help(
+            "Fit contamination parameters",
+            "Estimate the beta-binomial contamination parameters from the selected consignment dataset. Theta is fixed to inf (no clustering) for manual contamination assignment.",
+        )
+        if st.button("Fit contamination parameters", type="primary"):
             if paths.pis_data is None or paths.rbs_data is None:
                 st.error("Upload PIS data and select an RBS file before fitting.")
             else:
@@ -530,21 +555,33 @@ with fit_tab:
     inputs_by_quantity: Optional[Dict[Any, Any]] = slippage_state.get("inputs_by_quantity")
     if fit_to_show is None and fall_back_fit_to_show is not None:
         metrics = st.columns(3)
-        metrics[0].metric("Alpha", f"{fall_back_fit_to_show.alpha:.6f}")
-        metrics[1].metric("Beta", f"{fall_back_fit_to_show.beta:.6f}")
-        metrics[2].metric("Theta", f"{fall_back_fit_to_show.theta}")
+        with metrics[0]:
+            render_metric_card("Alpha", f"{fall_back_fit_to_show.alpha:.6f}", "Alpha parameter of the fallback beta-binomial contamination distribution.")
+        with metrics[1]:
+            render_metric_card("Beta", f"{fall_back_fit_to_show.beta:.6f}", "Beta parameter of the fallback beta-binomial contamination distribution.")
+        with metrics[2]:
+            render_metric_card("Theta", f"{fall_back_fit_to_show.theta}", "Theta clustering parameter of the fallback beta-binomial contamination distribution.")
+        st.markdown("<div style='height: 1.25rem;'></div>", unsafe_allow_html=True)
         st.altair_chart(
             _beta_chart(fall_back_fit_to_show.alpha, fall_back_fit_to_show.beta, "Beta-Binomial Probability Density Function"),
             use_container_width=True,
         )
 
-    st.markdown("**Save fitted parameters**")
+    render_labeled_help(
+        "Parameter set name",
+        "Name used when saving the fitted contamination parameter set for later reuse on Page 5.",
+    )
     name_input = st.text_input(
         "Parameter set name",
         value=st.session_state.get("last_saved_param_set", ""),
         key="fit_save_name",
+        label_visibility="collapsed",
     )
     can_save_fitted_parameters = fit_to_show is not None and bool(name_input.strip())
+    render_labeled_help(
+        "Save fitted parameters",
+        "Write the current fitted contamination parameters to the temporary parameter store.",
+    )
     if st.button("Save fitted parameters", key="save_fit_params", disabled=not can_save_fitted_parameters):
         _save_current_fit(
             fit_to_show=fit_to_show,
@@ -556,11 +593,15 @@ with fit_tab:
 
 # Manual assignment tab
 with assign_tab:
-    render_labeled_help(
-        "Choose How to Assign Contamination",
-        "Options include specifying beta-binomial parameters directly or specifying a contamination rate at the lowest unit level.",
+    st.subheader("Assign contamination manually")
+    st.write(
+        "Set contamination parameters directly when you already know the target values, either by entering beta-binomial parameters or by specifying an average contamination rate at the lowest unit level."
     )
 
+    render_labeled_help(
+        "Assignment mode",
+        "Choose whether to specify beta-binomial parameters directly or derive them from an average contamination rate at the lowest unit level.",
+    )
     mode = st.selectbox(
         "mode_select",
         ["Specify Beta-Binomial Parameters (alpha and beta)", "Specify Contamination Rate (at lowest unit level)"],
@@ -661,8 +702,6 @@ with assign_tab:
             render_metric_card("Alpha", f"{adj_alpha:.6f}", "Alpha parameter of the beta-binomial distribution.")
         with col4:
             render_metric_card("Beta", f"{adj_beta:.6f}", "Beta parameter of the beta-binomial distribution.")
-        st.caption("*Theta is fixed to inf (no clustering) for manual contamination assignment.")
-
         st.write("")
         st.write("")
         st.altair_chart(
@@ -700,6 +739,18 @@ with assign_tab:
             )
     else:
         st.caption("Adjust alpha/beta directly. Theta is fixed to infinity by default.")
+        render_labeled_help(
+            "Alpha",
+            "Alpha parameter for the beta-binomial contamination distribution.",
+        )
+        render_labeled_help(
+            "Beta",
+            "Beta parameter for the beta-binomial contamination distribution.",
+        )
+        render_labeled_help(
+            "Theta",
+            "Theta is fixed to infinity here, indicating no clustering for manual assignment.",
+        )
         col_a, col_b, col_t = st.columns(3)
         alpha_val = col_a.number_input(
             "Alpha",
@@ -707,6 +758,7 @@ with assign_tab:
             value=float(assigned_state["alpha"]),
             step=0.0005,
             format="%.4f",
+            label_visibility="collapsed",
         )
         beta_val = col_b.number_input(
             "Beta",
@@ -714,8 +766,9 @@ with assign_tab:
             value=float(assigned_state["beta"]),
             step=0.0005,
             format="%.4f",
+            label_visibility="collapsed",
         )
-        theta_str = col_t.text_input("Theta", value="inf")
+        theta_str = col_t.text_input("Theta", value="inf", label_visibility="collapsed")
         try:
             theta_val = float("inf") if theta_str.lower() == "inf" else float(theta_str)
         except ValueError:
@@ -732,10 +785,19 @@ with assign_tab:
             _beta_chart(alpha_val, beta_val, "Beta-Binomial Probability Density Function"),
             use_container_width=True,
         )
+        render_labeled_help(
+            "Parameter Set Name",
+            "File name to appear in the saved manual parameter set list.",
+        )
         manual_name = st.text_input(
             "Parameter set name for manual values",
             value=st.session_state.get("last_saved_param_set", ""),
             key="manual_save_name_alpha_beta",
+            label_visibility="collapsed",
+        )
+        render_labeled_help(
+            "Save current parameters",
+            "Save the manually specified beta-binomial parameters to the temporary parameter store.",
         )
         if st.button(
             "Save current parameters",
@@ -755,6 +817,7 @@ with assign_tab:
 
 with saved_tab:
     st.subheader("Saved contamination parameter sets")
+    st.write("Review saved contamination parameter sets and load one for reuse.")
     saved = _read_param_store()
     if not saved:
         st.info("No saved parameter sets yet.")
@@ -764,9 +827,24 @@ with saved_tab:
         last_saved = st.session_state.get("last_saved_param_set")
         if last_saved and last_saved in saved_keys:
             default_idx = saved_keys.index(last_saved)
-        sel = st.selectbox("Select a saved set", saved_keys, index=default_idx)
+        render_labeled_help(
+            "Select a saved set",
+            "Choose a saved contamination parameter set to inspect the stored values.",
+        )
+        sel = st.selectbox("Select a saved set", saved_keys, index=default_idx, label_visibility="collapsed")
         params = saved.get(sel, {})
         _render_saved_parameters(sel, params)
+        if st.button("Delete this saved set", type="secondary"):
+            try:
+                updated = dict(saved)
+                updated.pop(sel, None)
+                _write_param_store(updated)
+                if st.session_state.get("last_saved_param_set") == sel:
+                    st.session_state.pop("last_saved_param_set", None)
+                st.success(f"Deleted '{sel}'")
+                st.rerun()
+            except Exception as exc:  # pylint: disable=broad-except
+                st.error(f"Unable to delete saved parameter set: {exc}")
 st.caption(
     "These parameters are injected into PoPS Border configuration so downstream pages use the updated contamination distribution."
 )

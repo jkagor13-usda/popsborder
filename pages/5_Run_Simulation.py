@@ -22,6 +22,7 @@ from gui.page_styles import (
     render_page_intro,
     render_section_header,
 )
+from gui.report_export import build_run_report_docx_bytes
 from gui.slippage_ui import get_slippage_state, run_pipeline, set_engine_options
 from gui.slippage_pipeline import create_default_paths
 
@@ -60,6 +61,18 @@ def _load_all_runs_df(output_dir: Optional[Path]) -> Optional[pd.DataFrame]:
         return None
     try:
         return pd.read_csv(all_runs_path)
+    except Exception:  # pylint: disable=broad-except
+        return None
+
+
+def _load_scenario_table_df(output_dir: Optional[Path]) -> Optional[pd.DataFrame]:
+    if output_dir is None:
+        return None
+    scenario_table_path = output_dir.parent / "scenario_table.csv"
+    if not scenario_table_path.exists():
+        return None
+    try:
+        return pd.read_csv(scenario_table_path)
     except Exception:  # pylint: disable=broad-except
         return None
 
@@ -642,6 +655,7 @@ render_page_intro("Execute the slippage pipeline and compare policies based on s
 selected_experiment = None
 with st.sidebar:
     st.subheader("Execution options")
+    st.write("Choose the replication count and pick which saved experiment package to run.")
     simulations = st.number_input(
         "Simulation replications",
         min_value=1,
@@ -770,6 +784,7 @@ saved_output_files = state.get("run_output_files") or []
 selected_experiment_dir = selected_experiment.parent if selected_experiment else None
 latest_output_dir = _latest_output_run_dir(selected_experiment_dir)
 all_runs_df = _load_all_runs_df(latest_output_dir)
+scenario_table_df = _load_scenario_table_df(latest_output_dir)
 inspection_action_runs_df = _load_inspection_action_runs_df(latest_output_dir)
 saved_output_dir = state.get("run_output_dir")
 if latest_output_dir is not None:
@@ -784,6 +799,27 @@ if saved_output_dir:
         f"Latest output: `{output_dir_path.name}` in `tmp/experiments/{output_dir_path.parent.parent.name}`. "
         f"Files: {output_file_names}."
     )
+    try:
+        report_bytes = build_run_report_docx_bytes(
+            results_df=results_df,
+            all_runs_df=all_runs_df,
+            scenario_table_df=scenario_table_df,
+            inspection_action_runs_df=inspection_action_runs_df,
+            metadata={
+                "experiment": output_dir_path.parent.name,
+                "output_dir": str(output_dir_path),
+            },
+        )
+        st.download_button(
+            "Download Run Report (.docx)",
+            data=report_bytes,
+            file_name=f"{output_dir_path.parent.name}_run_report.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+    except ImportError:
+        st.info("Word report export is currently unavailable.")
+    except Exception as exc:  # pylint: disable=broad-except
+        st.warning(f"Unable to build run report: {exc}")
 
 _render_run_details(results_df, all_runs_df)
 
@@ -873,6 +909,7 @@ if simulation_summary_runs_source is not None and simulation_summary_record_runs
 
 
 st.header("Results Summary")
+st.write("Review the scenario-level results, progress details, and aggregated slippage outcomes from the completed run.")
 expand_all_summary_sections = st.toggle(
     "Expand all sections",
     value=False,
@@ -886,11 +923,15 @@ if simulation_summary_runs_source is not None and not simulation_summary_runs_so
         for replication in simulation_summary_runs_source["replication"].dropna().unique().tolist()
     )
     summary_view_options = ["Mean", "Median"] + [f"Replication {replication + 1}" for replication in available_replications]
+    render_labeled_help(
+        "Simulation summary view",
+        "Choose whether the summary uses scenario means, scenario medians, or the results from one replication only.",
+    )
     simulation_summary_view = st.selectbox(
         "Simulation summary view",
         options=summary_view_options,
         key="simulation_summary_view",
-        help="Choose whether the simulation summary shows the mean, median, or a single replication.",
+        label_visibility="collapsed",
     )
     if simulation_summary_view == "Mean":
         numeric_cols = simulation_summary_runs_source.select_dtypes(include=[np.number]).columns.tolist()
@@ -1843,5 +1884,5 @@ with nav_cols[1]:
     if st.button("Previous Page", type="primary", key="nav_back_page5"):
         st.switch_page("pages/4_Scenario_Experiments.py")
 with nav_cols[2]:
-    if st.button("Finish and Return Home", type="primary", key="nav_finish"):
-        st.switch_page("frontend.py")
+    if st.button("Next Page", type="primary", key="nav_forward_page6"):
+        st.switch_page("pages/6_Glossary.py")
