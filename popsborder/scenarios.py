@@ -96,6 +96,7 @@ def run_scenarios(
     # Precompute a seed for each replication index
     # So replication i has the same base seed across all scenarios
     replication_seeds = master_rng.integers(2 ** 63 - 1, size=num_simulations)
+    replication_seeds_inspection = master_rng.integers(2 ** 63 - 1, size=num_simulations)
 
     for record in scenario_table:
         scenario_name = record["name"]
@@ -111,11 +112,17 @@ def run_scenarios(
             for i in range(num_simulations)
         ]
 
+        scenario_rngs_inspections = [
+            np.random.default_rng(int(replication_seeds_inspection[i]))
+            for i in range(num_simulations)
+        ]
+
         result = run_simulation(
             config=scenario_config,
             num_simulations=num_simulations,
             num_consignments=num_consignments,
             rngs=scenario_rngs,
+            rngs_inspections=scenario_rngs_inspections,
             detailed=detailed,
             output_dir=output_dir,
             progress_callback=progress_callback,

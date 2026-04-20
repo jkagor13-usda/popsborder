@@ -88,6 +88,7 @@ def simulation(
     config,
     num_consignments,
     rng=None,
+    rng_inspection=None,
     output_f280_file=None,
     verbose=False,
     pretty=None,
@@ -226,7 +227,7 @@ def simulation(
                 #print(f'\n\n==== INSPECTION OF CONSIGNMENT {i + 1} NOW BEING EXECUTED ====')
                 n_units_to_inspect = sample(consignment)
                 #print(f"   Requested sample units to inspect (total): {n_units_to_inspect}")
-                ret = inspect(config, consignment, n_units_to_inspect, detailed, rng=rng)
+                ret = inspect(config, consignment, n_units_to_inspect, detailed, rng=rng_inspection)
                 pis_sim_data.add_to_pis_synthetic_data(ret, consignment, n_units_to_inspect)
                 #print(f"   Completed inspection. Sample units inspected: {ret.sample_units_inspected_completion}")
                 consignment_checked_ok = ret.consignment_checked_ok
@@ -485,6 +486,7 @@ def run_simulation(
     num_simulations,
     num_consignments,
     rngs=None,
+    rngs_inspections=None,
     output_f280_file=None,
     verbose=False,
     pretty=None,
@@ -505,6 +507,7 @@ def run_simulation(
     """
     if rngs is None:
         rngs = [np.random.default_rng() for _ in range(num_simulations)]
+        rngs_inspections = [np.random.default_rng(50) for _ in range(num_simulations)]
     else:
         assert len(rngs) == num_simulations, "rngs must have one RNG per simulation"
 
@@ -580,11 +583,13 @@ def run_simulation(
         output_dir_rep.mkdir(parents=True, exist_ok=True)
 
         rng = rngs[i]
+        rng_inspection = rngs_inspections[i]
 
         result = simulation(
             config=config,
             num_consignments=num_consignments,
             rng=rng,
+            rng_inspection=rng_inspection,
             output_f280_file=output_f280_file,
             verbose=verbose,
             pretty=pretty,
