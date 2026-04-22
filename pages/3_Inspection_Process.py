@@ -282,7 +282,7 @@ with tabs[1]:
         "Save policy",
         "Create and persist a combined compliance policy file from the uploaded table and mapping inputs.",
     )
-    if st.button("Save policy", type="secondary", disabled=not can_save_uploaded_policy):
+    if st.button("Save policy", type="primary", disabled=not can_save_uploaded_policy):
         try:
             if compliance_upload is None or mapping_upload is None:
                 raise ValueError("Both the compliance table and the detection/confidence mapping file are required.")
@@ -431,7 +431,7 @@ with tabs[2]:
         "Save manual policy",
         "Write the manually assembled compliance policy to disk so it can be reused on downstream pages.",
     )
-    if st.button("Save manual policy", type="secondary", disabled=not can_save_manual_policy):
+    if st.button("Save manual policy", type="primary", disabled=not can_save_manual_policy):
         target_path = COMPLIANCE_SOURCE_ROOT / f"{manual_name}.csv"
         target_path.parent.mkdir(parents=True, exist_ok=True)
         manual_df.to_csv(target_path, index=False)

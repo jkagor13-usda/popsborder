@@ -833,6 +833,7 @@ with manual_tab:
                 "Download RBS dataset",
                 data=rbs_preview.to_csv(index=False).encode("utf-8"),
                 file_name="user_defined_rbs_data.csv",
+                type="primary",
                 use_container_width=True,
             )
         else:
