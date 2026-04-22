@@ -582,7 +582,7 @@ with fit_tab:
         "Save fitted parameters",
         "Write the current fitted contamination parameters to the temporary parameter store.",
     )
-    if st.button("Save fitted parameters", key="save_fit_params", disabled=not can_save_fitted_parameters):
+    if st.button("Save fitted parameters", type="primary", key="save_fit_params", disabled=not can_save_fitted_parameters):
         _save_current_fit(
             fit_to_show=fit_to_show,
             fall_back_fit_to_show=fall_back_fit_to_show,
@@ -724,6 +724,7 @@ with assign_tab:
         )
         if st.button(
             "Save current parameters",
+            type="primary",
             key="save_manual_params_sample_rate",
             disabled=not bool(manual_name.strip()),
         ):
@@ -801,6 +802,7 @@ with assign_tab:
         )
         if st.button(
             "Save current parameters",
+            type="primary",
             key="save_manual_params_alpha_beta",
             disabled=not bool(manual_name.strip()),
         ):
