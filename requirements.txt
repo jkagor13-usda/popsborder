@@ -1,6 +1,6 @@
 # © 2025 The Johns Hopkins University Applied Physics Laboratory LLC
 # Core scientific and data packages
-numpy==2.3.5
+numpy==2.4.4
 pandas==2.3.3
 scipy==1.17.0
 scikit-learn==1.8.0

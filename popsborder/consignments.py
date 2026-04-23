@@ -748,6 +748,12 @@ class PISConsignmentGenerator:
             inspection_unit_sample_units = int(record["SAMPLING_UNITS_FOR_INSPECTION_UNIT"])
             inspection_unit_plants = int(record["QUANTITY"])
             inspection_unit_producer = record.get("producer_group", None)
+            if (
+                inspection_unit_producer is None
+                or str(inspection_unit_producer).strip() == ""
+                or str(inspection_unit_producer).strip() == "NO_GROUP_MATCH"
+            ):
+                inspection_unit_producer = record.get("PRODUCER_NAME", None)
             inspection_unit_origin = record.get("COUNTRY_OF_ORIGIN_NAME", origin)
             inspection_unit_port = record.get("INSPECTION_LOCATION_NAME", port)
             inspection_unit_pathway = record.get("PATHWAY", pathway)

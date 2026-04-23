@@ -76,6 +76,10 @@ class RiskUnitConfig:
                     self.defaults.get(attr_name)
                 )
 
+                if attr_name == "producer_group":
+                    if value is None or str(value).strip() == "" or str(value).strip() == "NO_GROUP_MATCH":
+                        value = record.get("PRODUCER_NAME", self.defaults.get(attr_name))
+
                 # Handle boolean conversion for boolean attributes
                 if attr_name in boolean_attributes and value is not None:
                     attributes[attr_name] = self._to_boolean(value, attr_name)

@@ -363,7 +363,17 @@ class SyntheticConsignmentDataGenerator:
         }
         if method not in method_dispatch:
             raise ValueError(f"Unknown sampling method: {method}")
-        return method_dispatch[method]()
+        generated = method_dispatch[method]()
+        if self.producer_group_mapping is None:
+            return generated.drop(
+                columns=["producer_name_preprocessed", "producer_group"],
+                errors="ignore",
+            )
+        return apply_producer_grouping(
+            generated,
+            self.producer_group_mapping,
+            use_shortest_name=True,
+        )
 
     @staticmethod
     def fit_best_continuous_distribution(data, distributions=None, criterion="aic"):
