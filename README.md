@@ -51,9 +51,9 @@ This software has been tested on **Windows 10/11**.
 You will need the following **before** proceeding:
 
 1. **Install Miniforge with Python 3.11+**
-   - Download Miniforge from: https://tooomm.github.io/github-release-stats/?username=conda-forge&repository=miniforge
+   - Download Miniforge from the official conda-forge page: https://conda-forge.org/download/
    - If on a government computer, you can install Miniforge from "Software Center" (managed by IT)
-   - Choose the stable release version for your operating system; e.g. "Miniforge3-Windows-x86_64.exe (84.01 MiB)"
+   - On the download page, select the Miniforge installer for your operating system; for most Windows machines this will be the 64-bit Windows installer.
    - During installation:
         - Install for all users (requires admin priveledges) 
         - Accept all other default and recommended installation options
