@@ -74,7 +74,7 @@ class BoxPaths:
          return self.disambiguated_look_up_tables_folder() / "producer"
 
     def disambiguated_producer_table_mapping(self) -> Path:
-         return self.producer_folder() / "erf_train.csv"
+         return self.disambiguated_look_up_tables_folder() / "erf_train_450.csv"
 
     def model_testing_data_folder(self) -> Path:
         return self.apl_created_data_folder() / "Model_Testing"
