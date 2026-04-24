@@ -833,6 +833,7 @@ with manual_tab:
                 "Download RBS dataset",
                 data=rbs_preview.to_csv(index=False).encode("utf-8"),
                 file_name="user_defined_rbs_data.csv",
+                type="primary",
                 use_container_width=True,
             )
         else:
@@ -963,9 +964,10 @@ with nav_cols[2]:
         "Next Page",
         type="primary",
         key="nav_forward_page2",
-        disabled=not current_rbs,
+        disabled=False,
     ):
-        set_paths(
-            rbs_data=current_rbs,
-        )
+        if current_rbs:
+            set_paths(
+                rbs_data=current_rbs,
+            )
         st.switch_page("pages/2_Contamination_Fit.py")

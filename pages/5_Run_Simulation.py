@@ -815,6 +815,7 @@ if saved_output_dir:
             data=report_bytes,
             file_name=f"{output_dir_path.parent.name}_run_report.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            type="primary",
         )
     except ImportError:
         st.info("Word report export is currently unavailable.")

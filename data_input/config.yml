@@ -118,3 +118,5 @@ inspection:
       - Importer
     Los Angeles:
       - Producer
+debug:
+  print_compliance_levels: true

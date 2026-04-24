@@ -139,7 +139,7 @@ import numpy as np
 import pandas as pd
 from numpy.random import Generator
 
-from .inputs import get_validated_effectiveness
+from .inputs import get_validated_effectiveness, load_compliance_lookup_csv
 from slippage_model_utils.UnitAttributes import RiskUnitConfig
 from slippage_model_utils.paths import DefaultPaths
 from slippage_model_utils.references import (
@@ -727,7 +727,6 @@ def select_random_indexes_rbs(
                 requested = max(0, min(requested, len(sample_pool)))
                 if requested == 0:
                     continue
-                #selected_sample_unit_ids.extend(random.sample(sample_pool, requested))
                 selected = rng.choice(sample_pool, size=requested, replace=False)
                 selected_sample_unit_ids.extend(selected)
 

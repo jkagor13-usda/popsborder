@@ -17,6 +17,7 @@ from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
 from gui.page_styles import apply_shared_page_styles, render_labeled_help, render_page_intro
 from gui.slippage_ui import get_slippage_state, set_paths, create_default_paths
+from popsborder.generator import create_producer_mapping, preprocess_producer_name
 from popsborder.inputs import build_compliance_lookup_table, load_compliance_lookup_csv
 from popsborder.inspections import normalize_rbs_variables_using_risk_unit_config
 
@@ -117,19 +118,27 @@ def _save_policy_artifact(
     mapping_csv_path: Optional[Path] = None,
     *,
     direct_lookup_csv: bool = False,
+    producer_grouping_path: Optional[Path] = None,
 ) -> Path:
     policy_name = policy_name.strip() or "rbs_compliance_policy"
     policy_path = COMPLIANCE_ROOT / f"{policy_name}.pkl"
+    compliance_preview_df = pd.read_csv(compliance_csv_path)
+    compliance_preview_df = _normalize_policy_producer_values(
+        compliance_preview_df,
+        producer_grouping_path=producer_grouping_path,
+    )
+    normalized_compliance_path = COMPLIANCE_SOURCE_ROOT / f"{policy_name}_normalized_compliance_table.csv"
+    normalized_compliance_path.parent.mkdir(parents=True, exist_ok=True)
+    compliance_preview_df.to_csv(normalized_compliance_path, index=False)
     if direct_lookup_csv:
-        compliance_table = load_compliance_lookup_csv(compliance_csv_path)
-        preview_df = pd.read_csv(compliance_csv_path)
+        compliance_table = load_compliance_lookup_csv(normalized_compliance_path)
+        preview_df = compliance_preview_df
     else:
         if mapping_csv_path is None or not mapping_csv_path.exists():
             raise FileNotFoundError("Compliance mapping detection/confidence file is required.")
-        compliance_preview_df = pd.read_csv(compliance_csv_path)
         mapping_preview_df = pd.read_csv(mapping_csv_path)
         compliance_table = build_compliance_lookup_table(
-            compliance_table_filepath=compliance_csv_path,
+            compliance_table_filepath=normalized_compliance_path,
             mapping_filepath=mapping_csv_path,
         )
         preview_df = compliance_preview_df.merge(
@@ -150,6 +159,43 @@ def _save_policy_artifact(
     with open(policy_path, "wb") as handle:
         pickle.dump(compliance_table, handle, protocol=pickle.HIGHEST_PROTOCOL)
     return policy_path
+
+
+def _normalize_policy_producer_values(
+    compliance_df: pd.DataFrame,
+    *,
+    producer_grouping_path: Optional[Path] = None,
+) -> pd.DataFrame:
+    if compliance_df is None or compliance_df.empty or "Compliance" not in compliance_df.columns:
+        return compliance_df
+    key_cols = compliance_df.columns[:compliance_df.columns.get_loc("Compliance")].tolist()
+    if not key_cols:
+        return compliance_df
+    _, mapping, _ = normalize_rbs_variables_using_risk_unit_config(key_cols)
+    producer_cols = [original for original, canonical in mapping.items() if canonical == "producer_group"]
+    if not producer_cols:
+        return compliance_df
+
+    normalized = compliance_df.copy()
+    producer_mapping = None
+    if producer_grouping_path is not None and Path(producer_grouping_path).exists():
+        producer_grouping_df = pd.read_csv(producer_grouping_path)
+        producer_mapping = create_producer_mapping(producer_grouping_df, use_shortest_name=True)
+
+    for col in producer_cols:
+        if col not in normalized.columns:
+            continue
+
+        def _map_value(value: object) -> object:
+            if pd.isna(value):
+                return value
+            if producer_mapping is None:
+                return value
+            return producer_mapping.get(preprocess_producer_name(value), str(value).strip())
+
+        normalized[col] = normalized[col].map(_map_value)
+
+    return normalized
 
 
 st.warning(
@@ -282,7 +328,7 @@ with tabs[1]:
         "Save policy",
         "Create and persist a combined compliance policy file from the uploaded table and mapping inputs.",
     )
-    if st.button("Save policy", type="secondary", disabled=not can_save_uploaded_policy):
+    if st.button("Save policy", type="primary", disabled=not can_save_uploaded_policy):
         try:
             if compliance_upload is None or mapping_upload is None:
                 raise ValueError("Both the compliance table and the detection/confidence mapping file are required.")
@@ -299,7 +345,12 @@ with tabs[1]:
             mapping_df.to_csv(mapping_path, index=False)
             state["compliance_mapping_path"] = mapping_path
 
-            policy_path = _save_policy_artifact(save_name, compliance_csv_path, mapping_path)
+            policy_path = _save_policy_artifact(
+                save_name,
+                compliance_csv_path,
+                mapping_path,
+                producer_grouping_path=state.get("producer_grouping_path"),
+            )
             set_paths(compliance_lookup=policy_path)
             st.success(f"Saved RBS compliance policy to {policy_path}")
         except Exception as exc:  # pylint: disable=broad-except
@@ -431,11 +482,16 @@ with tabs[2]:
         "Save manual policy",
         "Write the manually assembled compliance policy to disk so it can be reused on downstream pages.",
     )
-    if st.button("Save manual policy", type="secondary", disabled=not can_save_manual_policy):
+    if st.button("Save manual policy", type="primary", disabled=not can_save_manual_policy):
         target_path = COMPLIANCE_SOURCE_ROOT / f"{manual_name}.csv"
         target_path.parent.mkdir(parents=True, exist_ok=True)
         manual_df.to_csv(target_path, index=False)
-        policy_path = _save_policy_artifact(manual_name, target_path, direct_lookup_csv=True)
+        policy_path = _save_policy_artifact(
+            manual_name,
+            target_path,
+            direct_lookup_csv=True,
+            producer_grouping_path=state.get("producer_grouping_path"),
+        )
         set_paths(compliance_lookup=policy_path)
         st.success(f"Manual RBS compliance policy saved to {policy_path}")
 
