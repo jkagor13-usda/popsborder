@@ -95,6 +95,7 @@ def simulation(
     detailed=False,
     output_dir_rep=None,
     shipment_progress_callback: Optional[Callable[[int, int], None]] = None,
+    sim_rep: int | bool = None
 ):
     """Simulate consignments, their contamination, and their inspection
 
@@ -143,6 +144,10 @@ def simulation(
         sample_unit_details = []
         inspected_sample_unit_details = []
         inspection_unit_detection_records = []
+
+    if sim_rep is not None:
+        config["consignment"]["input_file"][
+            "file_name"] = f"development_files/slippage_data/rep_synthetic_data/Synthetic_Base_Use_rep_{sim_rep}.csv"
 
     consignment_generator = get_consignment_generator(config)
     add_contaminant = get_contaminant_function(
@@ -493,6 +498,7 @@ def run_simulation(
     detailed=False,
     output_dir=None,
     progress_callback: Optional[Callable[[int, int, int, int], None]] = None,
+    use_rep_consignments: bool = False,
 ):
     """Run the simulation function specified number of times
 
@@ -585,6 +591,11 @@ def run_simulation(
         rng = rngs[i]
         rng_inspection = rngs_inspections[i]
 
+        if use_rep_consignments:
+            sim_rep = i
+        else:
+            sim_rep = None
+
         result = simulation(
             config=config,
             num_consignments=num_consignments,
@@ -603,6 +614,7 @@ def run_simulation(
                     total,
                 )
             ) if progress_callback is not None else None,
+            sim_rep=sim_rep if sim_rep is not None else None
         )
         if progress_callback is not None:
             progress_callback(i + 1, num_simulations, num_consignments, num_consignments)
