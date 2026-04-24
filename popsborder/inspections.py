@@ -497,7 +497,6 @@ def sample_rbs(
     :param consignment: Consignment to be inspected
     :param rng: Random number generator
     """
-
     unit = config["inspection"]["unit"]
     debug_print = config.get("debug", {}).get("print_compliance_levels", False)
 
@@ -506,6 +505,12 @@ def sample_rbs(
 
     # Load compliance lookup
     compliance_table_dict = load_compliance_lookup(filename=compliance_table_lookup_filename)
+
+    for key, val in list(compliance_table_dict.items()):
+        # Only process entries where the key is a tuple and value is a tuple of two strings
+        if isinstance(key, tuple) and isinstance(val, tuple) and len(val) == 2:
+            str1, str2 = val
+            compliance_table_dict[key] = (float(str1), float(str2))
 
 
     detection_confidence_levels = get_detection_and_confidence(
@@ -1236,6 +1241,10 @@ def get_detection_and_confidence(
             # Get value using flexible lookup
             value = _get_risk_unit_attribute(risk_unit, var, risk_unit_config)
             values[var] = value
+
+        for key, val in values.items():
+            if isinstance(val, bool):
+                values[key] = "TRUE" if val else "FALSE"
 
         # Check for missing values
         missing = [var for var, val in values.items() if val is None]
