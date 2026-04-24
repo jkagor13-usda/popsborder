@@ -77,7 +77,7 @@ def main():
     producer_group_mapping = pd.read_csv(producer_group_mapping_path)
 
     # Define synthetically generated data file name
-    synthetic_data_file_name = "Synthetic_Base.csv"
+    synthetic_data_file_name = "Synthetic_Bas_TEST.csv"
 
     ### Synthetic data generation
     historical = False
