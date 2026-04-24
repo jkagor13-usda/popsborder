@@ -138,6 +138,7 @@ def create_engineered_features(
         synth_data = synth_data.drop(columns=cols_to_drop)
 
     # 4. Merge – no name conflict → no _x/_y suffixes
+    # TODO: Avoid using merge for larger dataframes
     synth_data = synth_data.merge(
         quantity_binary_variables,
         on=key_col,
