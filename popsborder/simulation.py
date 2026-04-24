@@ -54,7 +54,6 @@ Modifications:
 .. codeauthor:: Joseph Agor <Joseph.Agor jhuapl edu>
 """
 
-import random
 import types
 from collections import Counter
 from typing import Callable, Optional
@@ -84,22 +83,19 @@ from .outputs import (
 )
 from .skipping import get_inspection_needed_function
 
-def random_seed(seed):
-    """Set seed for all generators used"""
-    random.seed(seed)  # random package
-    np.random.seed(seed)  # NumPy and SciPy
-
 
 def simulation(
     config,
     num_consignments,
     rng=None,
+    rng_inspection=None,
     output_f280_file=None,
     verbose=False,
     pretty=None,
     detailed=False,
     output_dir_rep=None,
     shipment_progress_callback: Optional[Callable[[int, int], None]] = None,
+    sim_rep: int | bool = None
 ):
     """Simulate consignments, their contamination, and their inspection
 
@@ -107,13 +103,9 @@ def simulation(
     :param num_consignments: Number of consignments to generate
     :param f280_file: Filename for output F280 records
     :param verbose: If True, prints messages about each consignment
-    :param rng : numpy.random.Generator or None
-        Random number generator for this simulation.
+    :param rng : numpy.random.Generator -> Random number generator for this simulation.
     """
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements
-
-    if rng is None:
-        rng = np.random.default_rng()
 
     pis_sim_data = PISSimData(output_dir_rep=output_dir_rep, config=config)
 
@@ -153,10 +145,20 @@ def simulation(
         inspected_sample_unit_details = []
         inspection_unit_detection_records = []
 
+    if sim_rep is not None:
+        config["consignment"]["input_file"][
+            "file_name"] = f"development_files/slippage_data/rep_synthetic_data/Synthetic_Base_Use_rep_{sim_rep}.csv"
+
     consignment_generator = get_consignment_generator(config)
-    add_contaminant = get_contaminant_function(config)
+    add_contaminant = get_contaminant_function(
+        config=config,
+        rng=rng
+    )
     is_inspection_needed = get_inspection_needed_function(config)
-    sample = get_sample_function(config)
+    sample = get_sample_function(
+        config=config,
+        rng=rng
+    )
     tolerance_level = config["inspection"]["tolerance_level"]
 
 
@@ -230,7 +232,7 @@ def simulation(
                 #print(f'\n\n==== INSPECTION OF CONSIGNMENT {i + 1} NOW BEING EXECUTED ====')
                 n_units_to_inspect = sample(consignment)
                 #print(f"   Requested sample units to inspect (total): {n_units_to_inspect}")
-                ret = inspect(config, consignment, n_units_to_inspect, detailed)
+                ret = inspect(config, consignment, n_units_to_inspect, detailed, rng=rng_inspection)
                 pis_sim_data.add_to_pis_synthetic_data(ret, consignment, n_units_to_inspect)
                 #print(f"   Completed inspection. Sample units inspected: {ret.sample_units_inspected_completion}")
                 consignment_checked_ok = ret.consignment_checked_ok
@@ -488,13 +490,15 @@ def run_simulation(
     config,
     num_simulations,
     num_consignments,
-    rng=None,
+    rngs=None,
+    rngs_inspections=None,
     output_f280_file=None,
     verbose=False,
     pretty=None,
     detailed=False,
     output_dir=None,
     progress_callback: Optional[Callable[[int, int, int, int], None]] = None,
+    use_rep_consignments: bool = False,
 ):
     """Run the simulation function specified number of times
 
@@ -503,14 +507,16 @@ def run_simulation(
     Returns averages computed from the individual simulation runs otherwise
     it relies on :func:`simulation` function to do the hard work.
 
-    rng : numpy.random.Generator or None
-        Random number generator. If None, creates a new unseeded one.
+    rngs : sequence of numpy.random.Generator or None
+        Per-replication random number generators.
+        If None, creates new unseeded generators.
     """
-    if rng is None:
-        rng = np.random.default_rng()
+    if rngs is None:
+        rngs = [np.random.default_rng() for _ in range(num_simulations)]
+        rngs_inspections = [np.random.default_rng(50) for _ in range(num_simulations)]
+    else:
+        assert len(rngs) == num_simulations, "rngs must have one RNG per simulation"
 
-    # Spawn independent RNGs for each simulation run
-    simulation_rngs = rng.spawn(num_simulations)
     # pylint: disable=too-many-branches,too-many-statements
 
     totals = types.SimpleNamespace(
@@ -582,10 +588,19 @@ def run_simulation(
         output_dir_rep = output_dir / f"rep_{i}"
         output_dir_rep.mkdir(parents=True, exist_ok=True)
 
+        rng = rngs[i]
+        rng_inspection = rngs_inspections[i]
+
+        if use_rep_consignments:
+            sim_rep = i
+        else:
+            sim_rep = None
+
         result = simulation(
             config=config,
             num_consignments=num_consignments,
-            rng=simulation_rngs[i],
+            rng=rng,
+            rng_inspection=rng_inspection,
             output_f280_file=output_f280_file,
             verbose=verbose,
             pretty=pretty,
@@ -599,6 +614,7 @@ def run_simulation(
                     total,
                 )
             ) if progress_callback is not None else None,
+            sim_rep=sim_rep if sim_rep is not None else None
         )
         if progress_callback is not None:
             progress_callback(i + 1, num_simulations, num_consignments, num_consignments)

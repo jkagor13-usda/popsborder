@@ -108,7 +108,7 @@ inspection:
     default:
       - Origin
       - PM Type
-    Miami:
-      - Origin
-      - PM Type
-      - Producer
+#    Miami:
+#      - Origin
+#      - PM Type
+#      - Producer

@@ -61,6 +61,7 @@ this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
 import random
 
 import numpy as np
+from numpy.random import Generator
 import pandas as pd
 from pathlib import Path
 from scipy.stats import norm, wasserstein_distance
@@ -254,7 +255,9 @@ class SyntheticConsignmentDataGenerator:
     def __init__(self,
                  config: dict = None,
                  producer_group_mapping: pd.DataFrame = None,
-                 input_data_file: Path = None) -> None:
+                 input_data_file: Path = None,
+                 rng: Generator = None
+                 ) -> None:
         """Initialize the synthetic data generator
 
         :param config: Optional generator configuration
@@ -269,8 +272,12 @@ class SyntheticConsignmentDataGenerator:
             self.input_data.rename(columns={'risk_unit': 'RISK_UNIT'}, inplace=True)
         
         # Initialize random seed for reproducible results
-        random.seed(DEFAULT_RANDOM_STATE)
-        np.random.seed(DEFAULT_RANDOM_STATE)
+        if rng is None:
+            self.rng = np.random.default_rng()
+        else:
+            self.rng = rng
+        # random.seed(DEFAULT_RANDOM_STATE)
+        # np.random.seed(DEFAULT_RANDOM_STATE)
 
     @staticmethod
     def _load_input_data(input_file):
@@ -687,7 +694,7 @@ class SyntheticConsignmentDataGenerator:
             return None
 
         # Sample an index, not the tuples directly
-        idx = np.random.choice(len(keys), p=probs)
+        idx = self.rng.choice(len(keys), p=probs)
         return keys[idx]
 
     @staticmethod
@@ -806,7 +813,7 @@ class SyntheticConsignmentDataGenerator:
         counts = pmf.index.to_numpy()
         probs = pmf.to_numpy()
 
-        sampled_count = int(np.random.choice(counts, p=probs))
+        sampled_count = int(self.rng.choice(counts, p=probs))
         return sampled_count
 
     @staticmethod
@@ -906,48 +913,18 @@ class SyntheticConsignmentDataGenerator:
         if vals.empty:
             return 1, {"dist_name": "one_due_to_no_data", "params": None}
 
-        # ---- 3) Try discrete best fit ----
-        best_name, best_dist, best_params, best_aic = self.best_fit_discrete_distribution(vals)
+        # empirical PMF over observed support
+        counts = vals.value_counts(normalize=True).sort_index()
+        support = counts.index.to_numpy()
+        probs = counts.to_numpy()
 
-        # ---- 4) Empirical PMF fallback if no fit worked ----
-        if best_dist is None:
-            # empirical PMF over observed support
-            counts = vals.value_counts(normalize=True).sort_index()
-            support = counts.index.to_numpy()
-            probs = counts.to_numpy()
-
-            sample = int(np.random.choice(support, p=probs))
-            info = {
-                "dist_name": "empirical_pmf_fallback",
-                "params": None,
-                "aic": None,
-                "n_obs": len(vals),
-            }
-            return sample, info
-
-        # ---- 5) Sample from best discrete distribution ----
-        sample = int(best_dist.rvs(*best_params))
-
-        # Safety: ensure > 0; if not, fall back to empirical PMF
-        if sample <= 0:
-            counts = vals.value_counts(normalize=True).sort_index()
-            support = counts.index.to_numpy()
-            probs = counts.to_numpy()
-            sample = int(np.random.choice(support, p=probs))
-            info = {
-                "dist_name": f"{best_name}_with_empirical_fallback",
-                "params": best_params,
-                "aic": best_aic,
-                "n_obs": len(vals),
-            }
-        else:
-            info = {
-                "dist_name": best_name,
-                "params": best_params,
-                "aic": best_aic,
-                "n_obs": len(vals),
-            }
-
+        sample = int(self.rng.choice(support, p=probs))
+        info = {
+            "dist_name": "empirical_pmf_fallback",
+            "params": None,
+            "aic": None,
+            "n_obs": len(vals),
+        }
         return sample, info
 
     def multinomial_sample(self, df, columns, n_consignments=1, random_state=None):
@@ -968,7 +945,12 @@ class SyntheticConsignmentDataGenerator:
 
         return sampled_df
 
-    def sequential_multinomial_sample(self, df, columns, n_consignments=1, random_state=None):
+    def sequential_multinomial_sample(self,
+                                      df,
+                                      columns,
+                                      n_consignments=1,
+                                      random_state=None
+                                      ):
         """Generate synthetic rows using sequential conditional multinomial sampling.
 
         The sampler builds each synthetic inspection in layers:
@@ -998,7 +980,6 @@ class SyntheticConsignmentDataGenerator:
             Synthetic dataset with requested columns, preserving conditional
             structure from observed data where possible.
         """
-        np.random.seed(random_state)
         risk_unit_col = "RISK_UNIT"
 
         # Build cases + probabilities
@@ -1019,7 +1000,7 @@ class SyntheticConsignmentDataGenerator:
         def sample_location():
             values, counts = np.unique(df['INSPECTION_LOCATION_NAME'], return_counts=True)
             probs = counts / counts.sum()
-            return np.random.choice(values, p=probs)
+            return self.rng.choice(values, p=probs)
 
         # Sample a conditional key for a case, optionally constrained to one location.
         def pick_key(case, fixed_location=None):
@@ -1094,7 +1075,7 @@ class SyntheticConsignmentDataGenerator:
                     cols_to_remove = cols_to_remove + [risk_unit_col]
                     ru_values = base_subset[risk_unit_col].dropna().unique()
                     if len(ru_values) > 0:
-                        risk_unit_value = np.random.choice(ru_values)
+                        risk_unit_value = self.rng.choice(ru_values)
                         base_sample[risk_unit_col] = risk_unit_value
                         base_subset = base_subset[base_subset[risk_unit_col] == risk_unit_value]
 
@@ -1134,7 +1115,7 @@ class SyntheticConsignmentDataGenerator:
 
                         values, counts = np.unique(subset[col], return_counts=True)
                         probs = counts / counts.sum()
-                        sampled_value = np.random.choice(values, p=probs)
+                        sampled_value = self.rng.choice(values, p=probs)
                         sample[col] = sampled_value
 
                         # Condition on this choice for subsequent columns
@@ -1147,7 +1128,7 @@ class SyntheticConsignmentDataGenerator:
                                     continue
                                 values, counts = np.unique(df[rem_col], return_counts=True)
                                 probs = counts / counts.sum()
-                                sample[rem_col] = np.random.choice(values, p=probs)
+                                sample[rem_col] = self.rng.choice(values, p=probs)
                             break
 
                     # Now set inspection and row ID for this row

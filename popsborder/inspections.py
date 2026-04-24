@@ -137,6 +137,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
+from numpy.random import Generator
 
 from .inputs import get_validated_effectiveness, load_compliance_lookup_csv
 from slippage_model_utils.UnitAttributes import RiskUnitConfig
@@ -275,7 +276,6 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
 
     # Get the PIS Station for the consignment and the corresponding Risk Unit Group variables
     rbs_calculator_grouping_variables_stations = list(config["inspection"]["rbs_calculator_grouping_variables"].keys())
-    compliance_grouping_variables = _get_compliance_grouping_variables(config, data)
 
     def process_inspection_group(group):
         """Process each unique inspection number"""
@@ -287,50 +287,47 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
 
         port_name = list(group['INSPECTION_LOCATION_NAME'])[0]
 
-        if compliance_grouping_variables:
-            risk_unit_grouping_variables = compliance_grouping_variables.copy()
-        else:
-            match = get_close_matches(port_name, rbs_calculator_grouping_variables_stations, n=1, cutoff=0.6)
-            pis_station = match[0] if match else None
+        match = get_close_matches(port_name, rbs_calculator_grouping_variables_stations, n=1, cutoff=0.6)
+        pis_station = match[0] if match else None
 
-            if pis_station is None:
-                if ('default' in config["inspection"]["rbs_calculator_grouping_variables"].keys()
-                        and len(config["inspection"]["rbs_calculator_grouping_variables"]['default'])>0):
-                    default_list = config["inspection"]["rbs_calculator_grouping_variables"]['default']
-                    warnings.warn(
-                        f"PIS Station ---{port_name}--- for the consignment not found in config. "
-                        f"Using defaults found in config for risk unit grouping variables: {default_list}",
-                        UserWarning,
-                        stacklevel=2
-                    )
-                    risk_unit_grouping_variables = [
-                        x.lower().replace(' ', '_').replace('-', '_').replace('.', '_')
-                        for x in config["inspection"]["rbs_calculator_grouping_variables"]['default']
-                    ]
-                else:
-                    default_list = ['origin','material_type']
-                    warnings.warn(
-                        f"PIS Station ---{port_name}--- for the consignment not found in config."
-                        f"Also, no defaults found in config so risk unit group variables being defaulted to...{default_list}",
-                        UserWarning,
-                        stacklevel=2
-                    )
-                    risk_unit_grouping_variables = ['origin','material_type']
+        if pis_station is None:
+            if ('default' in config["inspection"]["rbs_calculator_grouping_variables"].keys()
+                    and len(config["inspection"]["rbs_calculator_grouping_variables"]['default'])>0):
+                default_list = config["inspection"]["rbs_calculator_grouping_variables"]['default']
+                warnings.warn(
+                    f"PIS Station ---{port_name}--- for the consignment not found in config. "
+                    f"Using defaults found in config for risk unit grouping variables: {default_list}",
+                    UserWarning,
+                    stacklevel=2
+                )
+                risk_unit_grouping_variables = [
+                    x.lower().replace(' ', '_').replace('-', '_').replace('.', '_')
+                    for x in config["inspection"]["rbs_calculator_grouping_variables"]['default']
+                ]
             else:
-                if len(config["inspection"]["rbs_calculator_grouping_variables"][pis_station]) == 0:
-                    default_list = ['origin', 'material_type']
-                    warnings.warn(
-                        f"PIS Station ---{port_name}--- for the consignment not found in config."
-                        f"However, no grouping variables found in the config, so risk unit group variables being defaulted to...{default_list}",
-                        UserWarning,
-                        stacklevel=2
-                    )
-                    risk_unit_grouping_variables = ['origin','material_type']
-                else:
-                    risk_unit_grouping_variables = [
-                        x.lower().replace(' ', '_').replace('-', '_').replace('.', '_')
-                        for x in config["inspection"]["rbs_calculator_grouping_variables"][pis_station]
-                    ]
+                default_list = ['origin','material_type']
+                warnings.warn(
+                    f"PIS Station ---{port_name}--- for the consignment not found in config."
+                    f"Also, no defaults found in config so risk unit group variables being defaulted to...{default_list}",
+                    UserWarning,
+                    stacklevel=2
+                )
+                risk_unit_grouping_variables = ['origin','material_type']
+        else:
+            if len(config["inspection"]["rbs_calculator_grouping_variables"][pis_station]) == 0:
+                default_list = ['origin', 'material_type']
+                warnings.warn(
+                    f"PIS Station ---{port_name}--- for the consignment found in config."
+                    f"However, no grouping variables found in the config, so risk unit group variables being defaulted to...{default_list}",
+                    UserWarning,
+                    stacklevel=2
+                )
+                risk_unit_grouping_variables = ['origin','material_type']
+            else:
+                risk_unit_grouping_variables = [
+                    x.lower().replace(' ', '_').replace('-', '_').replace('.', '_')
+                    for x in config["inspection"]["rbs_calculator_grouping_variables"][pis_station]
+                ]
 
         for count, var in enumerate(risk_unit_grouping_variables):
             matching_column_name = find_column_name(var,list(group.columns))
@@ -349,46 +346,6 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
         include_groups=False
     )
     return data_updated
-
-
-def _get_compliance_grouping_variables(config: dict, data: Optional[pd.DataFrame]) -> List[str]:
-    if config is None or data is None or data.empty:
-        return []
-    compliance_cfg = config.get("inspection", {}).get("compliance_table", {})
-    compliance_filename = compliance_cfg.get("file_name")
-    if not compliance_filename:
-        return []
-
-    try:
-        compliance_path = Path(compliance_filename)
-        if compliance_path.suffix.lower() == ".pkl":
-            compliance_table_dict = load_compliance_lookup(compliance_filename)
-        else:
-            compliance_table_dict = load_compliance_lookup_csv(compliance_path)
-    except Exception:  # pylint: disable=broad-except
-        return []
-
-    raw_variables = compliance_table_dict.get("rbs_variables", [])
-    normalized_variables, _, _ = normalize_rbs_variables_using_risk_unit_config(raw_variables)
-    if not normalized_variables:
-        return []
-
-    risk_unit_config = RiskUnitConfig()
-    resolved_variables: List[str] = []
-    for var in normalized_variables:
-        mapped_column = risk_unit_config.attribute_mapping.get(var, var)
-        if mapped_column in data.columns:
-            resolved_variables.append(mapped_column)
-            continue
-        matching_column_name = find_column_name(var, list(data.columns))
-        if matching_column_name is not None:
-            resolved_variables.append(matching_column_name)
-
-    deduped_variables: List[str] = []
-    for var in resolved_variables:
-        if var not in deduped_variables:
-            deduped_variables.append(var)
-    return deduped_variables
 
 
 
@@ -528,14 +485,18 @@ def sample_n(config, consignment):
     return n_units_to_inspect
 
 
-def sample_rbs(config, consignment):
+def sample_rbs(
+        config,
+        consignment,
+        rng: Generator = None,
+):
     """Set sample size to sample units from consignment using hypergeometric/detection 
     level strategy based on compliance levels. Return number of units to inspect.
 
     :param config: Configuration to be used
     :param consignment: Consignment to be inspected
+    :param rng: Random number generator
     """
-
     unit = config["inspection"]["unit"]
     debug_print = config.get("debug", {}).get("print_compliance_levels", False)
 
@@ -544,6 +505,12 @@ def sample_rbs(config, consignment):
 
     # Load compliance lookup
     compliance_table_dict = load_compliance_lookup(filename=compliance_table_lookup_filename)
+
+    for key, val in list(compliance_table_dict.items()):
+        # Only process entries where the key is a tuple and value is a tuple of two strings
+        if isinstance(key, tuple) and isinstance(val, tuple) and len(val) == 2:
+            str1, str2 = val
+            compliance_table_dict[key] = (float(str1), float(str2))
 
 
     detection_confidence_levels = get_detection_and_confidence(
@@ -720,13 +687,19 @@ def select_random_indexes(unit, consignment, n_units_to_inspect):
     return indexes_to_inspect
 
 
-def select_random_indexes_rbs(unit, consignment, n_units_to_inspect):
+def select_random_indexes_rbs(
+        unit,
+        consignment,
+        n_units_to_inspect,
+        rng: Generator,
+):
     """Select units (indexes) from consignment based on sample size and
     random selection strategy.
 
     :param unit: Unit to be used for inspection (inspection_unit or sample_unit)
     :param consignment: Consignment to be inspected
     :param n_units_to_inspect: Number of units to inspect defined in sample functions.
+    :param rng: Random number generator
     """
     
     indexes_to_inspect = []
@@ -754,7 +727,8 @@ def select_random_indexes_rbs(unit, consignment, n_units_to_inspect):
                 requested = max(0, min(requested, len(sample_pool)))
                 if requested == 0:
                     continue
-                selected_sample_unit_ids.extend(random.sample(sample_pool, requested))
+                selected = rng.choice(sample_pool, size=requested, replace=False)
+                selected_sample_unit_ids.extend(selected)
 
             # Deduplicate to avoid double-inspection if sample units appear in multiple risk groups.
             for sample_unit_id in sorted(set(selected_sample_unit_ids)):
@@ -770,9 +744,7 @@ def select_random_indexes_rbs(unit, consignment, n_units_to_inspect):
                 population = len(inspection_unit.included_unit_objects)
                 requested = n_units_to_inspect.get(inspection_unit_counter, 0)
                 requested = max(0, min(requested, population))
-                indexes_to_inspect_temp = random.sample(
-                    list(range(population)), requested
-                )
+                indexes_to_inspect_temp = list(rng.choice(list(range(population)), size=requested, replace=False))
                 inspection_units_to_inspect[inspection_unit_counter] = indexes_to_inspect_temp
                 indexes_to_inspect_temp = [x + current_idx for x in indexes_to_inspect_temp]
                 current_idx += population
@@ -834,12 +806,18 @@ def select_cluster_indexes(config, consignment, n_units_to_inspect):
     return indexes_to_inspect
 
 
-def select_units_to_inspect(config, consignment, n_units_to_inspect):
+def select_units_to_inspect(
+        config,
+        consignment,
+        n_units_to_inspect,
+        rng: Generator = None,
+):
     """Select units to inspect based on selection strategy.
 
     :param config: Configuration to be used
     :param consignment: Consignment to be inspected
     :param n_units_to_inspect: Number of units to inspect
+    :param rng: Random number generator
     """
     unit = config["inspection"]["unit"]
     selection_strategy = config["inspection"]["selection_strategy"]
@@ -847,7 +825,7 @@ def select_units_to_inspect(config, consignment, n_units_to_inspect):
 
     if sample_strategy == "rbs":
         if selection_strategy == "random":
-            return select_random_indexes_rbs(unit, consignment, n_units_to_inspect)
+            return select_random_indexes_rbs(unit, consignment, n_units_to_inspect, rng=rng)
         elif selection_strategy == "cluster":
             return select_cluster_indexes(config, consignment, n_units_to_inspect)
         elif selection_strategy == "convenience":
@@ -872,7 +850,13 @@ def inspect_sample_unit(sample_unit, effectiveness):
     return random.random() < effectiveness
 
 
-def inspect(config, consignment, n_units_to_inspect, detailed):
+def inspect(
+        config,
+        consignment,
+        n_units_to_inspect,
+        detailed,
+        rng: Generator = None,
+):
     """Inspect selected units using both end strategies (to detection, to completion)
     Return number of inspection_units opened, sample_units inspected, and contaminated sample_units found for
     each end strategy.
@@ -880,6 +864,8 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     :param config: Configuration to be used
     :param consignment: Consignment to be inspected
     :param n_units_to_inspect: Number of units to inspect defined by sample functions.
+    :param detailed: Boolean flag to indicate if details are wanted to be provided
+    :param rng: Random number generator
     """
     # Disabling warnings, possible future TODO is splitting this function.
     # pylint: disable=too-many-locals,too-many-statements
@@ -913,7 +899,7 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
 
     if sample_strategy == "rbs":
         indexes_to_inspect, inspection_units_to_inspect = select_units_to_inspect(
-            config, consignment, n_units_to_inspect
+            config, consignment, n_units_to_inspect, rng=rng
         )
     else:
         indexes_to_inspect = select_units_to_inspect(
@@ -1165,7 +1151,10 @@ def inspect(config, consignment, n_units_to_inspect, detailed):
     return ret
 
 
-def get_sample_function(config):
+def get_sample_function(
+        config,
+        rng: Generator = None,
+):
     """Based on config, return function to sample a consignment."""
     sample_strategy = config["inspection"]["sample_strategy"]
     if sample_strategy == "proportion":
@@ -1191,7 +1180,11 @@ def get_sample_function(config):
     elif sample_strategy == "rbs":
 
         def sample(consignment):
-            return sample_rbs(config=config, consignment=consignment)
+            return sample_rbs(
+                config=config,
+                consignment=consignment,
+                rng=rng
+            )
 
     else:
         raise RuntimeError(f"Unknown sample strategy: {sample_strategy}")
@@ -1247,6 +1240,10 @@ def get_detection_and_confidence(
             # Get value using flexible lookup
             value = _get_risk_unit_attribute(risk_unit, var, risk_unit_config)
             values[var] = value
+
+        for key, val in values.items():
+            if isinstance(val, bool):
+                values[key] = "TRUE" if val else "FALSE"
 
         # Check for missing values
         missing = [var for var, val in values.items() if val is None]
