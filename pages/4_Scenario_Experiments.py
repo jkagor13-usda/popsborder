@@ -54,15 +54,41 @@ if st.session_state.get("page4_save_success"):
 
 # --- Helpers ------------------------------------------------------------------
 def _slugify(name: str) -> str:
+    """Convert an experiment name into a filesystem-friendly slug.
+
+    Non-alphanumeric characters (other than ``_`` and ``-``) are replaced
+    with underscores. If the result is empty, ``"scenario"`` is returned.
+
+    Args:
+        name: Arbitrary experiment or scenario name.
+
+    Returns:
+        Slugified string safe for use as a folder name.
+    """
     slug = re.sub(r"[^a-zA-Z0-9_-]+", "_", name.strip())
     return slug or "scenario"
 
 
 def _list_files(folder: Path, pattern: str) -> list[Path]:
+    """List files in a folder matching a glob pattern.
+
+    Args:
+        folder: Directory to search.
+        pattern: Glob pattern (e.g., ``"*.csv"``).
+
+    Returns:
+        Sorted list of Path objects if the folder exists, else an empty list.
+    """
     return sorted(folder.glob(pattern)) if folder.exists() else []
 
 
 def _load_param_sets() -> dict:
+    """Load contamination parameter sets from the parameter store JSON.
+
+    Returns:
+        Dictionary mapping parameter-set names to their parameter data.
+        Returns an empty dict if the store does not exist or cannot be read.
+    """
     if not CONTAM_PARAM_PATH.exists():
         return {}
     try:
@@ -72,10 +98,24 @@ def _load_param_sets() -> dict:
 
 
 def _update_state_paths(**updates) -> None:
+    """Update path-related entries in the global slippage state.
+
+    Args:
+        **updates: Keyword updates for the `paths` dataclass stored in state.
+    """
     state["paths"] = replace(state["paths"], **updates)
 
 
 def _copy_first_existing_file(name: str, scenario_dir: Path, candidates: list[Path], copied_files: list[str], missing: list[str]) -> None:
+    """Copy the first existing candidate file into the scenario directory.
+
+    Args:
+        name: Target filename to use within ``scenario_dir``.
+        scenario_dir: Destination experiment directory.
+        candidates: Ordered list of candidate source paths to check.
+        copied_files: List to append the successfully copied filename to.
+        missing: List to append the filename to if no candidates exist.
+    """
     src = next((p for p in candidates if p.exists()), None)
     if src:
         dest = scenario_dir / name
@@ -87,6 +127,18 @@ def _copy_first_existing_file(name: str, scenario_dir: Path, candidates: list[Pa
 
 
 def _scenario_row_to_portable_paths(rows_df: pd.DataFrame, set_slug: str) -> pd.DataFrame:
+    """Rewrite scenario row paths to be portable within a given experiment set.
+
+    Paths in critical columns are rewritten to use a relative prefix
+    under ``tmp/experiments/<set_slug>``.
+
+    Args:
+        rows_df: Scenario rows DataFrame.
+        set_slug: Experiment set slug used as folder name.
+
+    Returns:
+        DataFrame with updated file path strings.
+    """
     df = rows_df.copy()
     base_prefix = f"tmp/experiments/{set_slug}"
     for col in ("consignment/input_file/file_name", "inspection/compliance_table/file_name"):
@@ -96,6 +148,17 @@ def _scenario_row_to_portable_paths(rows_df: pd.DataFrame, set_slug: str) -> pd.
 
 
 def _apply_scenario_defaults(rows_df: pd.DataFrame) -> pd.DataFrame:
+    """Apply default contamination and unit settings to a scenario table.
+
+    Ensures contamination unit and rate columns have reasonable defaults
+    before normalization.
+
+    Args:
+        rows_df: Scenario table DataFrame.
+
+    Returns:
+        Normalized DataFrame ready for downstream use.
+    """
     df = rows_df.copy()
     cont_rate_col = "contamination/contamination_rate/value"
     cont_unit_col = "contamination/contamination_unit"
@@ -109,6 +172,16 @@ def _apply_scenario_defaults(rows_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _normalize_proportion_value(val) -> float:
+    """Normalize inspection proportion values for scenario tables.
+
+    Values less than or equal to zero are replaced with 0.02 (2%).
+
+    Args:
+        val: Raw value (string or numeric).
+
+    Returns:
+        Normalized float value.
+    """
     try:
         normalized = float(val)
     except Exception:
@@ -117,12 +190,33 @@ def _normalize_proportion_value(val) -> float:
 
 
 def _default_template_columns(rows_df: pd.DataFrame) -> list[str]:
+    """Infer default scenario-table column order from the template.
+
+    Args:
+        rows_df: Current scenario rows.
+
+    Returns:
+        List of column names. Uses the template scenario CSV if present,
+        otherwise falls back to current DataFrame columns.
+    """
     if TEMPLATE_SCENARIO.exists():
         return pd.read_csv(TEMPLATE_SCENARIO, nrows=0).columns.tolist()
     return rows_df.columns.tolist()
 
 
 def _build_scenario_row(scenario_label: str, consignment_choice: Path, compliance_choice: Path, param_choice: str, param_sets: dict) -> dict:
+    """Construct a single scenario row from chosen inputs.
+
+    Args:
+        scenario_label: Scenario name to use in the row.
+        consignment_choice: Path to selected consignment (RBS) CSV file.
+        compliance_choice: Path to selected compliance policy file.
+        param_choice: Key of the parameter set selected from ``param_sets``.
+        param_sets: Dictionary of saved contamination parameter sets.
+
+    Returns:
+        Dictionary representing one scenario row suitable for a scenario table.
+    """
     param_snapshot = param_sets.get(param_choice, {})
     scenario_row = {
         "name": scenario_label,
@@ -161,10 +255,37 @@ def _build_scenario_row(scenario_label: str, consignment_choice: Path, complianc
 
 
 def _render_file_inventory(label: str, values, formatter) -> None:
+    """Render a compact inventory line for available files.
+
+    Args:
+        label: Category label (e.g., "Consignments").
+        values: Iterable of values (e.g., Paths or strings).
+        formatter: Callable that formats the values into a display string.
+    """
     st.write(f"**{label} ({len(values)}):** {formatter(values) if values else 'none'}")
 
+
 def _copy_inputs(rows_df: pd.DataFrame, scenario_dir: Path) -> None:
-    """Copy consignment/compliance files and contamination params/config into scenario_dir with standard names."""
+    """Copy referenced input files into an experiment directory.
+
+    The function copies:
+
+    * Consignment (RBS) CSVs.
+    * Compliance policy pickles.
+    * Contamination parameter sets snapshot.
+    * A config.yml file (from various candidate locations).
+
+    Args:
+        rows_df: DataFrame of scenario rows with consignment/compliance paths.
+        scenario_dir: Destination directory for the experiment.
+
+    Returns:
+        List of filenames that were successfully copied.
+
+    Raises:
+        FileNotFoundError: If required consignment/compliance/config files
+            cannot be located.
+    """
     missing: list[str] = []
     copied_files: list[str] = []
     cons_col = "consignment/input_file/file_name"
@@ -227,7 +348,21 @@ def _copy_inputs(rows_df: pd.DataFrame, scenario_dir: Path) -> None:
 
 
 def _normalize_rows(rows_df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize scenario rows so downstream RBS run does not fail."""
+    """Normalize scenario rows to avoid RBS runtime errors.
+
+    This function enforces:
+
+    * ``inspection/unit`` = "sample_units"
+    * ``inspection/sample_strategy`` defaults to "rbs"
+    * ``inspection/proportion/value`` is positive (defaults to 0.02)
+    * Beta-binomial alpha/beta parameters are positive and non-zero.
+
+    Args:
+        rows_df: Scenario table DataFrame.
+
+    Returns:
+        Normalized DataFrame.
+    """
     df = rows_df.copy()
     if "inspection/unit" in df.columns:
         df["inspection/unit"] = "sample_units"
