@@ -5,11 +5,22 @@ from typing import Dict
 
 
 def build_shortest_name_lookup(producer_group_mapping: pd.DataFrame) -> Dict[str, str]:
-    """
-    For each group in producer_group_mapping, find the shortest 'name' string.
+    """Build a lookup from group ID to shortest name in a mapping table.
+
+    For each unique value in ``producer_group_mapping["group"]``, this function
+    finds the shortest corresponding ``"name"`` string (by character length,
+    breaking ties using alphabetical order) and returns a mapping.
+
+    Args:
+        producer_group_mapping: DataFrame with at least ``"name"`` and
+            ``"group"`` columns.
 
     Returns:
-        dict: {group_value_as_str -> shortest_name}
+        Dictionary of the form ``{group_value_as_str: shortest_name}``.
+
+    Raises:
+        ValueError: If required columns are missing from
+            ``producer_group_mapping``.
     """
     # Ensure required columns exist
     required = {"name", "group"}
@@ -41,20 +52,30 @@ def map_group_to_shortest_name(
     output_col: str = None,
     default_value: str = "Reference",
 ) -> pd.DataFrame:
-    """
-    Map group IDs in synth_data[group_col] to the shortest 'name' for that group
-    from producer_group_mapping, with type harmonization and a default for missing.
+    """Map group IDs to the shortest name for that group.
+
+    Group IDs in ``synth_data[group_col]`` are mapped to the shortest name
+    per group based on ``producer_group_mapping``. All group values are
+    coerced to strings for alignment, and missing mappings are filled with a
+    default label.
 
     Args:
-        synth_data: DataFrame with a column of group IDs (e.g., 'PRODUCER_GROUP_TOP').
-        group_col: Column in synth_data that contains group values (numeric or string).
-        producer_group_mapping: DataFrame with 'name' and 'group' columns.
-        output_col: Name of the output column. If None, overwrites group_col.
-        default_value: Value to use when group_col value is not found in mapping
-                      (e.g., "Reference").
+        synth_data: DataFrame containing a column of group IDs (e.g.,
+            ``"PRODUCER_GROUP_TOP"``).
+        group_col: Name of the column in ``synth_data`` that contains group
+            values (numeric or string).
+        producer_group_mapping: DataFrame with ``"name"`` and ``"group"``
+            columns used to derive shortest names per group.
+        output_col: Name of the output column to store mapped names. If None,
+            ``group_col`` is overwritten in-place.
+        default_value: Value used for group IDs not found in the mapping
+            (e.g., ``"Reference"``).
 
     Returns:
-        Updated synth_data with the mapped column added/overwritten.
+        The input ``synth_data`` with the mapped column added or overwritten.
+
+    Raises:
+        ValueError: If ``group_col`` is not found in ``synth_data``.
     """
     if group_col not in synth_data.columns:
         raise ValueError(f"{group_col} not found in synth_data")
@@ -80,16 +101,38 @@ def map_group_to_shortest_name(
     return synth_data
 
 
-
 def create_engineered_features(
     synth_data: pd.DataFrame = None,
-    dt_train: pd.DataFrame =None,
-    producer_group_mapping: pd.DataFrame=None,
+    dt_train: pd.DataFrame = None,
+    producer_group_mapping: pd.DataFrame = None,
 ) -> pd.DataFrame:
+    """Create engineered features for synthetic PIS/RBS data.
 
+    This function:
+
+    1. Validates that ``synth_data`` is provided.
+    2. Uses the R-based ``RVariableCreator`` to generate:
+       * ``PRODUCER_GROUP_TOP`` strata features,
+       * ``IMPORTER_NAME_TOP`` strata features,
+       * binary quantity features per risk unit.
+    3. Merges the generated quantity-binary features into ``synth_data``,
+       after dropping any existing conflicting columns.
+
+    Args:
+        synth_data: Synthetic data DataFrame with risk-unit level records.
+        dt_train: Training DataFrame used by the R script for strata feature
+            generation.
+        producer_group_mapping: Optional producer grouping DataFrame (not used
+            directly here but may be required upstream).
+
+    Returns:
+        Updated ``synth_data`` DataFrame with engineered features added.
+
+    Raises:
+        ValueError: If ``synth_data`` is None.
+    """
     if synth_data is None:
         raise ValueError('Synthetic Data Passed is None')
-
 
     print(f'\nCreating Engineered Features...')
 

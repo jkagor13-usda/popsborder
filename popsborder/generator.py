@@ -101,20 +101,25 @@ DEFAULT_TARGET_COLUMNS = [
     "COMMODITY_HOST_TYPE",
 ]
 
+
 ### Support functions:
 
 def preprocess_producer_name(name, suffix_string=None, prefix_string=None):
-    """
-    Preprocess a single producer name according to specified rules.
-    Mimics the R function basic_text_preproc.
+    """Preprocess a single producer name according to specified rules.
+
+    This function mimics the R function ``basic_text_preproc`` by lowercasing,
+    stripping punctuation and numeric tokens, removing common prefixes/suffixes,
+    and truncating the resulting name.
 
     Args:
-        name: Raw producer name string
-        suffix_string: Custom regex pattern for suffixes to remove
-        prefix_string: Custom regex pattern for prefixes to remove
+        name: Raw producer name value.
+        suffix_string: Optional regex pattern of suffixes to remove. If None,
+            a default suffix pattern is used.
+        prefix_string: Optional regex pattern of prefixes to remove. If None,
+            a default prefix pattern is used.
 
     Returns:
-        Preprocessed and truncated name (max 15 chars)
+        Preprocessed and truncated producer name string (maximum 15 characters).
     """
     # Convert to string and lowercase FIRST
     text = str(name).lower() if pd.notna(name) else name
@@ -165,15 +170,20 @@ def preprocess_producer_name(name, suffix_string=None, prefix_string=None):
 
 
 def create_producer_mapping(producer_group_mapping_df, use_shortest_name=True):
-    """
-    Create a mapping dictionary from producer names to groups.
+    """Create a mapping dictionary from producer names to group labels.
+
+    Producer names are preprocessed and then mapped into groups. Group labels
+    can be either the shortest raw producer name per group or the numeric
+    grouping identifier.
 
     Args:
-        producer_group_mapping_df: DataFrame with 'PRODUCER_NAME' and 'grouping' columns
-        use_shortest_name: If True, use shortest raw name as group label instead of numeric grouping
+        producer_group_mapping_df: DataFrame with columns ``'PRODUCER_NAME'``
+            and ``'grouping'`` describing producer group membership.
+        use_shortest_name: If True, use the shortest raw name per group as the
+            group label; otherwise, use the numeric grouping value.
 
     Returns:
-        Dictionary mapping preprocessed producer names to group labels
+        Dictionary mapping preprocessed producer names to group labels.
     """
     # Create a copy to avoid modifying original
     mapping_df = producer_group_mapping_df.copy()
@@ -202,16 +212,21 @@ def create_producer_mapping(producer_group_mapping_df, use_shortest_name=True):
 
 
 def apply_producer_grouping(input_data, producer_group_mapping_df, use_shortest_name=True):
-    """
-    Apply producer name preprocessing and grouping to input data.
+    """Apply producer name preprocessing and grouping to input data.
 
     Args:
-        input_data: DataFrame with 'PRODUCER_NAME' column
-        producer_group_mapping_df: DataFrame with 'PRODUCER_NAME' and 'grouping' columns
-        use_shortest_name: If True, use shortest raw name as group label.  If False, use the numeric grouping number
+        input_data: DataFrame with a ``'PRODUCER_NAME'`` column.
+        producer_group_mapping_df: DataFrame with ``'PRODUCER_NAME'`` and
+            ``'grouping'`` columns describing producer groups. If None, all
+            producers will be assigned ``'NO_GROUP_MATCH'``.
+        use_shortest_name: If True, use the shortest raw name per group as
+            group label; if False, use the numeric grouping identifier.
 
     Returns:
-        DataFrame with added 'producer_name_preprocessed' and 'producer_group' columns
+        DataFrame with additional columns:
+            * ``producer_name_preprocessed``: preprocessed producer name.
+            * ``producer_group``: group label for each row (or
+              ``'NO_GROUP_MATCH'`` when no mapping is found).
     """
     if input_data is None:
         return None
@@ -240,15 +255,21 @@ def apply_producer_grouping(input_data, producer_group_mapping_df, use_shortest_
 
 
 def _log(message: str) -> None:
+    """Log a message to stdout.
+
+    Args:
+        message: Text message to log.
+    """
     print(message)
 
 
 class SyntheticConsignmentDataGenerator:
-    """Generate synthetic consignment data using advanced sampling techniques
-    
-    This generator creates realistic consignment records with randomized attributes
-    based on configurable parameters or input data files. It supports multiple
-    sampling methods for preserving statistical relationships in the data.
+    """Generate synthetic consignment data using advanced sampling techniques.
+
+    This generator creates realistic consignment records with randomized
+    attributes based on configurable parameters or input data files. It
+    supports multiple sampling methods for preserving statistical relationships
+    in the data.
     """
 
     def __init__(
@@ -258,11 +279,14 @@ class SyntheticConsignmentDataGenerator:
             input_data_file: Optional[Union[str, Path]] = None,
             rng: Optional[Generator] = None,
     ) -> None:
-        """Initialize the synthetic data generator
+        """Initialize the synthetic data generator.
 
-        :param config: Optional generator configuration
-        :param producer_group_mapping: Optional producer grouping table
-        :param input_data_file: Optional path to input data file for training
+        Args:
+            config: Optional generator configuration dictionary.
+            producer_group_mapping: Optional producer grouping table as a DataFrame.
+            input_data_file: Optional path to an input data file for training
+                (CSV or Excel).
+            rng: Optional numpy random Generator for reproducible sampling.
         """
         self.config = config or {}
         self.producer_group_mapping = producer_group_mapping
@@ -270,7 +294,7 @@ class SyntheticConsignmentDataGenerator:
 
         if self.input_data is not None and 'RISK_UNIT' not in self.input_data.columns and "RISK_UNIT".lower() in self.input_data.columns:
             self.input_data.rename(columns={'risk_unit': 'RISK_UNIT'}, inplace=True)
-        
+
         # Initialize random seed for reproducible results
         if rng is None:
             self.rng = np.random.default_rng()
@@ -285,8 +309,11 @@ class SyntheticConsignmentDataGenerator:
     ) -> Optional[pd.DataFrame]:
         """Load input data file for training sampling models.
 
-        :param input_file: Path to input data file (.csv, .xlsx, .xls)
-        :return: DataFrame with loaded data or None if failed
+        Args:
+            input_file: Path to input data file (.csv, .xlsx, .xls).
+
+        Returns:
+            DataFrame with loaded and cleaned data, or None if loading fails.
         """
         if input_file is None:
             return None
@@ -351,11 +378,31 @@ class SyntheticConsignmentDataGenerator:
             return None
 
     def _resolve_target_columns(self) -> list[str]:
+        """Resolve target columns for synthetic generation based on input data.
+
+        Returns:
+            A list of column names to be used as targets when generating
+            synthetic data. If DEFAULT_TARGET_COLUMNS are not present, falls
+            back to all available columns.
+        """
         available_cols = self.input_data.columns.tolist()
         target_cols = [col for col in available_cols if col in DEFAULT_TARGET_COLUMNS]
         return target_cols or available_cols
 
     def _generate_with_method(self, method: str, target_cols: list[str], n_consignments: int) -> pd.DataFrame:
+        """Generate synthetic data using a specified sampling method.
+
+        Args:
+            method: Sampling method name, e.g., ``'naive'``, ``'sequential'``, ``'gmm'``.
+            target_cols: List of target column names to generate.
+            n_consignments: Number of synthetic consignments to generate.
+
+        Returns:
+            DataFrame containing the generated synthetic data.
+
+        Raises:
+            ValueError: If the sampling method is unknown.
+        """
         method_dispatch = {
             "naive": lambda: self.multinomial_sample(
                 self.input_data, target_cols, n_consignments, random_state=DEFAULT_RANDOM_STATE
@@ -383,16 +430,26 @@ class SyntheticConsignmentDataGenerator:
 
     @staticmethod
     def fit_best_continuous_distribution(data, distributions=None, criterion="aic"):
-        """
-        Fit several continuous distributions to 1D numeric data and select the best.
-        If no distribution can be selected, fall back to fitting a beta distribution.
-        RuntimeWarnings from SciPy are suppressed during fitting.
+        """Fit several continuous distributions and select the best by a criterion.
 
-        Returns
-        -------
-        dist_name : str
-        params : tuple
-            Parameters as returned by dist.fit(data).
+        RuntimeWarnings from SciPy are suppressed during fitting. If no
+        distribution can be selected, the function falls back to fitting a
+        beta distribution.
+
+        Args:
+            data: One-dimensional numeric data to fit.
+            distributions: Optional list of SciPy distributions to consider.
+                If None, a default set is used.
+            criterion: Selection criterion, either ``'aic'`` or ``'ks'``.
+
+        Returns:
+            Tuple ``(dist_name, params)`` where ``dist_name`` is the name of the
+            best-fitting distribution and ``params`` are the fitted parameters.
+
+        Raises:
+            ValueError: If no valid data are available for fitting.
+            ValueError: If an invalid criterion is provided.
+            RuntimeError: If no distribution (including beta fallback) fits.
         """
         # --- Basic cleaning ---
         data = np.asarray(data, dtype=float)
@@ -471,13 +528,24 @@ class SyntheticConsignmentDataGenerator:
                                      num_inspection_units,
                                      inspection_col="INSPECTION_NUMBER",
                                      random_state=None):
-        """
-        - INSPECTION_NUMBER: not sampled from PMF.
-          Instead, create n_consignments unique inspection numbers and repeat each
-          according to sampled_uniform[i].
-        - Other columns:
-          * numeric -> sample from fitted continuous distribution
-          * non-numeric -> sample from empirical PMF
+        """Sample rows while controlling inspection IDs and per-inspection counts.
+
+        This method:
+        - Creates ``n_consignments`` synthetic inspection IDs.
+        - Repeats each inspection ID according to ``num_inspection_units``.
+        - Samples numeric columns from fitted continuous distributions.
+        - Samples non-numeric columns from their empirical PMF.
+
+        Args:
+            df: Source DataFrame used to estimate distributions.
+            columns: Columns to sample.
+            n_consignments: Number of distinct inspection IDs to create.
+            num_inspection_units: Array-like counts of units per inspection.
+            inspection_col: Name of the inspection ID column.
+            random_state: Seed for random number generation.
+
+        Returns:
+            DataFrame with sampled rows and inspection IDs.
         """
         rng = np.random.default_rng(random_state)
 
@@ -537,15 +605,25 @@ class SyntheticConsignmentDataGenerator:
             output_col: str = "PRODUCER_NAME_RESOLVED",
             alias_map: Optional[dict] = None,
     ) -> pd.DataFrame:
-        """
-        Simple producer entity resolution.
+        """Perform a simple producer entity resolution.
 
-        - Normalizes text (strip, remove parentheses, collapse spaces).
-        - Optionally applies an alias map whose KEYS are normalized
-          lowercase strings and VALUES are canonical producer names.
+        The function:
+        - Normalizes text (strips, removes parentheses, collapses spaces).
+        - Optionally applies an alias map whose keys are normalized lowercase
+          strings and whose values are canonical producer names.
+        - Adds a new column with resolved names.
 
-        Returns a *copy* of df with a new column `output_col`.
+        Args:
+            df: DataFrame containing producer names.
+            input_col: Name of the input column with raw producer names.
+            output_col: Name of the output column to store resolved names.
+            alias_map: Optional mapping from normalized lowercase names to
+                canonical names.
+
+        Returns:
+            A copy of the DataFrame with the resolved-name column added.
         """
+
         def _normalize(name: Union[str, float]):
             if pd.isna(name):
                 return name
@@ -583,6 +661,18 @@ class SyntheticConsignmentDataGenerator:
 
     @staticmethod
     def identify_num_inspection_units(df, n_consignments=1):
+        """Randomly sample number of inspection units per consignment from data.
+
+        The number of inspection units per consignment is sampled uniformly
+        from the observed minimum and maximum inspection size in the data.
+
+        Args:
+            df: DataFrame containing ``INSPECTION_NUMBER`` for grouping.
+            n_consignments: Number of synthetic consignments to generate.
+
+        Returns:
+            Array of integer inspection-unit counts (length ``n_consignments``).
+        """
         # First sample the number of inspection units per consignment uniformly based on data
         counts = df["INSPECTION_NUMBER"].value_counts()
         min_count = counts.min()
@@ -596,14 +686,33 @@ class SyntheticConsignmentDataGenerator:
     def identify_num_inspection_units_conditional(self, df, n_consignments=1,
                                                   cols=None,
                                                   producer_alias_map: Optional[dict] = None):
-        """
-        Build a nested dictionary keyed by:
-          - Case1 ("Miami PIS"):
-                ("COUNTRY_OF_ORIGIN_NAME", "PROPAGATIVE_MATERIAL_TYPE", "PRODUCER_NAME")
-          - Case2 (not "Miami PIS"):
-                ("INSPECTION_LOCATION_NAME", "COUNTRY_OF_ORIGIN_NAME", "PROPAGATIVE_MATERIAL_TYPE")
+        """Build nested dictionaries for conditional inspection-unit sampling.
 
-        And (optionally) sample inspection units from a given subset later.
+        This method constructs a nested dictionary keyed by location and
+        (country, propagative material, producer) combinations to support
+        conditional sampling of inspection units. The logic depends on whether
+        the inspection location is "Miami PIS" or not.
+
+        For:
+            - "Miami PIS": keys are
+              (COUNTRY_OF_ORIGIN_NAME, PROPAGATIVE_MATERIAL_TYPE, PRODUCER_NAME_RESOLVED)
+            - other locations: keys are
+              (INSPECTION_LOCATION_NAME, COUNTRY_OF_ORIGIN_NAME, PROPAGATIVE_MATERIAL_TYPE)
+
+        Args:
+            df: Source DataFrame containing inspection data.
+            n_consignments: Number of consignments (unused here but retained
+                for interface compatibility).
+            cols: Optional list of columns used for grouping (not required).
+            producer_alias_map: Optional mapping from normalized producer names
+                to canonical names.
+
+        Returns:
+            A dictionary of the form:
+                {
+                  "Miami PIS": { key_tuple: subset_df, ... },
+                  "Non-Miami PIS": { key_tuple: subset_df, ... },
+                }
         """
         if cols is None:
             cols = [
@@ -623,7 +732,7 @@ class SyntheticConsignmentDataGenerator:
         # Top-level dict for the two cases
         result = {
             "Miami PIS": {},  # Case1
-            "Non-Miami PIS": {}       # Case2
+            "Non-Miami PIS": {}  # Case2
         }
 
         # Masks for the two cases
@@ -674,12 +783,18 @@ class SyntheticConsignmentDataGenerator:
         return result
 
     def sample_random_key(self, case: str = "Miami PIS"):
-        """
-        Sample a random key from a given case using the probabilities
-        computed in identify_num_inspection_units_conditional.
+        """Sample a random key from a given case using precomputed probabilities.
+
+        This method uses sampling information computed by
+        :meth:`identify_num_inspection_units_conditional` to select a key
+        (tuple of grouping values) for a specified case.
+
+        Args:
+            case: Case label, such as ``"Miami PIS"`` or ``"Non-Miami PIS"``.
 
         Returns:
-            key (tuple) or None if no sampling info is available.
+            A key tuple representing a grouping combination, or None if no
+            sampling information is available.
         """
         info = getattr(self, "_case_sampling_info", None)
         if not info or case not in info:
@@ -706,23 +821,32 @@ class SyntheticConsignmentDataGenerator:
             risk_unit_col: str = "RISK_UNIT",
             count_mode: str = "rows_per_inspection",
     ) -> pd.Series:
-        """
-        For a given inspection location:
+        """Compute an empirical PMF over row counts for a given location.
 
-        1. Filter df to that location.
-        2. Drop rows where SAMPLING_UNITS is 0, blank, None, or NA.
-           (We treat the column as numeric and keep rows with value > 0.)
-        3. Compute counts based on `count_mode`:
-           - "rows_per_inspection": number of rows per INSPECTION_NUMBER
-           - "risk_units_per_inspection": number of unique risk units per INSPECTION_NUMBER
-           - "rows_per_risk_unit": number of rows per risk unit within each INSPECTION_NUMBER
-        4. Build an empirical PMF over these counts.
+        For a given inspection location, this function:
+        1. Filters the DataFrame to that location.
+        2. Drops rows where ``total_units_col`` is non-positive or invalid.
+        3. Computes counts based on ``count_mode``.
+        4. Builds an empirical PMF over these counts.
 
-        Returns
-        -------
-        pmf : pd.Series
-            Index: possible row counts (int)
-            Values: probabilities (float, summing to 1).
+        Args:
+            df: Source DataFrame.
+            location_name: Name of the inspection location.
+            total_units_col: Column holding total sampling units.
+            loc_col: Column name for inspection location.
+            inspection_col: Column name for inspection number.
+            risk_unit_col: Column name for risk unit.
+            count_mode: One of
+                ``"rows_per_inspection"``,
+                ``"risk_units_per_inspection"``,
+                ``"rows_per_risk_unit"``.
+
+        Returns:
+            A Pandas Series representing the PMF, where the index is the row
+            count and the values are probabilities.
+
+        Raises:
+            ValueError: If no rows, invalid counts, or unknown count_mode.
         """
         # 1) subset by location
         df_loc = df[df[loc_col] == location_name].copy()
@@ -786,18 +910,26 @@ class SyntheticConsignmentDataGenerator:
             risk_unit_col: str = "RISK_UNIT",
             count_mode: str = "rows_per_inspection",
     ) -> tuple[int, pd.Series]:
-        """
-        Convenience wrapper:
+        """Sample a number of rows from an empirical PMF for a given location.
 
-        - Computes the pmf via compute_rowcount_pmf_for_location
-        - Samples a row-count according to that pmf.
+        This is a convenience wrapper that:
+        1. Computes the PMF via :func:`compute_rowcount_pmf_for_location`.
+        2. Samples a row-count according to that PMF.
 
-        Returns
-        -------
-        sampled_count : int
-            A sampled number of rows (e.g., 1, 2, 3, ...)
-        pmf : pd.Series
-            The pmf used for sampling (index = counts, values = probabilities).
+        Args:
+            df: Source DataFrame.
+            location_name: Inspection location name to filter data.
+            total_units_col: Column name for sampling units.
+            loc_col: Column name for inspection location.
+            inspection_col: Column name for inspection number.
+            risk_unit_col: Column name for risk unit.
+            count_mode: Count mode passed to
+                :func:`compute_rowcount_pmf_for_location`.
+
+        Returns:
+            A tuple ``(sampled_count, pmf)`` where:
+            * ``sampled_count`` is the sampled number of rows (int).
+            * ``pmf`` is the PMF used for sampling (Series).
         """
         pmf = self.compute_rowcount_pmf_for_location(
             df=df,
@@ -817,14 +949,21 @@ class SyntheticConsignmentDataGenerator:
 
     @staticmethod
     def best_fit_discrete_distribution(data, candidate_dists=None):
-        """
-        Fit multiple SciPy *discrete* distributions and return:
-            (best_dist_name, best_dist_obj, best_params, best_aic)
+        """Fit multiple discrete distributions and return the best by AIC.
 
-        If no candidate distribution fits, returns:
-            (None, None, None, np.inf)
-        """
+        This function tries several SciPy discrete distributions and returns
+        the best-fitting one based on the Akaike Information Criterion (AIC).
 
+        Args:
+            data: One-dimensional integer data.
+            candidate_dists: Optional mapping from distribution name to SciPy
+                distribution object. If None, a default set is used.
+
+        Returns:
+            Tuple ``(best_dist_name, best_dist_obj, best_params, best_aic)``.
+            If no candidate distribution fits, returns
+            ``(None, None, None, np.inf)``.
+        """
         if candidate_dists is None:
             candidate_dists = {
                 "poisson": stats.poisson,
@@ -876,19 +1015,29 @@ class SyntheticConsignmentDataGenerator:
             country_col: str = "COUNTRY_OF_ORIGIN_NAME",
             material_col: str = "PROPAGATIVE_MATERIAL_TYPE",
     ):
-        """
-        1. Subset df to given (location, country, material type).
-        2. Extract strictly positive integer SAMPLING_UNITS values.
-        3. Try to fit discrete distributions (Poisson, NB, Geom) by AIC.
-        4. If all fails, fall back to empirical PMF over the observed support.
-        5. Return a single sampled integer > 0 and info about what was used.
+        """Sample a positive integer from data subset via discrete best-fit.
 
-        Returns
-        -------
-        sample : int
-        info : dict
-        """
+        This function:
+        1. Subsets the DataFrame to a given (location, country, material).
+        2. Extracts strictly positive integers from ``total_units_col``.
+        3. (Currently) falls back to sampling from the empirical PMF over the
+           observed support (best-fit discrete distributions are not applied).
 
+        Args:
+            df: Source DataFrame.
+            inspection_location_name: Inspection location name.
+            country_of_origin_name: Country of origin name.
+            propagative_material_type: Propagative material type.
+            total_units_col: Column name for total units (numeric).
+            loc_col: Column name for location.
+            country_col: Column name for country of origin.
+            material_col: Column name for material type.
+
+        Returns:
+            A tuple ``(sample, info)`` where:
+            * ``sample`` is a sampled positive integer.
+            * ``info`` is a dictionary with diagnostic information.
+        """
         # ---- 1) Filter df ----
         mask = (
                 (df[loc_col] == inspection_location_name) &
@@ -927,9 +1076,23 @@ class SyntheticConsignmentDataGenerator:
         return sample, info
 
     def multinomial_sample(self, df, columns, n_consignments=1, random_state=None):
-        """Naive approach - sample each column independently"""
-        np.random.seed(random_state)
+        """Sample each column independently (naive multinomial sampling).
 
+        This method:
+        - Identifies the number of inspection units per consignment.
+        - Uses :meth:`sample_mixed_with_inspection` to generate synthetic rows
+          with per-inspection grouping.
+
+        Args:
+            df: Source DataFrame.
+            columns: List of column names to sample.
+            n_consignments: Number of synthetic consignments to generate.
+            random_state: Seed for NumPy random number generation.
+
+        Returns:
+            DataFrame containing multinomial-sampled synthetic data.
+        """
+        np.random.seed(random_state)
 
         num_inspection_units = self.identify_num_inspection_units(df=df, n_consignments=n_consignments)
 
@@ -953,31 +1116,27 @@ class SyntheticConsignmentDataGenerator:
         """Generate synthetic rows using sequential conditional multinomial sampling.
 
         The sampler builds each synthetic inspection in layers:
+
         1. Sample an inspection location.
         2. Sample how many risk units should appear in that inspection.
         3. For each risk unit, choose a conditional base subset
-           (Miami vs Non-Miami logic), optionally pin a specific RISK_UNIT value,
-           then sample how many rows that risk unit contributes.
-        4. For each row, sample remaining columns sequentially, conditioning each
-           next column on prior sampled values by filtering the working subset.
+           (Miami vs Non-Miami logic), optionally pin a specific RISK_UNIT
+           value, then sample how many rows that risk unit contributes.
+        4. For each row, sample remaining columns sequentially, conditioning
+           each next column on prior sampled values by filtering the working
+           subset.
 
-        Parameters
-        ----------
-        df : pd.DataFrame
-            Source data used to estimate empirical distributions.
-        columns : list[str]
-            Requested output columns. `INSPECTION_NUMBER` is used internally and
-            only retained in output if explicitly requested.
-        n_consignments : int, default=1
-            Number of synthetic inspections to generate.
-        random_state : int | None, default=None
-            Seed passed to NumPy random sampling for reproducibility.
+        Args:
+            df: Source data used to estimate empirical distributions.
+            columns: Requested output column names. ``INSPECTION_NUMBER`` is
+                used internally and only retained in the output if explicitly
+                requested.
+            n_consignments: Number of synthetic inspections to generate.
+            random_state: Optional random seed for NumPy random sampling.
 
-        Returns
-        -------
-        pd.DataFrame
-            Synthetic dataset with requested columns, preserving conditional
-            structure from observed data where possible.
+        Returns:
+            Synthetic dataset with requested columns, preserving some
+            conditional structure from the observed data.
         """
         risk_unit_col = "RISK_UNIT"
 
@@ -1105,8 +1264,6 @@ class SyntheticConsignmentDataGenerator:
 
                     sample['SAMPLING_UNITS_FOR_INSPECTION_UNIT'] = num_sample_units
 
-
-
                     for col in columns:
                         # Do not multinomial-sample INSPECTION_NUMBER; we set it explicitly
                         if col == inspection_col or col in cols_to_remove:
@@ -1141,16 +1298,26 @@ class SyntheticConsignmentDataGenerator:
         return sampled_df
 
     def gmm_sample(self, df, columns, n_consignments=1, random_state=None, n_components=3):
-        """
-        GMM sampling for numeric columns + Gaussian-copula-based sampling
-        for categorical columns, with grouped INSPECTION_NUMBER values.
+        """Sample synthetic data using GMM for numerics and a Gaussian copula for categoricals.
 
-        - Computes num_inspection_units via self.identify_num_inspection_units(df, n_consignments)
-        - Output:
-            sum(num_inspection_units) rows
-            n_consignments unique INSPECTION_NUMBER values
-        """
+        This method:
+        - Determines the number of inspection units via
+          :meth:`identify_num_inspection_units`.
+        - Samples categorical columns using a Gaussian copula.
+        - Samples numeric columns using a Gaussian Mixture Model (GMM).
+        - Ensures inspection IDs are grouped according to the sampled
+          inspection-unit counts.
 
+        Args:
+            df: Source DataFrame to fit underlying distributions.
+            columns: Column names to sample.
+            n_consignments: Number of synthetic consignments to generate.
+            random_state: Optional random seed.
+            n_components: Number of GMM components for numeric columns.
+
+        Returns:
+            DataFrame of synthetic samples with requested columns.
+        """
         rng = np.random.default_rng(random_state)
         inspection_col = "INSPECTION_NUMBER"
 
@@ -1244,14 +1411,33 @@ class SyntheticConsignmentDataGenerator:
 
     @staticmethod
     def _make_psd(s):
-        """Clip tiny negative eigenvalues to ensure PSD."""
+        """Ensure a symmetric matrix is positive semi-definite (PSD).
+
+        Very small negative eigenvalues are clipped to a small positive value.
+
+        Args:
+            s: Symmetric matrix.
+
+        Returns:
+            A PSD-adjusted matrix.
+        """
         w, V = np.linalg.eigh(s)
         w = np.maximum(w, 1e-8)
         return (V * w) @ V.T
 
     @staticmethod
     def _rank_to_z(mat):
-        """Empirical CDF per column -> latent normal; expects a 2D numpy array."""
+        """Transform columns to latent normals via empirical CDF.
+
+        Each column is ranked and mapped through the normal quantile function,
+        resulting in an approximate Gaussian representation of the data.
+
+        Args:
+            mat: 2D numpy array with shape (n_samples, n_features).
+
+        Returns:
+            2D numpy array of the same shape with latent normal values.
+        """
         eps = 1e-6
         n, m = mat.shape
         Z = np.empty_like(mat, dtype=float)
@@ -1262,60 +1448,75 @@ class SyntheticConsignmentDataGenerator:
             u = np.clip(u, eps, 1 - eps)
             Z[:, j] = norm.ppf(u)
         return Z
-    
+
     def gaussian_copula_sample(self, df, columns, n_samples=1, random_state=None, min_group_corr_rows=20):
-        """
-        Category-conditional Gaussian copula sampler that preserves P(C) and P(X|C).
+        """Sample using a category-conditional Gaussian copula.
+
+        This sampler preserves both marginal category probabilities P(C) and
+        conditional numeric distributions P(X|C). It can also fall back to a
+        global correlation structure for small groups.
+
+        Args:
+            df: Source DataFrame with columns to model.
+            columns: List of column names to include in the copula model.
+            n_samples: Number of samples to draw.
+            random_state: Optional random seed.
+            min_group_corr_rows: Minimum rows needed in a group to estimate a
+                group-specific correlation matrix. Otherwise the global
+                correlation is used.
+
+        Returns:
+            DataFrame with sampled values for the requested columns.
         """
         rng = np.random.default_rng(random_state)
         X = df[columns].copy()
-        
+
         # Split columns
         numeric_cols = [c for c in columns if np.issubdtype(X[c].dtype, np.number)]
         cat_cols = [c for c in columns if c not in numeric_cols]
         m = len(numeric_cols)
-        
+
         # If no categoricals, revert to a plain Gaussian copula on numeric
         if len(cat_cols) == 0:
             if m == 0:
                 return pd.DataFrame(index=range(n_samples), columns=columns)
-            
+
             num_complete = X[numeric_cols].dropna()
             if len(num_complete) < 2:
                 raise ValueError("Not enough non-missing numeric rows to fit copula.")
-            
+
             Z = self._rank_to_z(num_complete.to_numpy())
             Sigma_global = self._make_psd(np.corrcoef(Z, rowvar=False))
             Z_samp = rng.multivariate_normal(np.zeros(m), Sigma_global, size=n_samples)
             U = norm.cdf(Z_samp)
-            
+
             out = pd.DataFrame(index=range(n_samples), columns=columns)
             for j, c in enumerate(numeric_cols):
                 vals = np.sort(X[c].dropna().to_numpy())
                 if len(vals) == 0:
                     out[c] = np.nan
                     continue
-                idx = np.floor(U[:, j] * len(vals)).astype(int).clip(0, len(vals)-1)
+                idx = np.floor(U[:, j] * len(vals)).astype(int).clip(0, len(vals) - 1)
                 x = vals[idx]
                 if np.issubdtype(X[c].dtype, np.integer):
                     x = np.round(x).astype(int)
                 out[c] = x
             return out[columns]
-        
+
         # Handle missing categories
         C = X[cat_cols].astype("object").fillna("__NA__")
-        
+
         # Empirical joint over C
         counts = C.value_counts(dropna=False, sort=False)
         keys = counts.index.tolist()
         probs = (counts / counts.sum()).to_numpy()
-        
+
         # Precompute global numeric marginals + global correlation as fallback
         global_sorted = {}
         for c in numeric_cols:
             vals = np.sort(X[c].dropna().to_numpy())
             global_sorted[c] = vals
-        
+
         if m >= 2:
             num_complete = X[numeric_cols].dropna()
             if len(num_complete) >= 2:
@@ -1327,24 +1528,24 @@ class SyntheticConsignmentDataGenerator:
             Sigma_global = np.array([[1.0]])
         else:
             Sigma_global = None
-        
+
         # Build per-group info
         group_info = {}
         X_aug = X.copy()
         for c in cat_cols:
             X_aug[c] = C[c]
-        
+
         grouped = X_aug.groupby(cat_cols, sort=False, dropna=False)
         for key, gdf in grouped:
             key = key if isinstance(key, tuple) else (key,)
-            
+
             info = {}
-            
+
             # Group-specific numeric marginals
             marginals = {}
             intlike = {}
             gmins, gmaxs = {}, {}
-            
+
             for c in numeric_cols:
                 vals = np.sort(gdf[c].dropna().to_numpy())
                 marginals[c] = vals
@@ -1355,12 +1556,12 @@ class SyntheticConsignmentDataGenerator:
                     g = global_sorted[c]
                     gmins[c] = g[0] if len(g) else np.nan
                     gmaxs[c] = g[-1] if len(g) else np.nan
-            
+
             info["marginals"] = marginals
             info["intlike"] = intlike
             info["mins"] = gmins
             info["maxs"] = gmaxs
-            
+
             # Group-specific numeric copula correlation
             if m >= 2:
                 num_complete_g = gdf[numeric_cols].dropna()
@@ -1377,34 +1578,34 @@ class SyntheticConsignmentDataGenerator:
                 info["Sigma"] = np.array([[1.0]])
             else:
                 info["Sigma"] = None
-            
+
             group_info[key] = info
-        
+
         # Sampling
         out = pd.DataFrame(index=range(n_samples), columns=columns)
-        
+
         # Sample category choices
         key_indices = np.arange(len(keys))
         chosen_idx = rng.choice(key_indices, size=n_samples, p=probs)
         chosen_keys = [keys[i] for i in chosen_idx]
-        
+
         # Fill categorical columns
         for i, key in enumerate(chosen_keys):
             key = key if isinstance(key, tuple) else (key,)
             for col, val in zip(cat_cols, key):
                 out.at[i, col] = (np.nan if val == "__NA__" else val)
-        
+
         # Fill numeric columns conditional on chosen categories
         if m > 0:
             for i, key in enumerate(chosen_keys):
                 key = key if isinstance(key, tuple) else (key,)
                 info = group_info[key]
                 Sigma = info["Sigma"]
-                
+
                 # Draw latent Z and convert to U
                 z = rng.multivariate_normal(np.zeros(m), Sigma)
                 u = norm.cdf(z)
-                
+
                 # Map through group-specific inverse CDFs
                 for j, c in enumerate(numeric_cols):
                     vals = info["marginals"][c]
@@ -1413,56 +1614,69 @@ class SyntheticConsignmentDataGenerator:
                     if len(vals) == 0:
                         out.at[i, c] = np.nan
                         continue
-                    
+
                     idx = int(np.floor(u[j] * len(vals)))
                     if idx == len(vals):
                         idx -= 1
                     x = vals[idx]
-                    
+
                     if info["intlike"][c]:
                         x = int(np.round(x))
                         x = int(np.clip(x, info["mins"][c], info["maxs"][c]))
                     else:
                         x = float(np.clip(x, info["mins"][c], info["maxs"][c]))
                     out.at[i, c] = x
-        
+
         return out[columns]
-    
+
     def generate_from_input_data(self, n_consignments=1000, sampling_method=None):
-        """Generate synthetic data based on input data file using specified sampling method
-        
-        :param n_consignments: Number of unique consignments/shipments to generate
-        :param sampling_method: Sampling method to use (naive, sequential, gmm)
-        :return: DataFrame with synthetic data
+        """Generate synthetic data based on input data using a selected method.
+
+        Args:
+            n_consignments: Number of unique consignments/shipments to generate.
+            sampling_method: Sampling method to use (``'naive'``, ``'sequential'``,
+                or ``'gmm'``). If None, the default method is used.
+
+        Returns:
+            DataFrame containing synthetic consignment records.
+
+        Raises:
+            ValueError: If no input data are loaded.
         """
         if self.input_data is None or len(self.input_data) == 0:
             raise ValueError("No usable input data loaded. Please provide a non-empty input_data_file.")
-        
+
         method = sampling_method or DEFAULT_SAMPLING_METHOD
         target_cols = self._resolve_target_columns()
         return self._generate_with_method(method, target_cols, n_consignments)
-    
+
     @staticmethod
     def calculate_quality_metrics(original_df, synthetic_df):
-        """Calculate quality metrics comparing original and synthetic data
-        
-        :param original_df: Original DataFrame for comparison
-        :param synthetic_df: Synthetic DataFrame to evaluate
-        :return: Dictionary of quality metrics
+        """Calculate quality metrics comparing original and synthetic data.
+
+        Metrics are based on the Wasserstein distance between marginal
+        distributions for each common column.
+
+        Args:
+            original_df: Original DataFrame used as reference.
+            synthetic_df: Synthetic DataFrame to be evaluated.
+
+        Returns:
+            Dictionary of quality metrics (e.g., ``'wasserstein_<col>'``).
         """
         if original_df is None:
             return {}
-        
+
         metrics = {}
-        
+
         # Get common columns
         common_cols = set(original_df.columns) & set(synthetic_df.columns)
-        
+
         for col in common_cols:
             if col in original_df.columns and col in synthetic_df.columns:
                 orig_vals = original_df[col].dropna()
                 synth_vals = synthetic_df[col].dropna()
-                
+
                 if len(orig_vals) > 0 and len(synth_vals) > 0:
                     if np.issubdtype(orig_vals.dtype, np.number):
                         # For numeric columns, use Wasserstein distance
@@ -1479,69 +1693,82 @@ class SyntheticConsignmentDataGenerator:
                         ])
                         unique_vals = all_vals.drop_duplicates().values
                         cats = pd.Index(unique_vals).sort_values()
-                        
+
                         enc = lambda s: pd.Categorical(s.astype(str), categories=cats, ordered=True).codes
                         oa, sa = map(enc, (orig_vals, synth_vals))
-                        
+
                         va, vs = map(pd.Series, (oa, sa))
-                        orig_support, orig_weights = va.value_counts().sort_index().index.to_numpy(), va.value_counts().sort_index().values.astype(float)
-                        synth_support, synth_weights = vs.value_counts().sort_index().index.to_numpy(), vs.value_counts().sort_index().values.astype(float)
-                        
+                        orig_support, orig_weights = va.value_counts().sort_index().index.to_numpy(), va.value_counts().sort_index().values.astype(
+                            float)
+                        synth_support, synth_weights = vs.value_counts().sort_index().index.to_numpy(), vs.value_counts().sort_index().values.astype(
+                            float)
+
                         distance = wasserstein_distance(
-                            orig_support, synth_support, 
+                            orig_support, synth_support,
                             u_weights=orig_weights, v_weights=synth_weights
                         )
-                    
+
                     metrics[f"wasserstein_{col}"] = distance
-        
+
         return metrics
 
     @staticmethod
     def generate_statistics(dataset):
-        """Generate statistics about the synthetic dataset
-        
-        :param dataset: DataFrame to analyze
-        :return: Dictionary of dataset statistics
+        """Generate simple summary statistics about a dataset.
+
+        Args:
+            dataset: DataFrame to analyze.
+
+        Returns:
+            Dictionary of dataset statistics including:
+            * total record count,
+            * list of columns,
+            * list of numeric and categorical columns,
+            * unique value counts for categoricals, and
+            * basic statistics (mean, std, min, max) for numeric columns.
         """
         if dataset.empty:
             return {}
-        
+
         stats = {
             "total_records": len(dataset),
             "columns": list(dataset.columns),
             "numeric_columns": [col for col in dataset.columns if np.issubdtype(dataset[col].dtype, np.number)],
             "categorical_columns": [col for col in dataset.columns if not np.issubdtype(dataset[col].dtype, np.number)],
         }
-        
+
         # Add unique value counts for categorical columns
         for col in stats["categorical_columns"]:
             stats[f"unique_{col}"] = dataset[col].nunique()
-        
+
         # Add basic statistics for numeric columns
         for col in stats["numeric_columns"]:
             stats[f"{col}_mean"] = dataset[col].mean()
             stats[f"{col}_std"] = dataset[col].std()
             stats[f"{col}_min"] = dataset[col].min()
             stats[f"{col}_max"] = dataset[col].max()
-        
+
         return stats
 
 
 def save_to_csv(dataset: pd.DataFrame, filename: Union[str, Path]) -> None:
-    """Save dataset to CSV file.
+    """Save a dataset to a CSV file.
 
-    :param dataset: DataFrame to save
-    :param filename: Output CSV filename or Path
+    Args:
+        dataset: DataFrame to save.
+        filename: Output CSV filename or path.
     """
     path = Path(filename)
     dataset.to_csv(path, index=False)
     _log(f"Saved {len(dataset)} records to {path}")
 
-def save_to_json(dataset: pd.DataFrame, filename: Union[str, Path]) -> None:
-    """Save dataset to JSON file.
 
-    :param dataset: DataFrame to save
-    :param filename: Output JSON filename or Path
+def save_to_json(dataset: pd.DataFrame, filename: Union[str, Path]) -> None:
+    """Save a dataset to a JSON file.
+
+    Args:
+        dataset: DataFrame to save.
+        filename: Output JSON filename or path.
     """
     path = Path(filename)
     dataset.to_json(path, orient="records", indent=2)

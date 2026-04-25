@@ -6,15 +6,18 @@ from typing import Dict, List, Any, Optional
 
 @dataclass
 class RiskUnitConfig:
-    """Configuration for RiskUnit attribute mapping
+    """Configuration for mapping PIS fields into RiskUnit attributes.
 
     How to add an attribute:
-    1. Add to the 'attribute_mapping' dictionary
-        * Key being the name in all lowercase convention and underscores for spaces
-        * Value being how the variable is specified in the synthetic data being used to create the consignments/shipments
-    2. Add to the 'defaults' dictionary
-    3. Add to the 'enabled_attributes' dictionary (this controls what will be an attribute in a RiskUnit within PoPS Border)
-    4. If new attribute is boolean, add to the 'boolean_attributes' dictionary in the 'get_attributes_from_record' method
+
+    1. Add it to ``attribute_mapping``:
+       * Key: canonical name (all-lowercase with underscores).
+       * Value: column name in the synthetic/PIS data.
+    2. Add a default value in ``defaults``.
+    3. Add the canonical name to ``enabled_attributes`` (controls which
+       attributes appear on RiskUnit instances).
+    4. If the new attribute is boolean-like, add its canonical name to the
+       ``boolean_attributes`` set inside :meth:`get_attributes_from_record`.
     """
 
     # Map RiskUnit attribute names to PIS CSV column names
@@ -60,7 +63,25 @@ class RiskUnitConfig:
     ])
 
     def get_attributes_from_record(self, record) -> Dict[str, Any]:
-        """Extract configured attributes from a PIS record"""
+        """Extract configured RiskUnit attributes from a PIS record.
+
+        Attributes are pulled from ``record`` using ``attribute_mapping`` and
+        ``enabled_attributes``. Missing fields fall back to values in
+        ``defaults``. Certain attributes are treated as booleans and converted
+        by :meth:`_to_boolean`.
+
+        Special handling applies to ``producer_group``: if it is missing, blank,
+        or set to ``"NO_GROUP_MATCH"``, the value falls back to
+        ``record["PRODUCER_NAME"]`` if present.
+
+        Args:
+            record: Mapping-like object (e.g., a pandas Series or dict)
+                containing PIS/RBS record fields.
+
+        Returns:
+            Dictionary mapping canonical RiskUnit attribute names to extracted
+            values.
+        """
         attributes = {}
 
         # Define which attributes should be treated as booleans
@@ -88,7 +109,19 @@ class RiskUnitConfig:
         return attributes
 
     def _to_boolean(self, value, attr_name: str) -> bool:
-        """Convert various formats to boolean"""
+        """Convert a value into a boolean, with attribute-specific defaults.
+
+        Recognizes common true/false string tokens (e.g., "true", "yes",
+        "1"), numeric non-zero values, and bools. For unsupported types,
+        falls back to the default defined in ``defaults`` for that attribute.
+
+        Args:
+            value: Raw value to convert (string, number, bool, etc.).
+            attr_name: Canonical attribute name, used to look up a default.
+
+        Returns:
+            Boolean value appropriate for the given attribute.
+        """
         if isinstance(value, bool):
             return value
         elif isinstance(value, str):

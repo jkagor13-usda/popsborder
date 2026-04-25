@@ -212,10 +212,23 @@ _SHARED_PAGE_STYLES = """
 
 
 def apply_shared_page_styles() -> None:
+    """Inject shared CSS styles for all Streamlit pages.
+
+    This function applies common typography and component styles (tabs,
+    labels, metrics, tooltips) using a single HTML/CSS block. Call this
+    once at the top of each page script.
+    """
     st.markdown(_SHARED_PAGE_STYLES, unsafe_allow_html=True)
 
 
 def render_page_intro(description_html: str) -> None:
+    """Render a formatted introductory text block for a page.
+
+    Args:
+        description_html: HTML string describing the page. It is inserted
+            as-is inside a styled container, so it should be sanitized or
+            trusted content.
+    """
     st.markdown(
         f"""
         <div style='font-size: 18px; color: #2c3e50; line-height: 1;'>
@@ -229,6 +242,13 @@ def render_page_intro(description_html: str) -> None:
 
 
 def render_section_header(label: str, *, compact: bool = False) -> None:
+    """Render a styled section header label.
+
+    Args:
+        label: Header text to display (escaped for HTML safety).
+        compact: If True, use a smaller CSS style; otherwise use the
+            default larger label style.
+    """
     css_class = "custom_label2" if compact else "number_and_slider_label"
     st.markdown(
         f'<div class="{css_class}">{escape(label)}</div>',
@@ -237,6 +257,13 @@ def render_section_header(label: str, *, compact: bool = False) -> None:
 
 
 def render_labeled_help(label: str, help_text: str = "", *, compact: bool = False) -> None:
+    """Render a label with an inline help tooltip icon.
+
+    Args:
+        label: Label text to display (escaped for HTML safety).
+        help_text: Optional help/description text shown in a hover tooltip.
+        compact: If True, use a smaller CSS style for the label.
+    """
     css_class = "custom_label2" if compact else "number_and_slider_label"
     help_html = ""
     if help_text:
@@ -252,6 +279,17 @@ def render_labeled_help(label: str, help_text: str = "", *, compact: bool = Fals
 
 
 def render_metric_card(title: str, value: str, help_text: str) -> None:
+    """Render a metric card with a title, value, and help tooltip.
+
+    The card is styled using the shared CSS, and includes a small "?"
+    icon that shows the help text on hover.
+
+    Args:
+        title: Metric title or label.
+        value: Metric value as a string.
+        help_text: Help or description text shown in a tooltip when the
+            info icon is hovered.
+    """
     st.markdown(
         f"""
         <div class="metric-container">

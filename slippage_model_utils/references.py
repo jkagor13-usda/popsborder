@@ -1,61 +1,18 @@
 # © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
 
-"""Reference File to Hold Naming Conventions for Slippage Model
+"""Reference definitions and naming conventions for the slippage model.
 
-Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
+Contributors:
+    Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
 
-Purpose of this file:
--------------------
-- sample_rbs():
-    * Implements risk-based sampling methodology using compliance-based detection levels
-    * Retrieves country/propagative material specific compliance parameters from lookup table
-    * Calculates sample size using hypergeometric distribution based on risk assessment
+This module centralizes:
 
-- select_units_to_inspect():
-    * Unified function for selecting units to inspect based on selection strategy
-    * Supports random, cluster, and convenience selection strategies
-    * Handles both inspection_unit and sample_unit selection
-
-- count_contaminated_inspection_units():
-    * Counts contaminated inspection units in consignment
-    * Supports refactored terminology (inspection_units vs boxes)
-
-- count_contaminated_sample_units():
-    * Counts contaminated sample units in consignment
-    * Supports refactored terminology (sample_units vs items)
-
-Modified Functions:
-----------------
-- get_sample_function():
-    * Added RBS structured consignment inspection
-    * Enhanced to support compliance table parameter passing
-
-- sample_proportion():
-    * Added backward compatibility for min_inspection_units (formerly min_boxes)
-    * Updated to handle both old and new terminology in configuration
-
-- sample_n():
-    * Added backward compatibility for within_inspection_unit_proportion (formerly within_box_proportion)
-    * Added backward compatibility for min_inspection_units (formerly min_boxes)
-
-- convert_sample_units_to_inspection_units_fixed_proportion():
-    * Added backward compatibility for within_inspection_unit_proportion
-
-- compute_n_clusters_to_inspect():
-    * Added backward compatibility for within_inspection_unit_proportion and min_inspection_units
-
-- inspect():
-    * Added backward compatibility for within_inspection_unit_proportion
-    * Enhanced detailed tracking with sample_unit_in_inspection_unit_to_sample_unit_index()
-
-Backward Compatibility:
-----------------------
-- Added aliases: count_contaminated_boxes() -> count_contaminated_inspection_units()
-- Added aliases: count_contaminated_items() -> count_contaminated_sample_units()
-- Configuration parameter mapping: boxes -> inspection_units, items -> sample_units
-- Maintained support for legacy configuration keys while enabling new terminology
-
+* Column name aliases for PIS / RBS data.
+* Required fields for specific model inputs.
+* Domain-specific alias sets for RiskUnit attributes (origin, material type,
+  port, etc.).
+* Helper functions for fuzzy column-name resolution.
 """
 
 from difflib import get_close_matches
@@ -144,11 +101,16 @@ possible_pis_stations = {
 }
 
 def get_domain_specific_aliases() -> Dict[str, Set[str]]:
-    """
-    Return hardcoded domain-specific aliases for RiskUnit attributes.
+    """Return hardcoded domain-specific aliases for RiskUnit attributes.
 
-    These are common alternative names that users might use in their
-    compliance tables that should map to canonical attributes.
+    These aliases capture common alternative names that may appear in
+    compliance tables or PIS/RBS data and should map to canonical
+    RiskUnit attributes (e.g., ``origin``, ``material_type``, ``port``,
+    ``pathway``, and engineered features).
+
+    Returns:
+        Dictionary mapping canonical attribute names (e.g. ``"origin"``)
+        to sets of alias strings.
     """
     return {
         'origin': {
@@ -414,24 +376,27 @@ def find_column_name(var: str = None,
                      available_columns: List = None,
                      alias_dict: dict = None,
                      cutoff: float = 0.6):
-    """
-    Find the correct column name from a variable string.
+    """Find the best-matching column name given an input variable string.
 
-    Parameters:
-    -----------
-    var : str
-        The input string to match
-    available_columns : list
-        List of actual column names in the DataFrame
-    alias_dict : dict
-        Dictionary mapping canonical column names to their aliases
-    cutoff : float
-        Similarity threshold for fuzzy matching (0.0 to 1.0)
+    The search attempts:
+
+    1. Case-insensitive exact matches in ``available_columns``.
+    2. Direct matches against aliases in ``alias_dict``.
+    3. Fuzzy matches against available column names.
+    4. Fuzzy matches against all aliases of columns present in
+       ``available_columns``.
+
+    Args:
+        var: Input variable name to resolve.
+        available_columns: List of actual column names in the DataFrame.
+        alias_dict: Mapping from canonical column names to a list of alias
+            strings. If None, defaults to :data:`COLUMN_NAME_ALIASES`.
+        cutoff: Similarity threshold (0.0–1.0) used by
+            :func:`difflib.get_close_matches`.
 
     Returns:
-    --------
-    str or None
-        The matched column name, or None if no match found
+        The chosen column name as a string, or None if no suitable match
+        is found.
     """
     # Use the module-level constant if none provided
     if alias_dict is None:

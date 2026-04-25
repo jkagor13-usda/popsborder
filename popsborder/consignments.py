@@ -94,7 +94,7 @@ Modifications:
 # this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
 
 
-"""Consignment generation
+"""Consignment generation.
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
 .. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
@@ -117,10 +117,24 @@ from slippage_model_utils.UnitAttributes import RiskUnitConfig
 
 
 def _log(message: str) -> None:
+    """Log a message to stdout.
+
+    Args:
+        message: Message text to print.
+    """
     print(message)
 
 
 def _get_pathway_default(config_map, pathway):
+    """Return pathway-specific default from a configuration mapping.
+
+    Args:
+        config_map: Mapping of pathway keys to configuration dictionaries.
+        pathway: Pathway identifier (e.g., 'air', 'maritime').
+
+    Returns:
+        The default configuration entry for the given pathway.
+    """
     pathway_key = str(pathway).lower()
     if pathway_key == "airport" and "air" in config_map:
         return config_map["air"]["default"]
@@ -130,6 +144,18 @@ def _get_pathway_default(config_map, pathway):
 
 
 def _next_record(reader, exhausted_message: str):
+    """Return the next record from a CSV DictReader or raise a runtime error.
+
+    Args:
+        reader: CSV DictReader or any iterator over records.
+        exhausted_message: Error message to use if the iterator is exhausted.
+
+    Returns:
+        The next record from the reader.
+
+    Raises:
+        RuntimeError: If no more records are available.
+    """
     try:
         return next(reader)
     except StopIteration:
@@ -137,11 +163,11 @@ def _next_record(reader, exhausted_message: str):
 
 
 class RiskUnit:
-    """Risk Unit
+    """Risk unit representing a slice of sample units.
 
-    RiskUnit is a view into array of sample_units, i.e. a slice of that array. The
-    assumption is that the original, and possibly modifed, sample_units can not
-    only be accessed but also modifed through the RiskUnit.
+    RiskUnit is a view into an array or list of sample units. The assumption is
+    that the original, and possibly modified, sample units can be accessed and
+    modified through the RiskUnit.
     """
 
     def __init__(self,
@@ -150,8 +176,17 @@ class RiskUnit:
                  sample_unit_ids=None,
                  inspection_unit_ids=None,
                  plant_ids=None,
-                 **kwargs):  # Catch all other attributes
-        """Store reference to associated sample_units"""
+                 **kwargs):
+        """Initialize a RiskUnit.
+
+        Args:
+            sample_units: Underlying sample-unit data (array-like or list).
+            risk_unit_id: Identifier for this risk unit.
+            sample_unit_ids: List of sample unit IDs belonging to this risk unit.
+            inspection_unit_ids: List of inspection unit IDs associated with this risk unit.
+            plant_ids: List of plant IDs belonging to this risk unit.
+            **kwargs: Additional attributes to be attached dynamically.
+        """
         self.sample_units = sample_units
         self.id = risk_unit_id
         self.sample_unit_ids = sample_unit_ids if sample_unit_ids is not None else []
@@ -166,7 +201,11 @@ class RiskUnit:
 
     @property
     def num_sample_units(self):
-        """Number of sample_units in the InspectionUnit"""
+        """Return the number of sample units in this risk unit.
+
+        Returns:
+            Number of sample units.
+        """
         if hasattr(self.sample_units, 'shape'):
             return self.sample_units.shape[0]
         else:
@@ -174,10 +213,18 @@ class RiskUnit:
 
     @property
     def n_for_hypergeom(self):
-        """Population size N used by hypergeometric sampling (fixed to sample unit count)."""
+        """Return population size N used by hypergeometric sampling.
+
+        The size is fixed to the number of sample units (or sample_unit_ids if
+        available).
+
+        Returns:
+            Population size for use in hypergeometric sampling.
+        """
         return len(self.sample_unit_ids) if self.sample_unit_ids else self.num_sample_units
 
     def __bool__(self):
+        """Return True if the risk unit contains contamination."""
         if isinstance(self.sample_units, np.ndarray):
             return bool(np.any(self.sample_units > 0))
         else:
@@ -189,9 +236,9 @@ class InspectionUnit:
     """Inspection unit with fixed hierarchy support.
 
     Supported shapes:
-    - one RiskUnit (which holds SampleUnit data)
-    - multiple SampleUnit objects
-    - one SampleUnit object represented as a single-element sample_units list
+    - One RiskUnit (which holds SampleUnit data).
+    - Multiple SampleUnit objects.
+    - One SampleUnit object represented as a single-element sample_units list.
     """
 
     def __init__(self,
@@ -206,9 +253,25 @@ class InspectionUnit:
                  sample_unit_ids=None,
                  plant_ids=None,
                  action_status="pending",
-                 inspection_print_id = None,
+                 inspection_print_id=None,
                  is_detected=False):
-        """Store references to fixed-hierarchy unit collections."""
+        """Initialize an InspectionUnit.
+
+        Args:
+            included_units: Underlying unit data (array-like or list of units).
+            material_type: Commodity or material type for this inspection unit.
+            producer: Producer associated with this inspection unit.
+            origin: Country of origin associated with this inspection unit.
+            port: Inspection location/port.
+            pathway: Transport pathway.
+            inspection_unit_id: Identifier for this inspection unit.
+            risk_unit_ids: List of risk unit IDs associated with this inspection unit.
+            sample_unit_ids: List of sample unit IDs in this inspection unit.
+            plant_ids: List of plant IDs in this inspection unit.
+            action_status: Status string for this inspection unit.
+            inspection_print_id: Human-readable or printed ID for reporting.
+            is_detected: Whether contamination has been detected in this unit.
+        """
         if included_units is None:
             included_units = []
 
@@ -232,32 +295,55 @@ class InspectionUnit:
 
     @property
     def num_included_units(self):
-        """Number of primary units held by this container."""
+        """Return the number of primary units held by this container.
+
+        Returns:
+            Number of primary units (underlying included units).
+        """
         if hasattr(self.included_units, "shape"):
             return self.included_units.shape[0]
         return len(self.included_units)
 
     @property
     def sample_units_per_inspection_unit(self):
-        """Backward-compatible size accessor used by legacy logic."""
+        """Return number of sample units per inspection unit (legacy accessor).
+
+        This is a backward-compatible accessor used by legacy logic.
+
+        Returns:
+            Number of sample units contained in this inspection unit.
+        """
         if self._included_unit_objects:
             return len(self._included_unit_objects)
         return self.num_included_units
 
     @property
     def num_sample_units(self):
-        """Backward-compatible alias used by contamination logic."""
+        """Return number of sample units (alias).
+
+        This is a backward-compatible alias used by contamination logic.
+
+        Returns:
+            Number of sample units contained in this inspection unit.
+        """
         return self.sample_units_per_inspection_unit
 
     @property
     def included_unit_objects(self):
+        """Return the list of included SampleUnit objects."""
         return self._included_unit_objects
 
     @included_unit_objects.setter
     def included_unit_objects(self, units):
+        """Set the list of included SampleUnit objects.
+
+        Args:
+            units: Sequence of SampleUnit-like objects.
+        """
         self._included_unit_objects = units
 
     def __bool__(self):
+        """Return True if the inspection unit contains contamination."""
         # Ground-truth infection for an inspection unit should come from its own
         # nested sample/plant data, not the whole risk unit.
         if self._included_unit_objects:
@@ -269,23 +355,25 @@ class InspectionUnit:
 
     @property
     def is_infected(self):
+        """Return True if contamination is present in this inspection unit."""
         return bool(self)
 
     def reset_detection(self):
+        """Reset detection flag for this inspection unit."""
         self.is_detected = False
 
     def mark_detected(self):
+        """Mark this inspection unit as detected (contaminated)."""
         self.is_detected = True
 
 
 class SampleUnit:
-    """Sample unit
+    """Sample unit container.
 
-    Evaluates to bool when it contains contaminant.
-
-    SampleUnit Container is a view into array of plants, i.e. a slice of that array. The
-    assumption is that the original, and possibly modifed, plants can not
-    only be accessed but also modifed through the InspectionUnit.
+    A SampleUnit evaluates to True when it contains contaminant. It is a view
+    into an array of plants, i.e., a slice of that array. The assumption is that
+    the original, and possibly modified, plants can be accessed and modified
+    through the SampleUnit.
     """
 
     def __init__(self,
@@ -298,10 +386,18 @@ class SampleUnit:
                  origin=None,
                  port=None,
                  pathway=None):
-        """Store reference to associated plants
+        """Initialize a SampleUnit.
 
-        :param plants: Array-like object of plants
-        :param producer: Producer name for this sample unit
+        Args:
+            plants: Underlying plant data (array-like or list).
+            sample_unit_id: Identifier for this sample unit.
+            risk_unit_id: Parent risk unit identifier.
+            inspection_unit_id: Parent inspection unit identifier.
+            plant_ids: List of plant IDs belonging to this sample unit.
+            producer: Producer associated with this sample unit.
+            origin: Country of origin.
+            port: Inspection location/port.
+            pathway: Transport pathway.
         """
         self.plants = plants
         self.id = sample_unit_id
@@ -315,28 +411,33 @@ class SampleUnit:
 
     @property
     def num_plants(self):
-        """Number of plants in the Sample Unit"""
+        """Return the number of plants in this sample unit.
+
+        Returns:
+            Number of plants represented by this sample unit.
+        """
         if self.plants is None:
             return 0
         return self.plants.shape[0] if hasattr(self.plants, "shape") else len(self.plants)
 
     def __bool__(self):
+        """Return True if this sample unit contains contamination."""
         if self.plants is None:
             return False
         return bool(np.any(self.plants > 0))
 
     @property
     def is_infected(self):
+        """Return True if any plant in this sample unit is contaminated."""
         return bool(self)
 
 
 class Consignment(collections.UserDict):
-    """A consignment with all its properties and what it contains.
+    """A consignment with all its properties and contents.
 
-    Access its properties (attributes) is through attribute syntax (new style) or
-    using a dictionary-like item access (old style).
+    Access to its properties is available through attribute syntax (new style)
+    or using dictionary-like item access (old style).
     """
-
 
     def __init__(
         self,
@@ -363,21 +464,31 @@ class Consignment(collections.UserDict):
         sample_unit_to_inspection_unit=None,
         plant_unit_to_inspection_unit=None,
     ):
-        """Store reference to associated attributes
+        """Initialize a Consignment.
 
-        :param flower: string
-        :param num_sample_units: integer
-        :param material_type: string
-        :param sample_units_per_inspection_unit: integer
-        :param num_inspection_units: integer
-        :param date: Array-like object of dates
-        :param inspection_units: Array-like object of inspection_units
-        :param origin: string
-        :param port: string
-        :param pathway: string
-        :param num_plants : string (optional)
-        :param plants : Array-like object of plants (optional)
-        :param plants_per_sample_unit : string (optional)
+        Args:
+            num_sample_units: Total number of sample units in the consignment.
+            sample_units: Underlying array-like data for sample units.
+            sample_units_per_inspection_unit: Number of sample units per inspection unit.
+            num_inspection_units: Number of inspection units in the consignment.
+            date: Date/time of the consignment (arrival).
+            inspection_units: Sequence of InspectionUnit objects.
+            origin: Country of origin for the consignment.
+            port: Port or inspection location.
+            pathway: Transport pathway (e.g., 'Air', 'Sea').
+            material_type: Material or commodity type (optional).
+            num_plants: Total number of plant units (optional).
+            plants: Underlying array-like data for plant units (optional).
+            plants_per_sample_unit: Number of plants per sample unit (optional).
+            inspection_number: Unique inspection/consignment identifier (optional).
+            producer: Producer associated with the consignment (optional).
+            risk_units: Sequence of RiskUnit objects (optional).
+            sample_unit_objects: Sequence of SampleUnit objects (optional).
+            risk_unit_to_inspection_units: Mapping from risk-unit IDs to inspection-unit IDs (optional).
+            inspection_unit_to_risk_units: Mapping from inspection-unit IDs to risk-unit IDs (optional).
+            risk_unit_to_sample_units: Mapping from risk-unit IDs to sample-unit IDs (optional).
+            sample_unit_to_inspection_unit: Mapping from sample-unit IDs to inspection-unit IDs (optional).
+            plant_unit_to_inspection_unit: Mapping from plant-unit IDs to inspection-unit IDs (optional).
         """
         super().__init__(
             num_sample_units=num_sample_units,
@@ -389,7 +500,7 @@ class Consignment(collections.UserDict):
             origin=origin,
             port=port,
             pathway=pathway,
-            material_type = material_type,
+            material_type=material_type,
             num_plants=num_plants,
             plants=plants,
             plants_per_sample_unit=plants_per_sample_unit,
@@ -440,7 +551,7 @@ class Consignment(collections.UserDict):
         self._build_hierarchy_indexes()
 
     def _build_hierarchy_indexes(self):
-        """Build hierarchy maps when explicit maps are not provided."""
+        """Build hierarchy index mappings for risk, inspection, sample, and plant units."""
         if not self.sample_unit_objects:
             self.sample_unit_objects = []
             for inspection_unit in self.inspection_units or []:
@@ -478,9 +589,21 @@ class Consignment(collections.UserDict):
                     self.plant_unit_to_inspection_unit[plant_id] = inspection_unit_id
 
     def __hasattr__(self, name):
+        """Return True if the given attribute name exists in the consignment."""
         return name in self
 
     def __getattr__(self, name):
+        """Return attribute value, falling back to dict-style storage.
+
+        Args:
+            name: Attribute name to retrieve.
+
+        Returns:
+            Value associated with the given name.
+
+        Raises:
+            AttributeError: If the attribute is not present.
+        """
         if name not in self:
             raise AttributeError(
                 f"'{self.__class__.__name__}' object has no attribute '{name}'"
@@ -489,7 +612,11 @@ class Consignment(collections.UserDict):
 
     @property
     def date(self):
-        """Date of consignment (arrival) as datetime.date object"""
+        """Return consignment arrival date as a date object.
+
+        Returns:
+            A ``datetime.date`` instance representing the arrival date.
+        """
         # For datetime.datetime, returns just date, assumes datetime.date otherwise.
         if hasattr(self._date, "date"):
             return self._date.date()
@@ -497,46 +624,74 @@ class Consignment(collections.UserDict):
 
     @property
     def commodity(self):
-        """Convenient (or transitional) alias for flower"""
+        """Return commodity name (alias for flower)."""
         return self.flower
 
     def count_contaminated(self):
+        """Count contaminated units in the consignment.
+
+        Returns:
+            Number of contaminated plants (if plant data is available) or
+            contaminated sample units otherwise.
+        """
         if self.plants is None:
-            """Count contaminated sample_units in inspection_unit."""
             return np.count_nonzero(self.sample_units)
         else:
-            """Count contaminated plants in inspection_unit."""
             return np.count_nonzero(self.plants)
 
     def item_in_inspection_unit_to_item_index(self, inspection_unit_index, item_in_inspection_unit_index):
-        """Convert item index in a inspection_unit to item index in the consignment"""
+        """Convert local item index to global item index within the consignment.
+
+        Args:
+            inspection_unit_index: Index of the inspection unit in the consignment.
+            item_in_inspection_unit_index: Index of the item within the inspection unit.
+
+        Returns:
+            Global item index within the consignment.
+        """
         if inspection_unit_index == 0:
             return item_in_inspection_unit_index
         sample_units = 0
         for inspection_unit in self.inspection_units[:inspection_unit_index]:
             sample_units += inspection_unit.sample_units_per_inspection_unit
         return sample_units + item_in_inspection_unit_index
-    
+
     def get_inspection_unit_and_sample_unit_index(self, sample_unit_index):
+        """Return inspection-unit index and local sample-unit index for a global index.
+
+        Args:
+            sample_unit_index: Global sample-unit index in the consignment.
+
+        Returns:
+            Tuple of (inspection_unit_index, sample_unit_index_within_inspection_unit).
+        """
         inspection_unit_index = sample_unit_index // self.sample_units_per_inspection_unit
         sample_unit_index_in_inspection_unit = sample_unit_index % self.sample_units_per_inspection_unit
         return inspection_unit_index, sample_unit_index_in_inspection_unit
-    
+
     def sample_unit_in_inspection_unit_to_sample_unit_index(self, inspection_unit_index, sample_unit_in_inspection_unit_index):
-        """Convert sample_unit index within inspection_unit to global sample_unit index"""
+        """Convert local sample-unit index within inspection unit to global sample-unit index.
+
+        Args:
+            inspection_unit_index: Index of the inspection unit in the consignment.
+            sample_unit_in_inspection_unit_index: Index of the sample unit within the inspection unit.
+
+        Returns:
+            Global sample-unit index within the consignment.
+        """
         return inspection_unit_index * self.sample_units_per_inspection_unit + sample_unit_in_inspection_unit_index
 
 
 class ParameterConsignmentGenerator:
-    """Generate a consignments based on configuration parameters"""
+    """Generate consignments based on configuration parameters."""
 
     def __init__(self, parameters, sample_units_per_inspection_unit, start_date):
-        """Set parameters for consignment generation
+        """Initialize parameter-based consignment generator.
 
-        :param parameters: Consignment parameters
-        :param ports: List of ports to choose from
-        :param sample_units_per_inspection_unit: Configuration driving number of sample_units per inspection_unit
-        :param start_date: Date to start consignment dates from
+        Args:
+            parameters: Consignment parameter configuration dictionary.
+            sample_units_per_inspection_unit: Configuration for number of sample units per inspection unit.
+            start_date: Start date for generated consignment dates (string or datetime).
         """
         self.params = parameters
         self.sample_units_per_inspection_unit = sample_units_per_inspection_unit
@@ -546,7 +701,11 @@ class ParameterConsignmentGenerator:
         self.date = start_date
 
     def generate_consignment(self):
-        """Generate a new consignment"""
+        """Generate a new consignment based on configured parameters.
+
+        Returns:
+            A populated Consignment instance.
+        """
         port = random.choice(self.params["ports"])
         # flowers or commodities
         flower = random.choice(self.params["flowers"])
@@ -582,16 +741,31 @@ class ParameterConsignmentGenerator:
             pathway=pathway,
         )
 
+
 class F280ConsignmentGenerator:
-    """Generate a consignments based on existing F280 records"""
+    """Generate consignments based on existing F280 records."""
 
     def __init__(self, sample_units_per_inspection_unit, filename, separator=","):
+        """Initialize F280-based consignment generator.
+
+        Args:
+            sample_units_per_inspection_unit: Configuration for sample units per inspection unit.
+            filename: Path to the F280 CSV file.
+            separator: Field separator used in the CSV file.
+        """
         self.infile = open(filename)
         self.reader = csv.DictReader(self.infile, delimiter=separator)
         self.sample_units_per_inspection_unit = sample_units_per_inspection_unit
 
     def generate_consignment(self):
-        """Generate a new consignment"""
+        """Generate a new consignment from the next F280 record.
+
+        Returns:
+            A populated Consignment instance.
+
+        Raises:
+            RuntimeError: If more consignments are requested than available records.
+        """
         record = _next_record(
             self.reader,
             "More consignments requested than number of records in provided F280",
@@ -631,22 +805,24 @@ class F280ConsignmentGenerator:
 
 
 class PISConsignmentGenerator:
-    """Generate consignments based on existing Plant Inspection System (PIS) records
-    
-    This is a record-based generator under the RBS (Risk-Based Sampling) method that handles
-    real Plant Inspection System data with multiple material types per consignment.
-    
-    The generator is fully data-driven and calculates sample_units_per_inspection_unit and 
-    plants_per_sample_unit directly from the TOTAL_SAMPLING_UNITS and TOTAL_PLANT_QUANTITY 
-    columns in the PIS data. No configuration parameters are needed for quantities.
-    
+    """Generate consignments based on existing Plant Inspection System (PIS) records.
+
+    This is a record-based generator under the RBS (Risk-Based Sampling) method
+    that handles real Plant Inspection System data with multiple material types
+    per consignment.
+
+    The generator is fully data-driven and calculates sample_units_per_inspection_unit
+    and plants_per_sample_unit directly from the TOTAL_SAMPLING_UNITS and
+    TOTAL_PLANT_QUANTITY columns in the PIS data. No configuration parameters
+    are needed for quantities.
+
     Timestamp Integration:
-    - Uses CREATED_DATETIME column (MM:SS.S format) for realistic consignment timing
-    - Converts timestamps to datetime objects with base date 2020-01-01
-    - Falls back to default date if timestamp parsing fails
-    - Preserves inspection timing information for temporal analysis
-    
-    Configuration:
+    - Uses CREATED_DATETIME column (MM:SS.S format) for realistic consignment timing.
+    - Converts timestamps to datetime objects with base date 2020-01-01.
+    - Falls back to a default date if timestamp parsing fails.
+    - Preserves inspection timing information for temporal analysis.
+
+    Configuration example:
         generation_method: "RBS"
         input_file:
             file_type: "PIS"
@@ -656,22 +832,21 @@ class PISConsignmentGenerator:
     def __init__(self,
                  filename: Union[str, Path],
                  separator=",",
-                 risk_unit_config: RiskUnitConfig=RiskUnitConfig()
-                 ):
-        """Initialize PIS record-based consignment generator
+                 risk_unit_config: RiskUnitConfig = RiskUnitConfig()):
+        """Initialize PIS record-based consignment generator.
 
-        :param filename: CSV file containing PIS records with columns:
-                        - INSPECTION_NUMBER: Unique consignment identifier
-                        - PROPAGATIVE_MATERIAL_TYPE: Material type for each inspection unit
-                        - TOTAL_SAMPLING_UNITS: Actual number of sample units
-                        - TOTAL_PLANT_QUANTITY: Actual number of plants
-                        - COUNTRY_OF_ORIGIN_NAME, INSPECTION_LOCATION_NAME, PATHWAY
-                        - CREATED_DATETIME: Timestamp in MM:SS.S format (optional)
-                        - PRODUCER: Producer name (optional)
-        :param separator: CSV field separator
-        :param risk_unit_config: RiskUnitConfig instance for attribute mapping
+        Args:
+            filename: CSV file containing PIS records with columns such as:
+                - INSPECTION_NUMBER: Unique consignment identifier.
+                - PROPAGATIVE_MATERIAL_TYPE: Material type for each inspection unit.
+                - TOTAL_SAMPLING_UNITS: Actual number of sample units.
+                - TOTAL_PLANT_QUANTITY: Actual number of plants.
+                - COUNTRY_OF_ORIGIN_NAME, INSPECTION_LOCATION_NAME, PATHWAY.
+                - CREATED_DATETIME: Timestamp in MM:SS.S format (optional).
+                - PRODUCER: Producer name (optional).
+            separator: CSV field separator.
+            risk_unit_config: RiskUnitConfig instance for attribute mapping.
         """
-
         path = Path(filename)
         self.filename = path
         self.df = pd.read_csv(path, sep=separator)
@@ -681,7 +856,15 @@ class PISConsignmentGenerator:
         self.risk_unit_config = risk_unit_config or RiskUnitConfig()
 
     def generate_consignment(self):
-        """Generate a new consignment from PIS records"""
+        """Generate a new consignment from grouped PIS records.
+
+        Returns:
+            A populated Consignment instance.
+
+        Raises:
+            RuntimeError: If more consignments are requested than available
+                inspection numbers or required PIS columns are missing.
+        """
         if self.current_consignment_index >= len(self.consignment_groups):
             raise RuntimeError(
                 "More consignments requested than number of inspection numbers in provided PIS data"
@@ -689,10 +872,6 @@ class PISConsignmentGenerator:
 
         inspection_number, inspection_units_data = self.consignment_groups[self.current_consignment_index]
         self.current_consignment_index += 1
-
-
-
-
 
         """
         Consignment Attributes to be Generated
@@ -740,7 +919,7 @@ class PISConsignmentGenerator:
                 "PIS input is missing risk unit label column. Expected one of: "
                 "'RISK UNIT', 'RISK_UNIT', 'risk_unit', 'RISK_UNIT_NUMBER'."
             )
-        
+
         # Process each inspection unit (row) in this consignment
         for inspection_unit_id, (_, record) in enumerate(inspection_units_data.iterrows()):
             material_type = record["PROPAGATIVE_MATERIAL_TYPE"]
@@ -751,7 +930,7 @@ class PISConsignmentGenerator:
                     f"in column '{risk_unit_column}'."
                 )
             risk_unit_id = str(raw_risk_unit).strip()
-            
+
             # Use the actual quantities from the PIS data
             inspection_unit_sample_units = int(record["SAMPLING_UNITS_FOR_INSPECTION_UNIT"])
             inspection_unit_plants = int(record["QUANTITY"])
@@ -778,26 +957,26 @@ class PISConsignmentGenerator:
                 base_plants_per_sample_unit = 1
                 remainder_plants = 0
                 inspection_unit_sample_units = 1
-            
+
             # Create arrays for this inspection unit
             sample_units_array = np.zeros(inspection_unit_sample_units, dtype=np.int64)
             plants_array = np.zeros(inspection_unit_plants, dtype=np.int64)
-            
+
             # Create SampleUnit objects for hierarchical access
             sample_unit_objects = []
             inspection_sample_unit_ids = []
             inspection_plant_ids = []
             plant_index = 0
-            
+
             for item_index in range(inspection_unit_sample_units):
                 # Distribute remainder plants among first few sample units
                 plants_in_this_unit = base_plants_per_sample_unit
                 if item_index < remainder_plants:
                     plants_in_this_unit += 1
-                
+
                 # Ensure we don't exceed total plants
                 plants_in_this_unit = min(plants_in_this_unit, inspection_unit_plants - plant_index)
-                
+
                 # Create slice for this sample unit
                 sample_unit_plants = plants_array[plant_index:plant_index + plants_in_this_unit]
                 sample_unit_id = total_sample_units
@@ -851,7 +1030,7 @@ class PISConsignmentGenerator:
                     "inspection_unit_ids": [],
                     "sample_unit_ids": [],
                     "plant_ids": [],
-                    **risk_unit_attrs  # Unpack configured attributes
+                    **risk_unit_attrs
                 }
 
             risk_bucket = risk_unit_buckets[risk_unit_id]
@@ -861,7 +1040,6 @@ class PISConsignmentGenerator:
 
         # Create risk units from accumulated hierarchy links
         for risk_unit_id, bucket in risk_unit_buckets.items():
-            # Build kwargs dynamically from bucket
             risk_unit_kwargs = {
                 "risk_unit_id": risk_unit_id,
                 "sample_unit_ids": bucket["sample_unit_ids"],
@@ -883,7 +1061,7 @@ class PISConsignmentGenerator:
         # Create overall arrays for the entire consignment
         consignment_sample_units = np.zeros(total_sample_units, dtype=np.int64)
         consignment_plants = np.zeros(total_plants, dtype=np.int64)
-        
+
         # Calculate average plants per sample_unit for consignment-level tracking
         if total_sample_units > 0:
             avg_plants_per_sample_unit = total_plants // total_sample_units
@@ -898,7 +1076,7 @@ class PISConsignmentGenerator:
                 timestamp = str(first_record['CREATED_DATETIME']).strip()
                 minutes, seconds_tenths = timestamp.split(':')
                 seconds, tenths = seconds_tenths.split('.')
-                
+
                 # Create datetime with base date but using timestamp as time offset
                 base_date = datetime(2020, 1, 1)  # Base date for consistency
                 # Convert tenths to microseconds: 1 tenth = 100,000 microseconds
@@ -967,15 +1145,29 @@ class PISConsignmentGenerator:
 
 
 class AQIMConsignmentGenerator:
-    """Generate a consignments based on existing AQIM records"""
+    """Generate consignments based on existing AQIM records."""
 
     def __init__(self, sample_units_per_inspection_unit, filename, separator=","):
+        """Initialize AQIM-based consignment generator.
+
+        Args:
+            sample_units_per_inspection_unit: Configuration for sample units per inspection unit.
+            filename: Path to the AQIM CSV file.
+            separator: Field separator used in the CSV file.
+        """
         self.infile = open(filename)
         self.reader = csv.DictReader(self.infile, delimiter=separator)
         self.sample_units_per_inspection_unit = sample_units_per_inspection_unit
 
     def generate_consignment(self):
-        """Generate a new consignment"""
+        """Generate a new consignment from the next AQIM record.
+
+        Returns:
+            A populated Consignment instance.
+
+        Raises:
+            RuntimeError: If the quantity unit in the AQIM data is unsupported.
+        """
         record = _next_record(
             self.reader,
             "More consignments requested than number of records in AQIM data",
@@ -1023,17 +1215,44 @@ class AQIMConsignmentGenerator:
 
 
 def get_sample_units_per_inspection_unit(sample_units_per_inspection_unit, pathway):
-    """Based on config and pathway, return number of sample_units per inspection_unit."""
+    """Return sample units per inspection unit based on config and pathway.
+
+    Args:
+        sample_units_per_inspection_unit: Mapping or configuration of sample units per pathway.
+        pathway: Pathway identifier.
+
+    Returns:
+        Number of sample units per inspection unit for the given pathway.
+    """
     return _get_pathway_default(sample_units_per_inspection_unit, pathway)
 
 
 def get_plants_per_sample_unit(plants_per_sample_unit, pathway):
-    """Based on config and pathway, return number of sample_units per inspection_unit."""
+    """Return plants per sample unit based on config and pathway.
+
+    Args:
+        plants_per_sample_unit: Mapping or configuration of plants per sample unit by pathway.
+        pathway: Pathway identifier.
+
+    Returns:
+        Number of plants per sample unit for the given pathway.
+    """
     return _get_pathway_default(plants_per_sample_unit, pathway)
 
 
 def get_consignment_generator(config):
-    """Based on config, return consignment generator object."""
+    """Return a consignment generator object based on configuration.
+
+    Args:
+        config: Full simulation configuration dictionary containing a 'consignment' section.
+
+    Returns:
+        An initialized consignment generator instance appropriate for the configuration,
+        or None for RBS when no consignment data is available.
+
+    Raises:
+        RuntimeError: If the generation method or file type is unknown.
+    """
     config = config["consignment"]
     generation_method = config["generation_method"]
 
@@ -1074,4 +1293,3 @@ def get_consignment_generator(config):
         return PISConsignmentGenerator(filename=filename)
 
     raise RuntimeError(f"Unknown consignment input file type: {file_type}")
-

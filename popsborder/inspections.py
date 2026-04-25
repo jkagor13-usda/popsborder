@@ -116,7 +116,7 @@ Modifications:
 # this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
 
 
-"""Inspections of consignments
+"""Inspections of consignments.
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
 .. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
@@ -150,25 +150,32 @@ from slippage_model_utils.references import (
     possible_pis_stations,
 )
 
-
 SAMPLE_UNIT_ALIASES = {"sample_unit", "sample_units", "item", "items"}
 INSPECTION_UNIT_ALIASES = {"inspection_unit", "inspection_units", "box", "boxes"}
 
 
 def _is_sample_unit_unit(unit: str) -> bool:
+    """Return True if the given unit string refers to a sample unit."""
     return unit in SAMPLE_UNIT_ALIASES
 
 
 def _is_inspection_unit_unit(unit: str) -> bool:
+    """Return True if the given unit string refers to an inspection unit."""
     return unit in INSPECTION_UNIT_ALIASES
 
 
 def _get_min_inspection_units(config: dict) -> int:
+    """Return minimum number of inspection units to inspect from config."""
     inspection_cfg = config["inspection"]
     return inspection_cfg.get("min_inspection_units", inspection_cfg.get("min_boxes", 0))
 
 
 def _get_within_inspection_unit_proportion(config: dict) -> float:
+    """Return within-inspection-unit sampling proportion with backward compatibility.
+
+    Falls back to ``within_box_proportion`` if
+    ``within_inspection_unit_proportion`` is not present.
+    """
     inspection_cfg = config["inspection"]
     return inspection_cfg.get(
         "within_inspection_unit_proportion",
@@ -177,6 +184,19 @@ def _get_within_inspection_unit_proportion(config: dict) -> float:
 
 
 def _get_unit_population(consignment, unit: str) -> int:
+    """Return the population size for the given sampling unit type.
+
+    Args:
+        consignment: Consignment object.
+        unit: String indicating unit type (sample_unit/sample_units/item/items
+            or inspection_unit/inspection_units/box/boxes).
+
+    Returns:
+        The number of units in the consignment for the specified unit type.
+
+    Raises:
+        RuntimeError: If the unit type is unknown.
+    """
     if _is_sample_unit_unit(unit):
         return consignment.num_sample_units
     if _is_inspection_unit_unit(unit):
@@ -185,23 +205,27 @@ def _get_unit_population(consignment, unit: str) -> int:
 
 
 def _select_convenience_indexes(unit: str, consignment, n_units_to_inspect: int) -> List[int]:
+    """Return the first n unit indexes (convenience sampling)."""
     return list(range(min(n_units_to_inspect, _get_unit_population(consignment, unit))))
 
 
 def load_compliance_lookup(
         filename: Union[str, Path]
 ) -> Dict:
-    """
-    Load compliance lookup dictionary from pickle file.
+    """Load compliance lookup dictionary from a pickle file.
+
+    The function looks for the file either at the given path or in the
+    default compliance directory.
 
     Args:
-        filename: Name of pickle file (e.g., 'compliance_lookup_final.pkl')
+        filename: Name or path of the pickle file (e.g.,
+            ``'compliance_lookup_final.pkl'``).
 
     Returns:
-        Compliance lookup dictionary
+        Compliance lookup dictionary loaded from the pickle file.
 
     Raises:
-        FileNotFoundError: If pickle file doesn't exist
+        FileNotFoundError: If the pickle file cannot be found.
     """
     default_paths = DefaultPaths()
 
@@ -225,20 +249,19 @@ def load_compliance_lookup(
 
 
 def relabel_risk_units(group, risk_unit_grouping_variables):
-    """
-    Relabel RISK_UNIT IDs based on unique combinations of grouping variables.
+    """Relabel RISK_UNIT IDs based on grouping variables.
 
-    Parameters:
-    -----------
-    group : pd.DataFrame
-        DataFrame with RISK_UNIT column
-    risk_unit_grouping_variables : list
-        List of column names to group by for creating unique IDs
+    For each inspection (group), the function assigns new RISK_UNIT IDs
+    based on unique combinations of grouping variables.
+
+    Args:
+        group: DataFrame representing one inspection group, must contain
+            ``'RISK_UNIT'`` and ``'INSPECTION_NUMBER'``.
+        risk_unit_grouping_variables: List of column names by which risk
+            units should be distinguished.
 
     Returns:
-    --------
-    pd.DataFrame
-        DataFrame with relabeled RISK_UNIT column
+        DataFrame with relabeled ``RISK_UNIT`` column.
     """
     # Extract the base number (before underscore)
     first_risk_unit = group['RISK_UNIT'].iloc[0]
@@ -265,17 +288,26 @@ def relabel_risk_units(group, risk_unit_grouping_variables):
 
 
 def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
-    """Takes in data and a config file to reassign inspection units to risk units
+    """Reassign inspection units to risk units using configuration rules.
 
-    :param config: Configuration to be used
-    :param data: Dataframe that has as rows inspection units/commodity lines
+    This function processes each inspection (``INSPECTION_NUMBER``) and
+    groups rows based on configurable risk-unit grouping variables, which
+    may depend on the PIS station.
+
+    Args:
+        config: Configuration dictionary containing
+            ``inspection.rbs_calculator_grouping_variables``.
+        data: DataFrame whose rows represent inspection units/commodity lines
+            and contain ``INSPECTION_NUMBER`` and ``INSPECTION_LOCATION_NAME`` columns.
+
+    Returns:
+        DataFrame with updated ``RISK_UNIT`` values per inspection.
     """
-
     # Get the PIS Station for the consignment and the corresponding Risk Unit Group variables
     rbs_calculator_grouping_variables_stations = list(config["inspection"]["rbs_calculator_grouping_variables"].keys())
 
     def process_inspection_group(group):
-        """Process each unique inspection number"""
+        """Process each unique inspection number."""
         # Get the inspection number from the group name
         inspection_number = group.name
         # Add the INSPECTION_NUMBER column back to the result
@@ -289,7 +321,7 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
 
         if pis_station is None:
             if ('default' in config["inspection"]["rbs_calculator_grouping_variables"].keys()
-                    and len(config["inspection"]["rbs_calculator_grouping_variables"]['default'])>0):
+                    and len(config["inspection"]["rbs_calculator_grouping_variables"]['default']) > 0):
                 default_list = config["inspection"]["rbs_calculator_grouping_variables"]['default']
                 warnings.warn(
                     f"PIS Station ---{port_name}--- for the consignment not found in config. "
@@ -302,14 +334,14 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
                     for x in config["inspection"]["rbs_calculator_grouping_variables"]['default']
                 ]
             else:
-                default_list = ['origin','material_type']
+                default_list = ['origin', 'material_type']
                 warnings.warn(
                     f"PIS Station ---{port_name}--- for the consignment not found in config."
                     f"Also, no defaults found in config so risk unit group variables being defaulted to...{default_list}",
                     UserWarning,
                     stacklevel=2
                 )
-                risk_unit_grouping_variables = ['origin','material_type']
+                risk_unit_grouping_variables = ['origin', 'material_type']
         else:
             if len(config["inspection"]["rbs_calculator_grouping_variables"][pis_station]) == 0:
                 default_list = ['origin', 'material_type']
@@ -319,7 +351,7 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
                     UserWarning,
                     stacklevel=2
                 )
-                risk_unit_grouping_variables = ['origin','material_type']
+                risk_unit_grouping_variables = ['origin', 'material_type']
             else:
                 risk_unit_grouping_variables = [
                     x.lower().replace(' ', '_').replace('-', '_').replace('.', '_')
@@ -327,7 +359,7 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
                 ]
 
         for count, var in enumerate(risk_unit_grouping_variables):
-            matching_column_name = find_column_name(var,list(group.columns))
+            matching_column_name = find_column_name(var, list(group.columns))
             if matching_column_name is not None:
                 risk_unit_grouping_variables[count] = matching_column_name
             else:
@@ -345,36 +377,63 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
     return data_updated
 
 
-
-
-
-
-
-
 def inspect_first(consignment):
-    """Inspect only the first inspection_unit in the consignment"""
+    """Inspect only the first inspection unit in the consignment.
+
+    Args:
+        consignment: Consignment to inspect.
+
+    Returns:
+        Tuple ``(checked_ok, inspected_units)`` where:
+        * ``checked_ok`` is False if contamination is found in the first unit.
+        * ``inspected_units`` is the number of inspection units inspected (1).
+    """
     if consignment.inspection_units[0]:
         return False, 1
     return True, 1
 
 
 def inspect_one_random(consignment):
-    """Inspect only one randomly picked inspection_unit in the consignment"""
+    """Inspect one randomly chosen inspection unit in the consignment.
+
+    Args:
+        consignment: Consignment to inspect.
+
+    Returns:
+        Tuple ``(checked_ok, inspected_units)`` where:
+        * ``checked_ok`` is False if contamination is found in the chosen unit.
+        * ``inspected_units`` is the number of inspection units inspected (1).
+    """
     if random.choice(consignment.inspection_units):
         return False, 1
     return True, 1
 
 
 def inspect_all(consignment):
-    """Inspect all inspection_units in the consignment"""
+    """Inspect all inspection units in the consignment.
+
+    Args:
+        consignment: Consignment to inspect.
+
+    Returns:
+        Tuple ``(checked_ok, inspected_units)`` where:
+        * ``checked_ok`` is False if any inspection unit is contaminated.
+        * ``inspected_units`` equals the number of inspection units.
+    """
     return not is_consignment_contaminated(consignment), consignment.num_inspection_units
 
 
 def inspect_first_n(num_inspection_units, consignment):
-    """Inspect only the first n inspection_units in the consignment
+    """Inspect the first n inspection units in the consignment.
 
-    :param num_inspection_units: Number of inspection_units to inspect
-    :param consignment: Consignment to inspect
+    Args:
+        num_inspection_units: Number of inspection units to inspect.
+        consignment: Consignment to inspect.
+
+    Returns:
+        Tuple ``(checked_ok, inspected_units)`` where:
+        * ``checked_ok`` is False if contamination is found in the inspected units.
+        * ``inspected_units`` is the number of inspection units inspected.
     """
     num_inspection_units = min(len(consignment.inspection_units), num_inspection_units)
     for i in range(num_inspection_units):
@@ -384,11 +443,17 @@ def inspect_first_n(num_inspection_units, consignment):
 
 
 def sample_proportion(config, consignment):
-    """Set sample size to sample units from consignment using proportion strategy.
-    Return number of units to inspect.
+    """Compute sample size based on proportion strategy.
 
-    :param config: Configuration to be used
-    :param consignment: Consignment to be inspected
+    The number of units to inspect is determined as a proportion of the
+    consignment population (sample or inspection units).
+
+    Args:
+        config: Configuration dictionary.
+        consignment: Consignment to be inspected.
+
+    Returns:
+        Number of units to inspect.
     """
     unit = config["inspection"]["unit"]
     ratio = config["inspection"]["proportion"]["value"]
@@ -401,11 +466,19 @@ def sample_proportion(config, consignment):
 
 
 def compute_hypergeometric(detection_level, confidence_level, population_size):
-    """Get sample size using hypergeometric distribution
+    """Compute sample size from a hypergeometric-based detection formula.
 
-    Compute sample size using hypergeometric distribution based on population
-    size (total number of items or boxes in consignment), detection level,
+    The sample size is computed using the hypergeometric-based formula from
+    the RBS spreadsheet (IICA, USDA APHIS PPQ, NAPPO) based on detection level
     and confidence level.
+
+    Args:
+        detection_level: Desired detection level (proportion).
+        confidence_level: Desired confidence level (proportion).
+        population_size: Size of the population (number of units).
+
+    Returns:
+        Integer sample size (capped at the population size).
     """
     detection_level = float(detection_level)
     confidence_level = float(confidence_level)
@@ -424,11 +497,14 @@ def compute_hypergeometric(detection_level, confidence_level, population_size):
 
 
 def sample_hypergeometric(config, consignment):
-    """Set sample size to sample units from consignment using hypergeometric/detection
-    level strategy. Return number of units to inspect.
+    """Compute sample size using hypergeometric detection/level strategy.
 
-    :param config: Configuration to be used
-    :param consignment: Consignment to be inspected
+    Args:
+        config: Configuration dictionary.
+        consignment: Consignment to be inspected.
+
+    Returns:
+        Number of units to inspect.
     """
     unit = config["inspection"]["unit"]
     detection_level = config["inspection"]["hypergeometric"]["detection_level"]
@@ -441,23 +517,34 @@ def sample_hypergeometric(config, consignment):
 
 
 def sample_all(config, consignment):
-    """Set sample size to sample all units from consignment.
-    Return number of units to inspect.
+    """Sample all units from a consignment.
 
-    :param config: Configuration to be used
-    :param consignment: Consignment to be inspected
+    Args:
+        config: Configuration dictionary.
+        consignment: Consignment to be inspected.
+
+    Returns:
+        Number of units to inspect (entire population).
     """
     unit = config["inspection"]["unit"]
     return _get_unit_population(consignment, unit)
 
 
 def sample_n(config, consignment):
-    """Set sample size to sample fixed number of units from consignment.
-    Check if fixed number is <= max units for inspection.
-    Return number of units to inspect.
+    """Sample a fixed number of units from a consignment.
 
-    :param config: Configuration to be used
-    :param consignment: Consignment to be inspected
+    This function applies minimum and maximum constraints and, for sample units,
+    considers within-inspection-unit proportions.
+
+    Args:
+        config: Configuration dictionary.
+        consignment: Consignment to be inspected.
+
+    Returns:
+        Number of units to inspect.
+
+    Raises:
+        RuntimeError: If the sampling unit type is unknown.
     """
     fixed_n = config["inspection"]["fixed_n"]
     unit = config["inspection"]["unit"]
@@ -487,12 +574,19 @@ def sample_rbs(
         consignment,
         rng: Generator = None,
 ):
-    """Set sample size to sample units from consignment using hypergeometric/detection 
-    level strategy based on compliance levels. Return number of units to inspect.
+    """Compute sample sizes per unit using RBS compliance levels.
 
-    :param config: Configuration to be used
-    :param consignment: Consignment to be inspected
-    :param rng: Random number generator
+    This function uses a risk-based sampling methodology driven by compliance
+    levels, where detection and confidence levels are obtained from a
+    compliance lookup table and used in hypergeometric calculations.
+
+    Args:
+        config: Configuration dictionary.
+        consignment: Consignment to be inspected.
+        rng: Optional random number generator.
+
+    Returns:
+        Mapping from risk-unit or inspection-unit ID to units-to-inspect.
     """
     unit = config["inspection"]["unit"]
     debug_print = config.get("debug", {}).get("print_compliance_levels", False)
@@ -508,7 +602,6 @@ def sample_rbs(
         if isinstance(key, tuple) and isinstance(val, tuple) and len(val) == 2:
             str1, str2 = val
             compliance_table_dict[key] = (float(str1), float(str2))
-
 
     detection_confidence_levels = get_detection_and_confidence(
         consignment, compliance_table_dict, print_compliance_levels=debug_print
@@ -554,16 +647,19 @@ def sample_rbs(
 
 
 def convert_sample_units_to_inspection_units_fixed_proportion(config, consignment, n_sample_units_to_inspect):
-    """Convert number of sample_units to inspect to number of inspection_units to inspect based on
-    the number of sample_units per inspection_unit and the proportion of sample_units to inspect per inspection_unit
-    specified in the config. Adjust number of inspection_units to inspect to be at least
-    the minimum number of inspection_units to inspect specified in the config and at most the
-    total number of inspection_units in the consignment.
-    Return number of inspection_units to inspect.
+    """Convert sample-unit count to inspection-unit count using fixed proportion.
 
-    :param config: Configuration to be used
-    :param consignment: Consignment to be inspected
-    :param n_sample_units_to_inspect: Number of sample_units to inspect defined in sample functions.
+    The number of inspection units to inspect is derived from the number of
+    sample units, the configured within-inspection-unit proportion, and the
+    minimum and maximum number of inspection units.
+
+    Args:
+        config: Configuration dictionary.
+        consignment: Consignment to be inspected.
+        n_sample_units_to_inspect: Number of sample units to inspect.
+
+    Returns:
+        Number of inspection units to inspect.
     """
     sample_units_per_inspection_unit = consignment.sample_units_per_inspection_unit
     within_inspection_unit_proportion = _get_within_inspection_unit_proportion(config)
@@ -578,15 +674,22 @@ def convert_sample_units_to_inspection_units_fixed_proportion(config, consignmen
 
 
 def compute_n_clusters_to_inspect(config, consignment, n_sample_units_to_inspect):
-    """Compute number of cluster units (inspection_units) that need to be opened to achieve sample_unit
-    sample size when using the cluster selection strategy. Use config within inspection_unit
-    proportion if possible or compute minimum number of sample_units to inspect per inspection_unit
-    required to achieve sample_unit sample size.
-    Return number of inspection_units to inspect and number of sample_units to inspect per inspection_unit.
+    """Compute number of clusters (inspection units) to open for cluster sampling.
 
-    :param config: Configuration to be used
-    :param consignment: Consignment to be inspected
-    :param n_sample_units_to_inspect: Number of sample_units to inspect defined by sample functions.
+    The function determines how many inspection units to inspect and how many
+    sample units per inspection unit must be inspected to achieve the desired
+    sample size under the cluster selection strategy.
+
+    Args:
+        config: Configuration dictionary.
+        consignment: Consignment to be inspected.
+        n_sample_units_to_inspect: Number of sample units to inspect.
+
+    Returns:
+        Tuple ``(n_inspection_units_to_inspect, inspect_per_inspection_unit)``.
+
+    Raises:
+        RuntimeError: If an unknown cluster selection method is specified.
     """
     cluster_selection = config["inspection"]["cluster"]["cluster_selection"]
     sample_units_per_inspection_unit = consignment.sample_units_per_inspection_unit
@@ -601,7 +704,8 @@ def compute_n_clusters_to_inspect(config, consignment, n_sample_units_to_inspect
             num_sample_units, sample_units_per_inspection_unit, within_inspection_unit_proportion
         )
         if max_sample_units >= n_sample_units_to_inspect:
-            inspect_per_inspection_unit = math.ceil(within_inspection_unit_proportion * sample_units_per_inspection_unit)
+            inspect_per_inspection_unit = math.ceil(
+                within_inspection_unit_proportion * sample_units_per_inspection_unit)
             n_inspection_units_to_inspect = math.ceil(n_sample_units_to_inspect / inspect_per_inspection_unit)
         else:
             # If not, divide sample size across number of inspection_units to get number
@@ -619,11 +723,13 @@ def compute_n_clusters_to_inspect(config, consignment, n_sample_units_to_inspect
         # Should be at least 1.
         max_inspection_units = max(1, round(num_inspection_units / interval))
         # Assumes full inspection_units, no remainder partial inspection_unit.
-        max_sample_units = max_inspection_units * (math.ceil(within_inspection_unit_proportion * sample_units_per_inspection_unit))
+        max_sample_units = max_inspection_units * (
+            math.ceil(within_inspection_unit_proportion * sample_units_per_inspection_unit))
         # Check if within inspection_unit proportion is high enough and/or interval is
         # low enough to achieve sample size
         if max_sample_units >= n_sample_units_to_inspect:
-            inspect_per_inspection_unit = math.ceil(within_inspection_unit_proportion * sample_units_per_inspection_unit)
+            inspect_per_inspection_unit = math.ceil(
+                within_inspection_unit_proportion * sample_units_per_inspection_unit)
             n_inspection_units_to_inspect = math.ceil(n_sample_units_to_inspect / inspect_per_inspection_unit)
         # If not, divide sample size across max inspection_units to get number of
         # sample_units to inspect per inspection_unit.
@@ -648,15 +754,22 @@ def compute_n_clusters_to_inspect(config, consignment, n_sample_units_to_inspect
     return n_inspection_units_to_inspect, inspect_per_inspection_unit
 
 
-def compute_max_inspectable_sample_units(num_sample_units, sample_units_per_inspection_unit, within_inspection_unit_proportion):
-    """Compute maximum number of sample_units that can be inspected in a consignment based
-    on within inspection_unit proportion. If within inspection_unit proportion is less than 1 (partial inspection_unit
-    inspections), then maximum number of sample_units that can be inspected will be
-    less than the total number of sample_units in the consignment.
+def compute_max_inspectable_sample_units(num_sample_units, sample_units_per_inspection_unit,
+                                         within_inspection_unit_proportion):
+    """Compute maximum number of sample units inspectable given proportion per inspection unit.
 
-    :param num_sample_units: total number of sample_units in consignment
-    :param sample_units_per_inspection_unit: number of sample_units in each inspection_unit
-    :param within_inspection_unit_proportion: proportion of sample_units to be inspected per inspection_unit
+    When the within-inspection-unit proportion is less than 1, the maximum
+    inspectable sample units is less than the total sample-unit count.
+
+    Args:
+        num_sample_units: Total number of sample units in the consignment.
+        sample_units_per_inspection_unit: Number of sample units per
+            inspection unit.
+        within_inspection_unit_proportion: Proportion of sample units to
+            inspect per inspection unit.
+
+    Returns:
+        Maximum number of sample units that can be inspected.
     """
     inspect_per_inspection_unit = math.ceil(within_inspection_unit_proportion * sample_units_per_inspection_unit)
     num_full_inspection_units = math.floor(num_sample_units / sample_units_per_inspection_unit)
@@ -671,12 +784,15 @@ def compute_max_inspectable_sample_units(num_sample_units, sample_units_per_insp
 
 
 def select_random_indexes(unit, consignment, n_units_to_inspect):
-    """Select units (indexes) from consignment based on sample size and
-    random selection strategy.
+    """Select random unit indexes for inspection.
 
-    :param unit: Unit to be used for inspection (inspection_unit or sample_unit)
-    :param consignment: Consignment to be inspected
-    :param n_units_to_inspect: Number of units to inspect defined in sample functions.
+    Args:
+        unit: Unit type to be used for inspection (inspection_unit or sample_unit).
+        consignment: Consignment to be inspected.
+        n_units_to_inspect: Number of units to inspect.
+
+    Returns:
+        Sorted list of selected unit indexes.
     """
     population = _get_unit_population(consignment, unit)
     indexes_to_inspect = random.sample(list(range(population)), n_units_to_inspect)
@@ -690,15 +806,27 @@ def select_random_indexes_rbs(
         n_units_to_inspect,
         rng: Generator,
 ):
-    """Select units (indexes) from consignment based on sample size and
-    random selection strategy.
+    """Select random unit indexes for RBS-based sampling.
 
-    :param unit: Unit to be used for inspection (inspection_unit or sample_unit)
-    :param consignment: Consignment to be inspected
-    :param n_units_to_inspect: Number of units to inspect defined in sample functions.
-    :param rng: Random number generator
+    For sample-unit based RBS, the function samples within risk-unit pools
+    (if available) or per inspection unit (legacy fallback).
+
+    Args:
+        unit: Sampling unit, expected to be a sample-unit alias.
+        consignment: Consignment to be inspected.
+        n_units_to_inspect: Mapping from risk-unit (or inspection) IDs to
+            number of units to inspect.
+        rng: Random number generator.
+
+    Returns:
+        Tuple ``(indexes_to_inspect, inspection_units_to_inspect)`` where:
+        * ``indexes_to_inspect`` is the list of global sample-unit indexes.
+        * ``inspection_units_to_inspect`` maps inspection-unit index to a
+          list of local sample-unit indexes.
+
+    Raises:
+        RuntimeError: If an unsupported unit type is used with RBS strategy.
     """
-    
     indexes_to_inspect = []
     if _is_sample_unit_unit(unit):
         inspection_unit_counter = 0
@@ -754,14 +882,24 @@ def select_random_indexes_rbs(
     return indexes_to_inspect, inspection_units_to_inspect
 
 
-
 def select_cluster_indexes(config, consignment, n_units_to_inspect):
-    """Select units (indexes) from consignment based on sample size and
-    cluster selection strategy.
+    """Select cluster-based indexes for inspection.
 
-    :param config: Configuration to be used
-    :param consignment: Consignment to be inspected
-    :param n_units_to_inspect: Number of units to inspect defined in sample functions.
+    Depending on the cluster selection strategy, this function chooses
+    inspection units to open so that the desired sample size (in sample
+    units) can be achieved.
+
+    Args:
+        config: Configuration dictionary.
+        consignment: Consignment to be inspected.
+        n_units_to_inspect: Number of sample units to inspect.
+
+    Returns:
+        Sorted list of inspection-unit indexes.
+
+    Raises:
+        RuntimeError: If cluster selection is used with inspection-unit
+            sampling units or if the unit type is unknown.
     """
     unit = config["inspection"]["unit"]
     cluster_selection = config["inspection"]["cluster"]["cluster_selection"]
@@ -809,12 +947,25 @@ def select_units_to_inspect(
         n_units_to_inspect,
         rng: Generator = None,
 ):
-    """Select units to inspect based on selection strategy.
+    """Select units to inspect based on sampling and selection strategies.
 
-    :param config: Configuration to be used
-    :param consignment: Consignment to be inspected
-    :param n_units_to_inspect: Number of units to inspect
-    :param rng: Random number generator
+    For RBS-based strategies, the function may return both sample-unit
+    indexes and an inspection-unit–to–sample-unit mapping. For non-RBS
+    strategies, it returns a list of indexes only.
+
+    Args:
+        config: Configuration dictionary.
+        consignment: Consignment to be inspected.
+        n_units_to_inspect: Number of units to inspect (or mapping for RBS).
+        rng: Optional random number generator.
+
+    Returns:
+        Either:
+        * list of unit indexes (non-RBS), or
+        * tuple ``(indexes_to_inspect, inspection_units_to_inspect)`` for RBS.
+
+    Raises:
+        RuntimeError: If an unknown selection strategy is specified.
     """
     unit = config["inspection"]["unit"]
     selection_strategy = config["inspection"]["selection_strategy"]
@@ -841,7 +992,16 @@ def select_units_to_inspect(
 
 
 def inspect_sample_unit(sample_unit, effectiveness):
-    """Tests whether sample_unit is contaminated considering effectiveness"""
+    """Test whether a sample unit is contaminated, given inspector effectiveness.
+
+    Args:
+        sample_unit: Sample-unit contamination indicator or count.
+        effectiveness: Probability that the inspector will detect contamination
+            when present (0–1).
+
+    Returns:
+        True if contamination is detected in this sample unit, False otherwise.
+    """
     if sample_unit == 0:
         return False
     return random.random() < effectiveness
@@ -854,21 +1014,33 @@ def inspect(
         detailed,
         rng: Generator = None,
 ):
-    """Inspect selected units using both end strategies (to detection, to completion)
-    Return number of inspection_units opened, sample_units inspected, and contaminated sample_units found for
-    each end strategy.
+    """Inspect selected units according to configuration and strategies.
 
-    :param config: Configuration to be used
-    :param consignment: Consignment to be inspected
-    :param n_units_to_inspect: Number of units to inspect defined by sample functions.
-    :param detailed: Boolean flag to indicate if details are wanted to be provided
-    :param rng: Random number generator
+    The function inspects units until detection and until completion, tracking
+    counts of opened inspection units, inspected sample units, inspected plant
+    units, and contaminated sample units.
+
+    Args:
+        config: Configuration dictionary.
+        consignment: Consignment to be inspected.
+        n_units_to_inspect: Number of units to inspect (or mapping, for RBS).
+        detailed: If True, track detailed indices of inspected sample units.
+        rng: Optional random number generator.
+
+    Returns:
+        A SimpleNamespace with various inspection statistics, including:
+        * inspected_sample_unit_indexes
+        * inspection_units_opened_completion / detection
+        * sample_units_inspected_completion / detection
+        * plant_units_inspected_completion / detection
+        * contaminated_sample_units_completion / detection
+        * number_sample_units_missed, number_units_missed
+        * consignment_checked_ok (True if no contamination found).
     """
     # Disabling warnings, possible future TODO is splitting this function.
     # pylint: disable=too-many-locals,too-many-statements
     # pylint: disable=too-many-branches,too-many-nested-blocks
 
-    
     # Detection is inspection-outcome state, so reset for each inspect() call.
     for inspection_unit in consignment.inspection_units:
         if hasattr(inspection_unit, "reset_detection"):
@@ -930,7 +1102,7 @@ def inspect(
             if selection_strategy == "cluster":
                 raise RuntimeError(f"Selection strategy = '{selection_strategy}' is not supported for"
                                    f" sampling_strategy = {sample_strategy}")
-            else:  
+            else:
                 # All other sample_unit selection strategies inspected the same way
                 # Empty lists to hold opened inspection_units indexes, will be duplicates bc inspection_unit index
                 # computed per inspected sample_unit
@@ -942,7 +1114,7 @@ def inspect(
                     if detailed:
                         ret.inspected_sample_unit_indexes.append(sample_unit_index)
                     ret.sample_units_inspected_completion += 1
-                    
+
                     # Count sample units inspected (all plants in this sample unit)
                     iu_idx = sample_unit_to_inspection.get(
                         sample_unit_index,
@@ -989,7 +1161,7 @@ def inspect(
 
                 inspection_unit_counter = 0
                 for inspect_unit in consignment.inspection_units:
-                    contaminant_found =False
+                    contaminant_found = False
                     inspection_unit_contaminated = False
                     sample_unit_counter = 0
                     total_contaminated_sample_units = 0
@@ -997,8 +1169,8 @@ def inspect(
                     for samp_unit in inspect_unit.included_unit_objects:
                         if sum(samp_unit.plants) > 0:
                             inspection_unit_contaminated = True
-                            total_contaminated_sample_units+=1
-                            total_contaminated_units+=sum(samp_unit.plants)
+                            total_contaminated_sample_units += 1
+                            total_contaminated_units += sum(samp_unit.plants)
                             if sample_unit_counter in inspection_units_to_inspect[inspection_unit_counter]:
                                 contaminant_found = True
                         sample_unit_counter += 1
@@ -1152,7 +1324,22 @@ def get_sample_function(
         config,
         rng: Generator = None,
 ):
-    """Based on config, return function to sample a consignment."""
+    """Return a function that computes sample size for a consignment.
+
+    The returned function implements the sampling strategy specified in the
+    configuration (proportion, hypergeometric, fixed_n, all, or rbs).
+
+    Args:
+        config: Configuration dictionary, expected to contain an
+            ``inspection.sample_strategy`` entry.
+        rng: Optional random number generator, used by some strategies.
+
+    Returns:
+        A callable ``sample(consignment)`` returning a sample size or mapping.
+
+    Raises:
+        RuntimeError: If the sample strategy is unknown.
+    """
     sample_strategy = config["inspection"]["sample_strategy"]
     if sample_strategy == "proportion":
 
@@ -1173,7 +1360,7 @@ def get_sample_function(
 
         def sample(consignment):
             return sample_all(config=config, consignment=consignment)
-        
+
     elif sample_strategy == "rbs":
 
         def sample(consignment):
@@ -1189,7 +1376,7 @@ def get_sample_function(
 
 
 def is_consignment_contaminated(consignment):
-    """Return True if at least one inspection_unit contains contaminants"""
+    """Return True if at least one inspection unit in the consignment is contaminated."""
     for inspection_unit in consignment.inspection_units:
         if inspection_unit:
             return True
@@ -1197,13 +1384,20 @@ def is_consignment_contaminated(consignment):
 
 
 def consignment_contamination_rate(consignment):
-    """Get (true) contamination rate of a consignment
+    """Return the (true) contamination rate of a consignment.
 
-    Contamination rate is here defined as number of
-    contaminated sample_units divided by the number sample_units.
+    Contamination rate is defined here as the number of contaminated
+    sample units divided by the total number of sample units.
+
+    Args:
+        consignment: Consignment to evaluate.
+
+    Returns:
+        Contamination rate as a float.
     """
     count = np.count_nonzero(consignment.sample_units)
     return count / consignment.num_sample_units
+
 
 def get_detection_and_confidence(
         consignment,
@@ -1212,8 +1406,24 @@ def get_detection_and_confidence(
         default_confidence=0.95,
         print_compliance_levels: bool = False,
 ):
-    """
-    Fetch detection and confidence levels using RiskUnitConfig for attribute extraction.
+    """Fetch detection and confidence levels for risk units.
+
+    Uses RiskUnitConfig to extract risk-unit attributes and identifies the
+    matching detection and confidence levels from a compliance table. If
+    values are missing or no match is found, defaults are used.
+
+    Args:
+        consignment: Consignment whose risk units (or inspection units) are
+            evaluated.
+        compliance_table_dict: Mapping from tuples of RBS variables to
+            (detection_level, confidence_level).
+        default_detection: Default detection level if no match is found.
+        default_confidence: Default confidence level if no match is found.
+        print_compliance_levels: If True, print per-risk-unit key and levels.
+
+    Returns:
+        Dictionary mapping risk-unit IDs (or fallback indices) to
+        (detection_level, confidence_level) tuples.
     """
     risk_unit_config = RiskUnitConfig()
     rbs_variables = compliance_table_dict['rbs_variables']
@@ -1273,16 +1483,20 @@ def _get_risk_unit_attribute(
         attribute_name: str,
         risk_unit_config: RiskUnitConfig
 ) -> Any:
-    """
-    Get an attribute value from a risk unit, trying multiple name variations.
+    """Get a risk-unit attribute, trying multiple name variations.
+
+    The function tries:
+        * the canonical attribute_name,
+        * a mapped CSV column name from RiskUnitConfig,
+        * lowercase/uppercase and space/underscore variants.
 
     Args:
-        risk_unit: Risk unit object
-        attribute_name: Canonical attribute name to retrieve
-        risk_unit_config: RiskUnitConfig for mapping hints
+        risk_unit: Risk-unit object whose attributes are queried.
+        attribute_name: Canonical attribute name (e.g., ``"material_type"``).
+        risk_unit_config: RiskUnitConfig instance providing attribute mapping.
 
     Returns:
-        Attribute value or None if not found
+        The attribute value or None if not found.
     """
     # List of possible attribute names to try, in order of preference
     names_to_try = [
@@ -1316,7 +1530,7 @@ def _get_risk_unit_attribute(
 
 
 def count_contaminated_inspection_units(consignment):
-    """Return number of inspection_units containing contaminants"""
+    """Return number of inspection units containing contaminants."""
     count = 0
     for inspection_unit in consignment.inspection_units:
         if inspection_unit:
@@ -1325,39 +1539,47 @@ def count_contaminated_inspection_units(consignment):
 
 
 def count_contaminated_sample_units(consignment):
-    """Return number of contaminated sample_units"""
+    """Return number of contaminated sample units."""
     count = np.count_nonzero(consignment.sample_units)
     return count
 
 
 # Backward compatibility aliases
 def count_contaminated_boxes(consignment):
-    """Return number of boxes containing contaminants (backward compatibility)"""
+    """Return number of boxes containing contaminants (backward compatibility)."""
     return count_contaminated_inspection_units(consignment)
 
 
 def count_contaminated_items(consignment):
-    """Return number of contaminated items (backward compatibility)"""
+    """Return number of contaminated items (backward compatibility)."""
     return count_contaminated_sample_units(consignment)
 
+
 def _norm(s: str) -> str:
-    """Normalize for matching: lowercase, strip non-alphanum."""
+    """Normalize a string for matching by lowercasing and stripping non-alphanum."""
     return re.sub(r'[^a-z0-9]+', '', s.lower())
 
+
 def normalize_rbs_variables_against_consignment(
-    rbs_variables,
-    consignment,
+        rbs_variables,
+        consignment,
 ):
-    """
-    Map free-form field names in rbs_variables to actual attributes on a Consignment
-    instance, using case-insensitive aliasing. Keeps unmapped items unchanged.
+    """Normalize RBS variable names to Consignment attributes via aliasing.
+
+    This function maps free-form, user-provided RBS variable names to actual
+    attribute names on a Consignment instance using case-insensitive and
+    alias-based matching. Unmapped names are preserved.
+
+    Args:
+        rbs_variables: List of free-form RBS variable names.
+        consignment: Consignment instance providing canonical attribute names.
 
     Returns:
-        updated_vars: list[str]  # rbs_variables with matched items replaced by canonical attrs
-        mapping: dict[str, str]  # original string -> canonical attribute
-        unmapped: list[str]      # originals that didn't match anything
+        Tuple ``(updated_vars, mapping, unmapped)`` where:
+        * ``updated_vars`` is the list of normalized variable names.
+        * ``mapping`` maps original variable names to canonical attributes.
+        * ``unmapped`` contains variable names that could not be mapped.
     """
-
     # 1) Canonical attribute keys from the instance (thanks to UserDict)
     canonical_attrs = set(consignment.keys())
 
@@ -1369,8 +1591,8 @@ def normalize_rbs_variables_against_consignment(
         auto_aliases[attr].update({
             attr,
             spaced,
-            spaced.title(),          # "Material Type"
-            attr.title(),            # "Material_Type" (rare, but harmless)
+            spaced.title(),  # "Material Type"
+            attr.title(),  # "Material_Type" (rare, but harmless)
         })
 
     # Add any pre-specified aliases (see reference.py file in slippage_model_utils)
@@ -1417,15 +1639,16 @@ def normalize_rbs_variables_against_consignment(
 
 
 def fuzzy_match_attribute(original: str, canonical_attrs: Set[str]) -> Optional[str]:
-    """
-    Attempt fuzzy matching using substring/word matching.
+    """Attempt fuzzy matching between a variable name and canonical attributes.
+
+    Matching is based on case-insensitive substring and word-boundary matches.
 
     Args:
-        original: Original variable name to match
-        canonical_attrs: Set of canonical attribute names
+        original: Original variable name to match.
+        canonical_attrs: Set of canonical attribute names.
 
     Returns:
-        Matched canonical attribute or None
+        Matched canonical attribute name, or None if no match is found.
     """
     # Sort by length (longest first) to prefer more specific matches
     sorted_attrs = sorted(canonical_attrs, key=len, reverse=True)
@@ -1443,22 +1666,25 @@ def fuzzy_match_attribute(original: str, canonical_attrs: Set[str]) -> Optional[
 
     return None
 
+
 # Convenience function that creates a RiskUnitConfig from defaults
 def normalize_rbs_variables_using_risk_unit_config(
         rbs_variables: List[str]
 ) -> Tuple[List[str], Dict[str, str], List[str]]:
-    """
-    Map free-form field names in rbs_variables to actual RiskUnit attributes
-    defined in RiskUnitConfig, using case-insensitive aliasing.
+    """Normalize RBS variable names using RiskUnitConfig and aliasing.
+
+    This function maps free-form field names in ``rbs_variables`` to actual
+    RiskUnit attributes defined in :class:`RiskUnitConfig`, using
+    case-insensitive aliasing, CSV column names, and domain-specific aliases.
 
     Args:
-        rbs_variables: List of variable names to normalize
+        rbs_variables: List of variable names to normalize.
 
     Returns:
-        Tuple of:
-        - updated_vars: list[str]  # rbs_variables with matched items replaced by canonical attrs
-        - mapping: dict[str, str]  # original string -> canonical attribute
-        - unmapped: list[str]      # originals that didn't match anything
+        Tuple ``(updated_vars, mapping, unmapped)`` where:
+        * ``updated_vars``: normalized RBS variable names.
+        * ``mapping``: mapping from original names to canonical attributes.
+        * ``unmapped``: list of originals that could not be mapped.
     """
     risk_unit_config = RiskUnitConfig()
     if not rbs_variables:

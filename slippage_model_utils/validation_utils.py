@@ -10,20 +10,22 @@ from scipy import stats
 
 
 def find_latest_simulation_base_path(output_dir: Path, base_name: str = "pops_border_scenario_data") -> Path:
-    """
-    Find the most recent simulation base path based on timestamp in directory name.
+    """Find the most recent simulation base directory by timestamp in its name.
 
-    Parameters:
-    -----------
-    output_dir : Path
-        The main output directory
-    base_name : str
-        Base name of the simulation directories (default: 'pops_border_scenario_data')
+    Directory names are expected to follow the pattern
+    ``f"{base_name}_MM_DD_YYYY_HH_MM_SS"``. The function scans all matching
+    directories under ``output_dir``, parses their timestamps, and returns
+    the newest one.
+
+    Args:
+        output_dir: Main output directory containing simulation run subdirs.
+        base_name: Base name prefix for simulation directories.
 
     Returns:
-    --------
-    Path
-        Path to the most recent simulation base directory
+        Path to the most recent simulation base directory.
+
+    Raises:
+        FileNotFoundError: If no matching simulation directories are found.
     """
     # Pattern to match simulation directories with timestamp
     pattern = re.compile(rf"{base_name}_(\d{{2}})_(\d{{2}})_(\d{{4}})_(\d{{2}})_(\d{{2}})_(\d{{2}})")
@@ -65,20 +67,25 @@ def get_simulation_base_path(
     simulation_output_path: Union[str, Path],
     simulation_base_path: Union[str, Path] = "latest",
 ) -> Path:
-    """
-    Get the simulation base path, either by name or finding the latest.
+    """Resolve the base path for a simulation run.
 
-    Parameters:
-    -----------
-    simulation_output_path : str | Path
-        The main output directory
-    simulation_base_path : str | Path
-        Either 'latest' to auto-select most recent, or specific directory name
+    This helper either:
+
+    * Returns the most recent simulation run under ``simulation_output_path``
+      if ``simulation_base_path`` is ``"latest"``.
+    * Returns the specified subdirectory under ``simulation_output_path``.
+
+    Args:
+        simulation_output_path: Main output directory path (usually ``output``).
+        simulation_base_path: Either ``"latest"`` or an explicit directory
+            name (or Path) under ``simulation_output_path``.
 
     Returns:
-    --------
-    Path
-        Full path to the simulation base directory
+        Full path to the selected simulation base directory.
+
+    Raises:
+        FileNotFoundError: If the output directory or specified base path
+            does not exist.
     """
     output_dir = Path(simulation_output_path)
 
@@ -105,34 +112,46 @@ def calculate_action_rates_by_scenario(
         output_file: str = "synthetic_commodity_line_results_data.csv",
         practical_equivalence_threshold: float = 0.005
 ) -> Dict[str, pd.DataFrame]:
-    """
-    Calculate action rates from simulation data filtered by ground truth criteria.
+    """Calculate and compare action rates by scenario between simulation and ground truth.
 
-    Parameters:
-    -----------
-    ground_truth_path : str
-        Path to the ground truth CSV file
-    simulation_output_path : str | Path
-        Main output directory (the 'output' folder)
-    scenarios : List[str]
-        List of scenario names (e.g., ['scenario1', 'scenario2', ...])
-    num_replications : int
-        Number of replications per scenario
-    filter_fields : List[str]
-        Fields from ground truth to use for filtering
-    simulation_base_path : str, optional
-        Either 'latest' to auto-select most recent run, or specific directory name
-        (default: 'latest')
-    output_file : str, optional
-        Name of the simulation output file (default: 'synthetic_commodity_line_results_data.csv')
+    For each scenario and replication, this function:
+
+    * Loads the simulation output file.
+    * Computes the action rate (mean of the ``action`` column).
+    * Compares the distribution of simulated action rates to the ground truth
+      action rate using:
+      - One-sample t-test,
+      - Proportion z-test,
+      - Exact binomial test,
+      - Practical equivalence (absolute difference threshold).
+
+    If ``filter_fields`` are provided, calculations are performed for each
+    unique combination of those fields; otherwise the comparison is done
+    at the overall level.
+
+    Args:
+        ground_truth_path: Path to the ground truth CSV file.
+        simulation_output_path: Root directory where scenario outputs are stored.
+        scenarios: List of scenario names (subdirectories under the base path).
+        num_replications: Number of replications per scenario.
+        filter_fields: List of column names from the ground truth to use for
+            stratified filtering; if None or empty, overall rates are used.
+        simulation_base_path: Either ``"latest"`` or a specific run directory
+            name under ``simulation_output_path``.
+        output_file: Name of the simulation result file containing ``action``
+            (default: ``'synthetic_commodity_line_results_data.csv'``).
+        practical_equivalence_threshold: Maximum absolute difference in action
+            rates to consider them practically equivalent.
 
     Returns:
-    --------
-    Dict[str, pd.DataFrame]
-        Dictionary with scenario names as keys and DataFrames containing analysis results
+        Dictionary mapping scenario name to a DataFrame of per-scenario
+        (and per-filter-combination) statistics, including:
+
+        * Ground-truth and mean simulation action rates,
+        * t-test/proportion/binomial test results,
+        * practical equivalence indicators,
+        * per-replication action rates.
     """
-
-
     # Get the actual simulation base path
     base_path = get_simulation_base_path(simulation_output_path, simulation_base_path)
     print(f"\nUsing simulation base path: {base_path}")
@@ -203,7 +222,7 @@ def calculate_action_rates_by_scenario(
                     # If p-value > 0.05, we fail to reject null (they are statistically the same)
                     statistically_same = 1 if p_value > 0.05 else 0
 
-                # Also check practical equivalence (e.g., within 5% or 0.01 absolute difference)
+                # Also check practical equivalence (e.g., within a small absolute difference)
                 absolute_diff = abs(mean_rate - gt_action_rate)
 
                 # Consider practically equivalent if within threshold
@@ -213,25 +232,18 @@ def calculate_action_rates_by_scenario(
                 # APPROACH 2: BINOMIAL/PROPORTION TEST (for rate/proportion data)
                 # ============================================
 
-                # This approach is more appropriate if:
-                # - valid_rates are proportions (values between 0 and 1)
-                # - They represent success rates from binary outcomes
-
                 # Determine if we should use binomial approach based on data
                 is_proportion_data = all(0 <= rate <= 1 for rate in valid_rates)
 
                 if is_proportion_data:
                     # METHOD 2A: One-sample proportion test (z-test for proportions)
-                    # This tests if the mean proportion differs from the expected proportion
-
-                    # Calculate pooled proportion and standard error
                     pooled_prop = mean_rate
                     expected_prop = gt_action_rate
 
                     # Standard error for proportion
                     se_prop = np.sqrt(expected_prop * (1 - expected_prop) / ground_truth.shape[0])
 
-                    if se_prop < 1e-10:  # Handle edge cases (0 or 1)
+                    if se_prop < 1e-10:
                         if abs(pooled_prop - expected_prop) < 1e-10:
                             prop_z_statistically_same = 1
                             prop_z_p_value = 1.0
@@ -245,19 +257,15 @@ def calculate_action_rates_by_scenario(
                         prop_z_p_value = 2 * (1 - stats.norm.cdf(abs(z_statistic)))
                         prop_z_statistically_same = 1 if prop_z_p_value > 0.05 else 0
 
-                    # METHOD 2B: Exact binomial test (if you have count data)
-                    # This is useful if each rate comes from a fixed number of trials
-                    # Example: if each valid_rate = successes/n_trials
-
+                    # METHOD 2B: Exact binomial test
                     total_successes = sum(rate * n_trials for rate, n_trials
                                          in zip(valid_rates, trials_per_replication))
                     total_trials = sum(trials_per_replication)
 
-                    # Perform exact binomial test
                     binomial_result = stats.binomtest(
-                        k=int(round(total_successes)),  # Total number of 1's across all replications
-                        n=total_trials,  # Total number of trials (rows) across all replications
-                        p=gt_action_rate,  # Expected proportion
+                        k=int(round(total_successes)),
+                        n=total_trials,
+                        p=gt_action_rate,
                         alternative='two-sided'
                     )
 
@@ -311,8 +319,7 @@ def calculate_action_rates_by_scenario(
                 'binomial_p_value': binomial_p_value
             }
 
-
-            # Add individual replication rates (starting from rep_0)
+            # Add individual replication rates
             for rep_idx, rate in enumerate(replication_action_rates):
                 result_row[f'rep_{rep_idx}_action_rate'] = rate
 
@@ -346,17 +353,11 @@ def calculate_action_rates_by_scenario(
                 print(f'   \nCombination {combination_values} being analyzed ({combo_count} of {len(grouped)})...')
                 combo_count+=1
 
-                # # Create a dictionary for the current combination
-                # combination_dict = dict(
-                #     zip(filter_fields_lower, combination_values if len(filter_fields_lower) > 1 else [combination_values]))
-
                 if len(filter_fields_lower) == 1:
-                    # Single field: combination_values might be tuple or scalar
                     value = combination_values[0] if isinstance(combination_values,
                                                                 (tuple, list)) else combination_values
                     combination_dict = {filter_fields_lower[0]: value}
                 else:
-                    # Multiple fields: zip normally
                     combination_dict = dict(zip(filter_fields_lower, combination_values))
 
                 combination_items = list(combination_dict.items())
@@ -370,17 +371,12 @@ def calculate_action_rates_by_scenario(
                 # Average across all calculated rates
                 gt_action_rate = inspection_action_rates.mean()
 
-
                 # Initialize list to store action rates from each replication
                 replication_action_rates = []
                 trials_per_replication = []
 
-                ###################################################################################
-                ###################################################################################
-                ###################################################################################
-                # Pre-compute outside the loop (do once)
                 unique_inspections_set = set(unique_inspections)
-                combination_items = list(combination_dict.items())  # Avoid dict iteration overhead
+                combination_items = list(combination_dict.items())
 
                 prop = 0
                 increment = 0.25
@@ -393,10 +389,8 @@ def calculate_action_rates_by_scenario(
                     sim_file_path = base_path / scenario / f"rep_{rep}" / output_file
                     pis_file_path = base_path / scenario / f"rep_{rep}" / 'synthetic_pis_data.csv'
 
-
-
                     try:
-                        # Load simulation data (consider specifying dtypes if known)
+                        # Load simulation data
                         sim_data = pd.read_csv(sim_file_path)
                         sim_pis_data = pd.read_csv(pis_file_path)
                         sim_pis_data.columns = sim_pis_data.columns.str.lower()
@@ -412,21 +406,21 @@ def calculate_action_rates_by_scenario(
                             trials_per_replication.append(np.nan)
                             continue
 
-                        # Merge filtered data (much smaller!)
+                        # Merge filtered data
                         merged = sim_subset.merge(
                             sim_pis_subset,
                             left_on='risk_unit_id',
                             right_on='risk_unit',
                             how='inner',
-                            suffixes=('', '_drop')  # Simpler suffix handling
+                            suffixes=('', '_drop')
                         )
 
-                        # Drop columns with _drop suffix (if any)
+                        # Drop columns with _drop suffix
                         drop_cols = [col for col in merged.columns if col.endswith('_drop')]
                         if drop_cols:
                             merged.drop(columns=drop_cols, inplace=True)
 
-                        # Rename _x columns if they exist
+                        # Rename _x columns
                         x_cols = [col for col in merged.columns if col.endswith('_x')]
                         if x_cols:
                             merged.rename(columns={col: col[:-2] for col in x_cols}, inplace=True)
@@ -434,23 +428,21 @@ def calculate_action_rates_by_scenario(
                         # Deduplicate
                         merged_unique = merged.drop_duplicates(subset=['risk_unit_id', 'comm_id'])
 
-                        # Validate
                         if 'action' not in merged_unique.columns:
                             warnings.warn(f"Missing 'action' column in rep {rep}")
                             replication_action_rates.append(np.nan)
                             trials_per_replication.append(np.nan)
                             continue
 
-                        # Check counts
                         if len(merged_unique) != len(sim_subset):
                             warnings.warn(f"Row mismatch in rep {rep}: {len(merged_unique)} vs {len(sim_subset)}")
 
-                        # Filter to the combination desired across the inspection number
+                        # Filter to the combination desired
                         filtered_data = merged_unique
                         for col, val in combination_items:
                             if col in filtered_data.columns:
                                 filtered_data = filtered_data[filtered_data[col] == val]
-                                if len(filtered_data) == 0:  # Early exit
+                                if len(filtered_data) == 0:
                                     break
 
                         # Calculate action data
@@ -470,72 +462,42 @@ def calculate_action_rates_by_scenario(
                         warnings.warn(f"Error in rep {rep}: {str(e)}")
                         replication_action_rates.append(np.nan)
 
-                ###################################################################################
-                ###################################################################################
-                ###################################################################################
-
-
-
                 # Calculate statistics across replications
                 valid_rates = [r for r in replication_action_rates if not np.isnan(r)]
 
                 # Perform two-sided t-test if we have valid rates
                 if len(valid_rates) > 1:
-                    # Calculate mean and std
                     mean_rate = np.mean(valid_rates)
-                    std_rate = np.std(valid_rates, ddof=1)  # Use sample std deviation
+                    std_rate = np.std(valid_rates, ddof=1)
 
-                    # Initialize all proportion/binomial test results to nan
-                    # (will be populated if data is suitable for these tests)
                     prop_z_statistically_same = np.nan
                     prop_z_p_value = np.nan
                     binomial_statistically_same = np.nan
                     binomial_p_value = np.nan
 
-                    # Check if rates are essentially identical (no variance)
-                    if std_rate < 1e-10:  # Very small threshold for numerical stability
-                        # If all replications are the same, check if they match ground truth
+                    if std_rate < 1e-10:
                         if abs(mean_rate - gt_action_rate) < 1e-10:
                             statistically_same = 1
-                            p_value = 1.0  # Perfect match, maximum p-value
+                            p_value = 1.0
                         else:
                             statistically_same = 0
-                            p_value = 0.0  # Clear difference, minimum p-value
+                            p_value = 0.0
                     else:
-                        # Normal t-test when there is variance
                         t_statistic, p_value = stats.ttest_1samp(valid_rates, gt_action_rate)
-                        # If p-value > 0.05, we fail to reject null (they are statistically the same)
                         statistically_same = 1 if p_value > 0.05 else 0
 
-                    # Also check practical equivalence (e.g., within 5% or 0.01 absolute difference)
                     absolute_diff = abs(mean_rate - gt_action_rate)
-
-                    # Consider practically equivalent if within threshold
                     practically_equivalent = 1 if (absolute_diff < practical_equivalence_threshold) else 0
 
-                    # ============================================
-                    # APPROACH 2: BINOMIAL/PROPORTION TEST (for rate/proportion data)
-                    # ============================================
-
-                    # This approach is more appropriate if:
-                    # - valid_rates are proportions (values between 0 and 1)
-                    # - They represent success rates from binary outcomes
-
-                    # Determine if we should use binomial approach based on data
                     is_proportion_data = all(0 <= rate <= 1 for rate in valid_rates)
 
                     if is_proportion_data:
-                        # METHOD 2A: One-sample proportion test (z-test for proportions)
-                        # This tests if the mean proportion differs from the expected proportion
-
-                        # Calculate pooled proportion and standard error
                         pooled_prop = mean_rate
                         expected_prop = gt_action_rate
 
-                        # Standard error for proportion
                         se_prop = np.sqrt(expected_prop * (1 - expected_prop) / ground_truth.shape[0])
 
-                        if se_prop < 1e-10:  # Handle edge cases (0 or 1)
+                        if se_prop < 1e-10:
                             if abs(pooled_prop - expected_prop) < 1e-10:
                                 prop_z_statistically_same = 1
                                 prop_z_p_value = 1.0
@@ -543,25 +505,18 @@ def calculate_action_rates_by_scenario(
                                 prop_z_statistically_same = 0
                                 prop_z_p_value = 0.0
                         else:
-                            # Z-statistic for proportion test
                             z_statistic = (pooled_prop - expected_prop) / se_prop
-                            # Two-sided p-value
                             prop_z_p_value = 2 * (1 - stats.norm.cdf(abs(z_statistic)))
                             prop_z_statistically_same = 1 if prop_z_p_value > 0.05 else 0
-
-                        # METHOD 2B: Exact binomial test (if you have count data)
-                        # This is useful if each rate comes from a fixed number of trials
-                        # Example: if each valid_rate = successes/n_trials
 
                         total_successes = sum(rate * n_trials for rate, n_trials
                                               in zip(valid_rates, trials_per_replication))
                         total_trials = sum(trials_per_replication)
 
-                        # Perform exact binomial test
                         binomial_result = stats.binomtest(
-                            k=int(round(total_successes)),  # Total number of 1's across all replications
-                            n=total_trials,  # Total number of trials (rows) across all replications
-                            p=gt_action_rate,  # Expected proportion
+                            k=int(round(total_successes)),
+                            n=total_trials,
+                            p=gt_action_rate,
                             alternative='two-sided'
                         )
 
@@ -569,26 +524,16 @@ def calculate_action_rates_by_scenario(
                         binomial_statistically_same = 1 if binomial_p_value > 0.05 else 0
 
                 elif len(valid_rates) == 1:
-                    # Can't perform statistical tests with only one observation
                     single_rate = valid_rates[0]
-
-                    # Check absolute difference
                     absolute_diff = abs(single_rate - gt_action_rate)
-
-                    # For single observation, we can only assess practical equivalence
                     practically_equivalent = 1 if (absolute_diff < practical_equivalence_threshold) else 0
-
-                    # No statistical tests possible with n=1
-                    statistically_same = np.nan  # Insufficient data for reliable test
+                    statistically_same = np.nan
                     p_value = np.nan
-
-                    # Proportion tests also not possible with n=1
                     prop_z_statistically_same = np.nan
                     prop_z_p_value = np.nan
                     binomial_statistically_same = np.nan
                     binomial_p_value = np.nan
                 else:
-                    # No valid rates
                     statistically_same = np.nan
                     p_value = np.nan
                     practically_equivalent = np.nan
@@ -616,7 +561,7 @@ def calculate_action_rates_by_scenario(
                     'binomial_p_value': binomial_p_value
                 }
 
-                # Add individual replication rates (starting from rep_0)
+                # Add individual replication rates
                 for rep_idx, rate in enumerate(replication_action_rates):
                     result_row[f'rep_{rep_idx}_action_rate'] = rate
 
@@ -633,20 +578,20 @@ def list_available_simulation_runs(
         simulation_output_path: str | Path,
         base_name: str = "pops_border_scenario_data"
 ) -> List[Dict[str, Union[str, datetime]]]:
-    """
-    List all available simulation runs in the output directory.
+    """List all available simulation runs in the output directory.
 
-    Parameters:
-    -----------
-    simulation_output_path : str | Path
-        The main output directory
-    base_name : str
-        Base name of the simulation directories
+    Simulation run directories are identified using the same naming pattern
+    as :func:`find_latest_simulation_base_path`.
+
+    Args:
+        simulation_output_path: Main output directory.
+        base_name: Base directory name prefix for simulation runs.
 
     Returns:
-    --------
-    List[Dict]
-        List of dictionaries containing 'name' and 'timestamp' for each run
+        List of dictionaries, one per run, each containing:
+        * ``'name'``: directory name,
+        * ``'timestamp'``: parsed datetime,
+        * ``'path'``: Path object.
     """
     output_dir = Path(simulation_output_path)
     pattern = re.compile(rf"{base_name}_(\d{{2}})_(\d{{2}})_(\d{{4}})_(\d{{2}})_(\d{{2}})_(\d{{2}})")
@@ -678,15 +623,18 @@ def list_available_simulation_runs(
 
 
 def save_results(results: Dict[str, pd.DataFrame], output_dir: Union[str, Path]) -> None:
-    """
-    Save analysis results to CSV files.
+    """Save scenario-wise analysis results to CSV files.
 
-    Parameters:
-    -----------
-    results : Dict[str, pd.DataFrame]
-        Dictionary of results from calculate_action_rates_by_scenario
-    output_dir : str
-        Directory to save output files
+    Each scenario's results are written to
+    ``<output_dir>/<scenario>_action_rates_validation.csv``.
+
+    Args:
+        results: Dictionary from scenario name to analysis DataFrame as
+            returned by :func:`calculate_action_rates_by_scenario`.
+        output_dir: Output directory in which to save CSV files.
+
+    Raises:
+        ValueError: If ``output_dir`` is None.
     """
     if output_dir is None:
         raise ValueError("Output needs to be specified for validation process directory cannot be None")
@@ -699,37 +647,50 @@ def save_results(results: Dict[str, pd.DataFrame], output_dir: Union[str, Path])
         df.to_csv(output_file, index=False)
 
 
-
-
 def summarize_statistical_comparison(
         results: Dict[str, pd.DataFrame],
         filter_fields: List[str],
         ground_truth_path: str | Path,
         output_dir: Union[str, Path] = None
 ) -> Dict[str, Dict[str, pd.DataFrame]]:
-    """
-    Create summary statistics for statistical and practical comparison between simulation and ground truth.
+    """Summarize statistical/practical comparisons across scenarios.
 
-    Parameters:
-    -----------
-    results : Dict[str, pd.DataFrame]
-        Dictionary of results from calculate_action_rates_by_scenario
-    filter_fields : List[str]
-        The filter fields used in the analysis
-    ground_truth_path : str
-        Path to the ground truth CSV file (needed to count total rows)
-    output_dir : str
-        Directory to save output files
+    For each scenario in ``results``, this function:
+
+    * Computes overall counts and percentages of combinations where
+      simulated action rates are statistically/practically the same as
+      ground truth according to:
+      - t-test,
+      - proportion z-test,
+      - exact binomial test,
+      - practical-equivalence threshold.
+    * Produces DataFrames listing combinations where the simulation differs
+      by each test.
+    * Saves all summaries and per-test "different combinations" as CSVs.
+    * Optionally produces combined summaries across all scenarios.
+
+    Args:
+        results: Dictionary mapping scenario name to the per-combination
+            analysis DataFrame from
+            :func:`calculate_action_rates_by_scenario`.
+        filter_fields: List of filter field names used when generating
+            ``results``.
+        ground_truth_path: Path to the ground truth CSV file, used to
+            count rows per combination.
+        output_dir: Directory in which to save summary CSV files.
 
     Returns:
-    --------
-    Dict[str, Dict[str, pd.DataFrame]]
-        Nested dictionary with scenario names as keys, each containing:
-        - 'overall_summary': DataFrame with overall statistics (t-test, proportion z-test, binomial test, and practical)
-        - 'ttest_different_combinations': DataFrame with combinations where rates differ by t-test
-        - 'prop_z_different_combinations': DataFrame with combinations where rates differ by proportion z-test
-        - 'binomial_different_combinations': DataFrame with combinations where rates differ by binomial test
-        - 'practically_different_combinations': DataFrame with combinations where rates differ practically
+        Nested dictionary such that for each scenario key, the value is a
+        dictionary containing:
+
+        * ``'overall_summary'``: overall counts/percentages of combinations,
+        * ``'ttest_different_combinations'``
+        * ``'prop_z_different_combinations'``
+        * ``'binomial_different_combinations'``
+        * ``'practically_different_combinations'``.
+
+    Raises:
+        ValueError: If ``output_dir`` is None.
     """
     if output_dir is None:
         raise ValueError("Output needs to be specified for validation process directory cannot be None")
@@ -1164,17 +1125,3 @@ def summarize_statistical_comparison(
         print(f"Saved combined practically different combinations to: {combined_pract_different_file}")
 
     return all_summaries
-
-
-
-
-
-
-
-
-
-
-
-
-
-
