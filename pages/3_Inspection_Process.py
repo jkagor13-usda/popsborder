@@ -42,6 +42,18 @@ COMPLIANCE_SOURCE_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 def _pick_compliance_column(df: pd.DataFrame) -> Optional[str]:
+    """Heuristically pick a column that represents compliance categories.
+
+    The function first looks for any column whose name contains
+    ``"compliance"`` (case-insensitive). If none is found, it returns
+    the first string (object dtype) column.
+
+    Args:
+        df: DataFrame to search.
+
+    Returns:
+        Column name or None if no suitable column is found.
+    """
     for col in df.columns:
         if "compliance" in col.lower():
             return col
@@ -50,6 +62,17 @@ def _pick_compliance_column(df: pd.DataFrame) -> Optional[str]:
 
 
 def _first_matching_column(df: pd.DataFrame, candidates: list[str]) -> Optional[str]:
+    """Return the first column matching one of the candidate names.
+
+    A case-insensitive comparison is used to match against ``candidates``.
+
+    Args:
+        df: DataFrame whose columns will be searched.
+        candidates: List of candidate column names.
+
+    Returns:
+        Matching column name from ``df`` or None if no match is found.
+    """
     lower_map = {c.lower(): c for c in df.columns}
     for candidate in candidates:
         if candidate.lower() in lower_map:
@@ -58,6 +81,17 @@ def _first_matching_column(df: pd.DataFrame, candidates: list[str]) -> Optional[
 
 
 def _compliance_cell_style(value: object) -> str:
+    """Return CSS style string for a compliance-level cell.
+
+    Colors cells based on qualitative compliance descriptors such as
+    "tissue", "high", "medium", "low", "poor".
+
+    Args:
+        value: Cell value to style.
+
+    Returns:
+        CSS style string usable in a pandas Styler context.
+    """
     text = str(value).strip().lower()
     if "tissue" in text:
         return "background-color: #6a994e; color: white; font-weight: 600;"
@@ -73,6 +107,15 @@ def _compliance_cell_style(value: object) -> str:
 
 
 def _numeric_heat_style(value: object, base_color: str) -> str:
+    """Return a background color style based on a numeric value in [0, 1].
+
+    Args:
+        value: Cell value (expected numeric).
+        base_color: RGB triplet string (e.g., ``"31, 119, 180"``).
+
+    Returns:
+        CSS style string with an alpha-scaled background color.
+    """
     try:
         numeric = float(value)
     except (TypeError, ValueError):
@@ -83,6 +126,14 @@ def _numeric_heat_style(value: object, base_color: str) -> str:
 
 
 def _read_uploaded_csv(uploaded_file) -> Optional[pd.DataFrame]:
+    """Read a CSV file from a Streamlit upload widget into a DataFrame.
+
+    Args:
+        uploaded_file: File-like object from ``st.file_uploader``.
+
+    Returns:
+        DataFrame if parsing succeeds, otherwise None.
+    """
     if uploaded_file is None:
         return None
     try:
@@ -93,6 +144,20 @@ def _read_uploaded_csv(uploaded_file) -> Optional[pd.DataFrame]:
 
 
 def _style_policy_dataframe(df: pd.DataFrame):
+    """Apply styling to a policy DataFrame for interactive preview.
+
+    Styles:
+
+    * Compliance column using qualitative shading.
+    * Detection and confidence columns using numeric heatmaps.
+
+    Args:
+        df: DataFrame containing one or more of the columns:
+            "Compliance", "Detection Level", "Confidence Level(s)".
+
+    Returns:
+        pandas Styler with applied styles.
+    """
     compliance_col = _first_matching_column(df, ["Compliance"])
     detection_col = _first_matching_column(df, ["Detection Level"])
     confidence_col = _first_matching_column(df, ["Confidence Levels", "Confidence Level"])
@@ -120,6 +185,32 @@ def _save_policy_artifact(
     direct_lookup_csv: bool = False,
     producer_grouping_path: Optional[Path] = None,
 ) -> Path:
+    """Create and persist a combined RBS compliance policy artifact.
+
+    Steps:
+
+    1. Normalize producer values (if a producer grouping file is provided).
+    2. Optionally load detection/confidence mapping from a mapping CSV and
+       build a lookup table.
+    3. Normalize RBS variables using :func:`normalize_rbs_variables_using_risk_unit_config`.
+    4. Store the resulting compliance table and policy preview as a
+       pickled dictionary in ``COMPLIANCE_ROOT``.
+
+    Args:
+        policy_name: Desired base name for the policy file (without extension).
+        compliance_csv_path: Path to the base compliance CSV.
+        mapping_csv_path: Optional mapping CSV for detection/confidence levels.
+        direct_lookup_csv: If True, treat the compliance CSV as already
+            containing detection/confidence data and skip the mapping step.
+        producer_grouping_path: Optional path to a producer grouping CSV
+            used to normalize producer values.
+
+    Returns:
+        Path to the created ``.pkl`` policy artifact.
+
+    Raises:
+        FileNotFoundError: If mapping CSV is required but missing.
+    """
     policy_name = policy_name.strip() or "rbs_compliance_policy"
     policy_path = COMPLIANCE_ROOT / f"{policy_name}.pkl"
     compliance_preview_df = pd.read_csv(compliance_csv_path)
@@ -166,6 +257,21 @@ def _normalize_policy_producer_values(
     *,
     producer_grouping_path: Optional[Path] = None,
 ) -> pd.DataFrame:
+    """Normalize producer-related columns in a compliance table.
+
+    Uses RiskUnitConfig aliasing to identify producer-group columns and,
+    if a grouping file is available, maps raw producer names to the
+    desired group labels.
+
+    Args:
+        compliance_df: Compliance table with a "Compliance" column and
+            one or more producer-like columns.
+        producer_grouping_path: Optional path to a producer grouping CSV
+            used by :func:`create_producer_mapping`.
+
+    Returns:
+        DataFrame with normalized producer columns (if applicable).
+    """
     if compliance_df is None or compliance_df.empty or "Compliance" not in compliance_df.columns:
         return compliance_df
     key_cols = compliance_df.columns[:compliance_df.columns.get_loc("Compliance")].tolist()
