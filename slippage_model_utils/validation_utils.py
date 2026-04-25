@@ -62,8 +62,8 @@ def find_latest_simulation_base_path(output_dir: Path, base_name: str = "pops_bo
 
 
 def get_simulation_base_path(
-        simulation_output_path: str | Path,
-        simulation_base_path: str = "latest"
+    simulation_output_path: Union[str, Path],
+    simulation_base_path: Union[str, Path] = "latest",
 ) -> Path:
     """
     Get the simulation base path, either by name or finding the latest.
@@ -677,7 +677,7 @@ def list_available_simulation_runs(
     return runs
 
 
-def save_results(results: Dict[str, pd.DataFrame], output_dir: Path = None) -> None:
+def save_results(results: Dict[str, pd.DataFrame], output_dir: Union[str, Path]) -> None:
     """
     Save analysis results to CSV files.
 
@@ -691,12 +691,12 @@ def save_results(results: Dict[str, pd.DataFrame], output_dir: Path = None) -> N
     if output_dir is None:
         raise ValueError("Output needs to be specified for validation process directory cannot be None")
 
-    output_dir.mkdir(exist_ok=True)
+    out_path = Path(output_dir)
+    out_path.mkdir(exist_ok=True)
 
     for scenario, df in results.items():
-        output_file = output_dir / f"{scenario}_action_rates_validation.csv"
+        output_file = out_path / f"{scenario}_action_rates_validation.csv"
         df.to_csv(output_file, index=False)
-        print(f"Saved results for {scenario} to {output_file}")
 
 
 
@@ -705,7 +705,7 @@ def summarize_statistical_comparison(
         results: Dict[str, pd.DataFrame],
         filter_fields: List[str],
         ground_truth_path: str | Path,
-        output_dir: Path = None
+        output_dir: Union[str, Path] = None
 ) -> Dict[str, Dict[str, pd.DataFrame]]:
     """
     Create summary statistics for statistical and practical comparison between simulation and ground truth.
