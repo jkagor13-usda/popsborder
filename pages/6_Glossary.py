@@ -297,70 +297,17 @@ GLOSSARY_TERMS = [
 
 _GLOSSARY_STYLES = """
 <style>
-.glossary-summary {
-    border: 1px solid rgba(31, 119, 180, 0.18);
-    border-radius: 14px;
-    background: linear-gradient(180deg, rgba(31,119,180,0.06), rgba(31,119,180,0.02));
-    padding: 16px 18px;
-    margin-bottom: 18px;
-}
-
-.glossary-summary-title {
-    font-size: 18px;
-    font-weight: 700;
-    color: #1f77b4;
-    margin-bottom: 6px;
-}
-
-.glossary-summary-text {
-    font-size: 16px;
-    color: #2c3e50;
-    line-height: 1.55;
-}
-
-.glossary-card {
-    border: 1px solid rgba(31, 119, 180, 0.18);
-    border-radius: 14px;
-    background: #ffffff;
-    padding: 16px 18px;
-    margin-bottom: 16px;
-    box-shadow: 0 6px 16px rgba(31, 119, 180, 0.06);
-    min-height: 176px;
-}
-
-.glossary-badge {
-    display: inline-block;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: #1f77b4;
-    background: rgba(31, 119, 180, 0.10);
-    border: 1px solid rgba(31, 119, 180, 0.20);
-    border-radius: 999px;
-    padding: 4px 10px;
-    margin-bottom: 12px;
-}
-
-.glossary-term {
-    font-size: 20px;
-    font-weight: 700;
-    color: #1f77b4;
-    margin: 0 0 10px 0;
-    line-height: 1.25;
-}
-
-.glossary-definition {
-    font-size: 16px;
-    color: #2c3e50;
-    line-height: 1.6;
-    margin: 0;
-}
+...
 </style>
 """
 
 
 def _render_summary(total_terms: int) -> None:
+    """Render the top-level summary banner for the glossary.
+
+    Args:
+        total_terms: Number of glossary entries currently shown.
+    """
     st.markdown(
         f"""
         <div class="glossary-summary">
@@ -375,6 +322,11 @@ def _render_summary(total_terms: int) -> None:
 
 
 def _render_glossary_card(item: dict) -> None:
+    """Render a single glossary entry as a styled card.
+
+    Args:
+        item: Dictionary with keys ``"group"``, ``"term"``, and ``"definition"``.
+    """
     st.markdown(
         f"""
         <div class="glossary-card">
