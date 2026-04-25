@@ -39,17 +39,41 @@ CONSIGNMENT_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 def _consignment_dir() -> Path:
+    """Return the root directory for consignment files under tmp.
+
+    Ensures the base directory exists before returning it.
+
+    Returns:
+        Path to the consignment root directory.
+    """
     base = CONSIGNMENT_ROOT
     base.mkdir(parents=True, exist_ok=True)
     return base
 
 def _consignment_source_dir() -> Path:
+    """Return the directory used to store seed/source RBS files.
+
+    Ensures ``tmp/consignments/source`` exists before returning it.
+
+    Returns:
+        Path to the source directory for consignment seeds.
+    """
     temp_dir = _consignment_dir() / "source"
     temp_dir.mkdir(parents=True, exist_ok=True)
     return temp_dir
 
 
 def _consignment_paths(base_name: Optional[str] = None) -> dict[str, Path]:
+    """Build canonical paths for consignment-related CSVs.
+
+    Args:
+        base_name: Base filename, without extension. Defaults to
+            ``st.session_state["consignment_base_name"]`` or "consignment".
+
+    Returns:
+        Dictionary mapping keys (e.g., "uploaded_rbs", "manual_rbs") to
+        CSV paths under the consignment directory.
+    """
     base = _consignment_dir()
     base_name = base_name or st.session_state.get("consignment_base_name", "consignment") or "consignment"
     return {
@@ -59,7 +83,17 @@ def _consignment_paths(base_name: Optional[str] = None) -> dict[str, Path]:
 
 
 def _unique_path(path: Path) -> Path:
-    """Return a non-conflicting path by appending an incrementing suffix if needed."""
+    """Return a path that does not conflict with existing files.
+
+    If ``path`` already exists, an incrementing suffix (``_1``, ``_2``, ...)
+    is appended to the stem before the extension until a free name is found.
+
+    Args:
+        path: Desired output path.
+
+    Returns:
+        A path guaranteed not to exist yet.
+    """
     if not path.exists():
         return path
     stem, suffix = path.stem, path.suffix
@@ -77,6 +111,29 @@ def _save_rbs_to_tmp(
     base_name: Optional[str] = None,
     producer_grouping_path: Optional[Path] = None,
 ) -> tuple[bool, str]:
+    """Save or generate RBS data into tmp/consignments.
+
+    Depending on the current consignment source in state
+    (synthetic vs historical), this helper either:
+
+    * Generates synthetic RBS records using ``generate_synthetic_data``,
+      or
+    * Saves manual/historical RBS data as-is.
+
+    Args:
+        current_rbs: Existing RBS CSV path in use, if any.
+        pending_manual_rbs: Manual RBS DataFrame pending save (for
+            historical mode).
+        pending_upload_rbs: RBS DataFrame uploaded via UI (for seed or
+            direct save).
+        base_name: Base filename used when saving to tmp/consignments.
+        producer_grouping_path: Optional producer-grouping CSV path used
+            when generating synthetic data.
+
+    Returns:
+        Tuple ``(ok, message)`` where ``ok`` indicates success and
+        ``message`` contains a human-readable status message.
+    """
     paths_map = _consignment_paths(base_name)
     base_name = base_name or st.session_state.get("consignment_base_name", "consignment") or "consignment"
     if current_rbs is None and pending_manual_rbs is None and pending_upload_rbs is None:
@@ -144,7 +201,19 @@ def _save_historical_rbs(
     *,
     base_name: Optional[str] = None,
 ) -> tuple[bool, str]:
-    """Persist uploaded historical RBS data to tmp/consignments without generation."""
+    """Persist uploaded historical RBS data to tmp/consignments.
+
+    This function does not generate new data; it simply saves the uploaded
+    or existing RBS file under a unique filename.
+
+    Args:
+        current_rbs: Existing RBS CSV path, if any.
+        pending_upload_rbs: RBS DataFrame uploaded via the UI.
+        base_name: Base filename to use when writing to tmp/consignments.
+
+    Returns:
+        Tuple ``(ok, message)`` indicating success and a status message.
+    """
     base_name = base_name or st.session_state.get("consignment_base_name", "Historical") or "Historical"
     paths_map = _consignment_paths(base_name)
     dest_rbs = _unique_path(paths_map["uploaded_rbs"])
@@ -177,7 +246,15 @@ def _save_manual_rbs(
     *,
     base_name: Optional[str] = None,
 ) -> tuple[bool, str]:
-    """Persist a manual RBS dataset to a unique path under tmp/consignments."""
+    """Save a manually constructed RBS DataFrame to tmp/consignments.
+
+    Args:
+        pending_manual_rbs: Combined manual RBS dataset to save.
+        base_name: Base filename used for the saved CSV.
+
+    Returns:
+        Tuple ``(ok, message)`` indicating success and a status message.
+    """
     if pending_manual_rbs is None or pending_manual_rbs.empty:
         return False, "No manual RBS data to save."
     try:
@@ -193,9 +270,17 @@ def _save_manual_rbs(
         return False, f"Unable to save manual RBS file: {exc}"
 
 
-
-
 def _build_rbs_dataset(seed_df: pd.DataFrame) -> pd.DataFrame:
+    """Convert an internal seed DataFrame into an RBS-like dataset.
+
+    Args:
+        seed_df: Seed DataFrame with specific columns (e.g., producer,
+            pathway, etc.) created by
+            :func:`_build_manual_consignment_seed`.
+
+    Returns:
+        A new DataFrame with RBS calculator-compatible columns.
+    """
     rows = []
     for _, row in seed_df.iterrows():
         rows.append(
@@ -218,6 +303,11 @@ def _build_rbs_dataset(seed_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _init_page_state(state: dict) -> None:
+    """Initialize per-page state keys with defaults.
+
+    Args:
+        state: Mutable dictionary derived from Streamlit session state.
+    """
     state.setdefault("consignment_source", "synthetic")
     state.setdefault("consignment_base_name", "consignment")
     state.setdefault("pending_rbs_upload", None)
@@ -227,6 +317,14 @@ def _init_page_state(state: dict) -> None:
 
 
 def _load_reference_config() -> tuple[list[str], list[str], list[str]]:
+    """Load reference origins, ports, and materials from config.yml.
+
+    Returns:
+        Tuple of three lists:
+            * origins,
+            * ports,
+            * flowers/material types.
+    """
     config = yaml.safe_load(Path("config.yml").read_text())
     parameter_based = config.get("consignment", {}).get("parameter_based", {})
     return (
@@ -237,6 +335,16 @@ def _load_reference_config() -> tuple[list[str], list[str], list[str]]:
 
 
 def _render_consignment_summary(df: pd.DataFrame, *, include_info_message: bool = False) -> None:
+    """Render summary metrics for a consignment DataFrame.
+
+    Shows counts of consignments, pathways, locations, countries, and
+    total plant and sampling units.
+
+    Args:
+        df: Consignment DataFrame with RBS-like columns.
+        include_info_message: If True, shows an info message about where
+            to view richer plots.
+    """
     if df is None or df.empty:
         return
 
@@ -267,6 +375,15 @@ def _render_consignment_summary(df: pd.DataFrame, *, include_info_message: bool 
 
 
 def _render_quantity_sampling_heatmap(df: pd.DataFrame) -> None:
+    """Render a heatmap of quantity vs sampling units for inspection units.
+
+    Uses Altair to show a 2D histogram of plant units versus sample units.
+
+    Args:
+        df: DataFrame containing either ``QUANTITY`` and
+            ``SAMPLING_UNITS_FOR_INSPECTION_UNIT`` or
+            ``TOTAL_PLANT_QUANTITY`` and ``TOTAL_SAMPLING_UNITS``.
+    """
     quantity_col = None
     sampling_units_col = None
     if "QUANTITY" in df.columns and "SAMPLING_UNITS_FOR_INSPECTION_UNIT" in df.columns:
@@ -295,7 +412,7 @@ def _render_quantity_sampling_heatmap(df: pd.DataFrame) -> None:
         {
             "plant_bin_start": np.repeat(q_edges[:-1], len(s_edges) - 1),
             "plant_bin_end": np.repeat(q_edges[1:], len(s_edges) - 1),
-            "sample_bin_start": np.tile(s_edges[:-1], len(q_edges) - 1),
+            "sample_bin_start": np.tile(s_edges[:-1], len(s_edges) - 1),
             "sample_bin_end": np.tile(s_edges[1:], len(q_edges) - 1),
             "frequency": heat.flatten(),
         }
@@ -330,6 +447,18 @@ def _render_quantity_sampling_heatmap(df: pd.DataFrame) -> None:
 
 
 def _render_saved_consignment_preview(df: pd.DataFrame) -> None:
+    """Render a rich preview for a saved consignment DataFrame.
+
+    Displays:
+
+    * DataFrame preview.
+    * Summary statistics.
+    * Distribution plots for top origins, locations, and material types.
+    * Quantity vs sampling-unit heatmap.
+
+    Args:
+        df: Consignment DataFrame loaded from a saved CSV.
+    """
     render_labeled_help(
         "Saved consignment preview",
         "Shows the rows stored in the selected saved consignment file from tmp/consignments.",
@@ -369,6 +498,20 @@ def _build_manual_consignment_seed(
     detection_level: float,
     confidence_level: float,
 ) -> pd.DataFrame:
+    """Construct an internal seed DataFrame from manual inspection units.
+
+    Args:
+        manual_units: List of dictionaries describing manual inspection
+            units (port, origin, material, pathway, sample_units,
+            plants_per_sample, producer).
+        consignment_uid: Unique identifier for the combined consignment.
+        detection_level: Detection level used to approximate required boxes.
+        confidence_level: Confidence level used to approximate required boxes.
+
+    Returns:
+        Seed DataFrame with columns suitable for conversion to an RBS
+        dataset via :func:`_build_rbs_dataset`.
+    """
     rows = []
     for unit in manual_units:
         total_sampling_units = int(unit["sample_units"])
@@ -399,6 +542,7 @@ def _build_manual_consignment_seed(
     return pd.DataFrame(rows)
 
 
+# --- Page setup and main UI logic below this line (no function docstrings needed) ---
 st.set_page_config(page_title="Consignment Generation", layout="wide")
 init_state()
 
