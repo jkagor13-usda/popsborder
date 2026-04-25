@@ -133,7 +133,7 @@ import warnings
 from collections import defaultdict
 from difflib import get_close_matches
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
 import pandas as pd
