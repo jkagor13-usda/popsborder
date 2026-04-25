@@ -6,7 +6,6 @@ import json
 import math
 import shutil
 from pathlib import Path
-from typing import Optional
 
 import altair as alt
 import numpy as np
@@ -16,7 +15,7 @@ suppress_optional_dependency_warnings()
 
 import pandas as pd
 import streamlit as st
-from typing import Any, Dict, Tuple, Iterable
+from typing import Any, Dict, Tuple, Iterable, Optional
 from scipy.stats import betabinom
 
 from gui.models import init_state

@@ -6,18 +6,13 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from scipy.optimize import minimize_scalar
 from scipy import stats
 import pandas as pd
 from collections import defaultdict
-
-
-
-
 from dataclasses import dataclass, asdict
-from typing import List, Tuple, Optional
 from slippage_model_utils.references import REQUIRED_FIELDS_CLARK_INPUT_GENERATION
 
 

@@ -71,7 +71,6 @@ from scipy import stats
 import warnings
 import re
 from typing import Optional, Union
-from scipy import stats
 from popsborder.inspections import construct_risk_units
 
 DEFAULT_RANDOM_STATE = 42
