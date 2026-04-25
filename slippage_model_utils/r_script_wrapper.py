@@ -558,7 +558,7 @@ class RVariableCreator:
     # Name of the R script (relative to repo root)
     R_SCRIPT_REL = Path("slippage_model_utils") / "variable_creator.R"
 
-    def __init__(self, repo_root: Optional[str] = None) -> None:
+    def __init__(self, repo_root: Optional[Union[str, Path]] = None) -> None:
         """
         Initialize variable creator.
 
