@@ -55,7 +55,7 @@ import types
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 import csv
-from typing import Dict, Tuple, List, Set
+from typing import Dict, Tuple, List, Set, Union, Optional
 import warnings
 import chardet
 import pandas as pd
@@ -165,31 +165,27 @@ def load_configuration_yaml_from_text(text):
     return yaml.load(text)  # pylint: disable=no-value-for-parameter
 
 
-def load_one_configuration(filename, sheet=None, key_column=None, value_column=None):
-    """Get the configuration from a JSON or YAML file
+def load_one_configuration(
+    filename: Union[str, Path, Iterable],
+    sheet: Optional[str] = None,
+    key_column: Optional[str] = None,
+    value_column: Optional[str] = None,
+):
+    """Get the configuration from a JSON or YAML file ..."""
 
-    The format is decided based on the file extension.
-    It uses full_load() (FullLoader) to read YAML.
-
-    The parameter can be a string or a path object (path-like object).
-
-    If the *filename* contains `::`, anything after the last `::` is considered
-    parameters determining where in the spreadsheet or table are the relevant
-    columns. The format is multiple key-value pairs with key and value separated by
-    `=`, `:`, or `: ` and individual pairs separated by `,`.
-    The same information can be passed directly as function parameters.
-    If both are provided, function parameters take precedence.
-    """
-    if isinstance(filename, Iterable) and not isinstance(filename, str):
+    # If filename is already an iterable of records, treat it as such.
+    if isinstance(filename, Iterable) and not isinstance(filename, (str, Path)):
         return record_to_nested_dictionary(filename)
 
     filename_str = str(filename)
     if "::" in filename_str:
-        filename, info = filename_str.rsplit("::", maxsplit=1)
-        info = table_info_from_text(info)
+        filename_str, info_text = filename_str.rsplit("::", maxsplit=1)
+        info = table_info_from_text(info_text)
     else:
         info = table_info_from_text("")
-    filename = Path(filename)
+
+    path = Path(filename_str)
+
     if sheet:
         info.sheet = sheet
     if key_column:
@@ -197,26 +193,29 @@ def load_one_configuration(filename, sheet=None, key_column=None, value_column=N
     if value_column:
         info.value_column = value_column
 
-    if str(filename).endswith(".json"):
-        return json.load(open(filename))
-    elif str(filename).endswith(".yaml") or str(filename).endswith(".yml"):
+    suffix = path.suffix.lower()
+    if suffix == ".json":
+        with path.open() as f:
+            return json.load(f)
+    elif suffix in [".yaml", ".yml"]:
         import yaml  # pylint: disable=import-outside-toplevel
 
-        if hasattr(yaml, "full_load"):
-            return yaml.full_load(open(filename))
-        return yaml.load(open(filename))  # pylint: disable=no-value-for-parameter
-    elif filename.suffix.lower() in [".csv", ".xlsx", ".ods"]:
+        with path.open() as f:
+            if hasattr(yaml, "full_load"):
+                return yaml.full_load(f)
+            return yaml.load(f)  # pylint: disable=no-value-for-parameter
+    elif suffix in [".csv", ".xlsx", ".ods"]:
         return load_config_table(
-            filename,
+            path,
             sheet=info.sheet,
             key_column=info.key_column,
             value_column=info.value_column,
         )
     else:
-        sys.exit("Unknown file extension (file: {filename})")
+        sys.exit(f"Unknown file extension (file: {path})")
 
 
-def resolve_included_files(dictionary: dict, base_file_name=None):
+def resolve_included_files(dictionary: dict, base_file_name: Optional[Union[str, Path]] = None) -> None:
     """Replace links to files by the file content (materialize included files)"""
     for key, value in dictionary.items():
         if isinstance(value, dict):
@@ -247,7 +246,12 @@ def resolve_included_files(dictionary: dict, base_file_name=None):
                 resolve_included_files(value, base_file_name)
 
 
-def load_configuration(filename, sheet=None, key_column=None, value_column=None):
+def load_configuration(
+    filename: Union[str, Path],
+    sheet: Optional[str] = None,
+    key_column: Optional[str] = None,
+    value_column: Optional[str] = None,
+):
     """Get the configuration from a JSON or YAML file
 
     The format is decided based on the file extension.
@@ -264,10 +268,11 @@ def load_configuration(filename, sheet=None, key_column=None, value_column=None)
 
     Any file specified under the `include_file` key is included.
     """
+    path = Path(filename)
     config = load_one_configuration(
-        filename, sheet=sheet, key_column=key_column, value_column=value_column
+        path, sheet=sheet, key_column=key_column, value_column=value_column
     )
-    resolve_included_files(config, base_file_name=filename)
+    resolve_included_files(config, base_file_name=path)
     return config
 
 
@@ -308,7 +313,12 @@ def table_info_from_text(text, sheet=None, key_column=None, value_column=None):
     return info
 
 
-def load_config_table(filename, sheet=None, key_column=None, value_column=None):
+def load_config_table(
+    filename: Union[str, Path],
+    sheet: Optional[str] = None,
+    key_column: Optional[str] = None,
+    value_column: Optional[str] = None,
+):
     """Load a CSV file into a list of dictionaries
 
     Values which can be converted into int or float are converted. Cells which can be
@@ -317,17 +327,20 @@ def load_config_table(filename, sheet=None, key_column=None, value_column=None):
     A whole file is read and loaded into memory unlike with the ``csv.reader()``
     function.
     """
-    if Path(filename).suffix.lower() not in [".csv", ".ods"]:
+    path = Path(filename)
+    suffix = path.suffix.lower()
+
+    if suffix not in [".csv", ".ods"]:
         return load_config_xlsx(
-            filename, sheet=sheet, key_column=key_column, value_column=value_column
+            path, sheet=sheet, key_column=key_column, value_column=value_column
         )
 
-    if Path(filename).suffix.lower() == ".ods":
+    if suffix == ".ods":
         return load_config_ods(
-            filename, sheet=sheet, key_column=key_column, value_column=value_column
+            path, sheet=sheet, key_column=key_column, value_column=value_column
         )
 
-    return load_config_csv(filename, key_column=key_column, value_column=value_column)
+    return load_config_csv(path, key_column=key_column, value_column=value_column)
 
 
 def column_from_string(arg, default, fallback):
@@ -382,7 +395,11 @@ def validate_key(arg):
     return str(arg)
 
 
-def load_config_csv(filename, key_column=None, value_column=None):
+def load_config_csv(
+    filename: Union[str, Path],
+    key_column: Optional[str] = None,
+    value_column: Optional[str] = None,
+):
     """Read configuration from a CSV table.
 
     The key_column and value_column parameters can be one-based column indices or
@@ -394,28 +411,34 @@ def load_config_csv(filename, key_column=None, value_column=None):
     Values which can be converted from string to other types are converted
     automatically. See :func:`text_to_value` for details.
     """
+    path = Path(filename)
     table = {}
-    with open(filename) as file:
+    with path.open() as file:
         # pylint: disable=import-outside-toplevel
         import csv
 
-        key_column = column_from_string(
+        key_column_idx = column_from_string(
             key_column, default=0, fallback=lambda x: ord(x) - ord("A")
         )
-        value_column = column_from_string(
-            value_column, default=key_column + 1, fallback=lambda x: ord(x) - ord("A")
+        value_column_idx = column_from_string(
+            value_column, default=key_column_idx + 1, fallback=lambda x: ord(x) - ord("A")
         )
 
         for row in csv.reader(file):
-            key = validate_key(row[key_column])
+            key = validate_key(row[key_column_idx])
             if key:
-                value = text_to_value(row[value_column])
+                value = text_to_value(row[value_column_idx])
                 table[key] = value
 
     return record_to_nested_dictionary(table)
 
 
-def load_config_xlsx(filename, sheet=None, key_column=None, value_column=None):
+def load_config_xlsx(
+    filename: Union[str, Path],
+    sheet: Optional[str] = None,
+    key_column: Optional[str] = None,
+    value_column: Optional[str] = None,
+):
     """Read configuration from a XLSX table.
 
     The sheet parameter is name of the sheet within the given spreadsheet file.
@@ -425,56 +448,48 @@ def load_config_xlsx(filename, sheet=None, key_column=None, value_column=None):
 
     See :func:`load_config_csv` for handling of keys and values.
     """
+    path = Path(filename)
     table = {}
 
-    # pylint: disable=import-outside-toplevel
     import openpyxl
     from openpyxl.utils import column_index_from_string
 
-    key_column = column_from_string(
+    key_column_idx = column_from_string(
         key_column, default=0, fallback=lambda x: column_index_from_string(x) - 1
     )
-    value_column = column_from_string(
+    value_column_idx = column_from_string(
         value_column,
-        default=key_column + 1,
+        default=key_column_idx + 1,
         fallback=lambda x: column_index_from_string(x) - 1,
     )
 
     import warnings
 
     with warnings.catch_warnings():
-        # We want to use validation functions in the spreadsheet,
-        # but it does not matter whether they are supported by the reader here.
         warnings.filterwarnings(
             "ignore", message="Data Validation extension is not supported"
         )
         workbook = None
         try:
-            workbook = openpyxl.load_workbook(filename, read_only=True)
-            if sheet:
-                sheet = workbook[sheet]
-            else:
-                sheet = workbook.active
-            # Read rows excluding the header.
-            for row in sheet.iter_rows(values_only=True):
-                key = validate_key(row[key_column])
+            workbook = openpyxl.load_workbook(path, read_only=True)
+            ws = workbook[sheet] if sheet else workbook.active
+            for row in ws.iter_rows(values_only=True):
+                key = validate_key(row[key_column_idx])
                 if key:
-                    # Consider only rows with filled key to allow
-                    # for empty rows for formatting purposes.
-                    # Additionally, ignore rows where key cell contains
-                    # spaces (this allows for a header without threating
-                    # first row differently).
-                    value = text_to_value(row[value_column])
+                    value = text_to_value(row[value_column_idx])
                     table[key] = value
         finally:
-            # Read-only mode requires an explicit close and
-            # the workbook object is not a context manager.
             if workbook:
                 workbook.close()
-        return record_to_nested_dictionary(table)
+    return record_to_nested_dictionary(table)
 
 
-def load_config_ods(filename, sheet=None, key_column=None, value_column=None):
+def load_config_ods(
+    filename: Union[str, Path],
+    sheet: Optional[Union[int, str]] = None,
+    key_column: Optional[str] = None,
+    value_column: Optional[str] = None,
+):
     """Read configuration from a ODS table.
 
     The sheet parameter is name of the sheet within the given spreadsheet file.
@@ -490,7 +505,6 @@ def load_config_ods(filename, sheet=None, key_column=None, value_column=None):
     table = {}
 
     # pylint: disable=import-outside-toplevel
-    import pandas
 
     sheet = sheet if sheet else 0
 
@@ -572,7 +586,7 @@ def print_table_config(config, file=None):
         print(f"{key}|{value}", file=file)
 
 
-def load_scenario_table(filename):
+def load_scenario_table(filename: Union[str, Path]):
     """Load a CSV file into a list of dictionaries
 
     Values which can be converted into int or float are converted. Cells which can be
@@ -581,32 +595,29 @@ def load_scenario_table(filename):
     A whole file is read and loaded into memory unlike with the ``csv.reader()``
     function.
     """
-    # pylint: disable=import-outside-toplevel
+    path = Path(filename)
     table = []
 
-    # Read spreadsheet formats
-    if Path(filename).suffix.lower() != ".csv":
+    if path.suffix.lower() != ".csv":
         import openpyxl
 
+        workbook = None
         try:
-            workbook = openpyxl.load_workbook(filename, read_only=True)
+            workbook = openpyxl.load_workbook(path, read_only=True)
             sheet = workbook.active
-            # Get header.
             header = [cell.value for cell in sheet[1]]
-            # Read rows excluding the header.
             for old_row in sheet.iter_rows(min_row=2):
                 new_row = {}
                 for key, cell in zip(header, old_row):
                     new_row[key] = text_to_value(cell.value)
                 table.append(new_row)
         finally:
-            # Read-only mode requires an explicit close and
-            # the workbook object is not a context manager.
-            workbook.close()
+            if workbook:
+                workbook.close()
         return table
 
-    # Read as CSV
-    with open(filename) as file:
+    # CSV path
+    with path.open() as file:
         import csv
 
         for row in csv.DictReader(file):
@@ -793,69 +804,6 @@ def load_compliance_mapping_csv(filepath: Path) -> Dict[str, Tuple[str, str]]:
         'utf-8', b'', 0, 1,
         f"Failed to decode file with any encoding. Last error: {last_error}"
     )
-
-
-def _load_compliance_mapping_with_encoding_old(filepath: Path, encoding: str) -> Dict[str, Tuple[str, str]]:
-    """Internal helper to load compliance mapping with specific encoding."""
-    mapping = {}
-
-    with open(filepath, newline="", encoding=encoding, errors='replace') as f:
-        reader = csv.reader(f)
-
-        # Read and validate headers
-        try:
-            headers = [h.strip() for h in next(reader)]
-        except StopIteration:
-            raise ValueError("Compliance mapping CSV file is empty.")
-
-        if not headers or all(h == "" for h in headers):
-            raise ValueError("Compliance mapping CSV is missing a header row.")
-
-        # Validate required columns
-        required = {"Compliance", "Detection Level", "Confidence Levels"}
-        missing = required - set(headers)
-        if missing:
-            raise ValueError(
-                f"Compliance mapping CSV missing required column(s): {', '.join(sorted(missing))}"
-            )
-
-        # Get column indices
-        comp_idx = headers.index("Compliance")
-        det_level_idx = headers.index("Detection Level")
-        conf_levels_idx = headers.index("Confidence Levels")
-
-        # Process data rows
-        duplicate_keys = []
-        for row_num, row in enumerate(reader, start=2):
-            if not row or all(cell.strip() == "" for cell in row):
-                continue  # Skip empty rows
-
-            if len(row) <= max(comp_idx, det_level_idx, conf_levels_idx):
-                warnings.warn(f"Row {row_num} has insufficient columns, skipping.")
-                continue
-
-            compliance = row[comp_idx].strip()
-            detection_level = row[det_level_idx].strip()
-            confidence_levels = row[conf_levels_idx].strip()
-
-            if not compliance:
-                warnings.warn(f"Row {row_num} has empty Compliance value, skipping.")
-                continue
-
-            # Check for duplicates
-            if compliance in mapping:
-                duplicate_keys.append((row_num, compliance))
-
-            mapping[compliance] = (detection_level, confidence_levels)
-
-        if duplicate_keys:
-            warnings.warn(
-                f"Found {len(duplicate_keys)} duplicate Compliance value(s) in mapping. "
-                f"Last occurrence will be used. First duplicate at row {duplicate_keys[0][0]}: '{duplicate_keys[0][1]}'"
-            )
-
-    return mapping
-
 
 def _load_compliance_mapping_with_encoding(filepath: Path, encoding: str) -> Dict[str, Tuple[str, str]]:
     """Internal helper to load compliance mapping with specific encoding."""

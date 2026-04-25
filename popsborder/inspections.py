@@ -133,7 +133,7 @@ import warnings
 from collections import defaultdict
 from difflib import get_close_matches
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -189,7 +189,7 @@ def _select_convenience_indexes(unit: str, consignment, n_units_to_inspect: int)
 
 
 def load_compliance_lookup(
-        filename: str
+        filename: Union[str, Path]
 ) -> Dict:
     """
     Load compliance lookup dictionary from pickle file.
@@ -203,16 +203,14 @@ def load_compliance_lookup(
     Raises:
         FileNotFoundError: If pickle file doesn't exist
     """
-    # Initialize paths if not provided
     default_paths = DefaultPaths()
 
     candidate_path = Path(filename)
     if candidate_path.exists():
         full_path = candidate_path
     else:
-        full_path = default_paths.compliance_dir() / filename
+        full_path = default_paths.compliance_dir() / candidate_path.name
 
-    # Check if file exists
     if not full_path.exists():
         raise FileNotFoundError(
             f"Compliance lookup file not found: {full_path}\n"
@@ -220,8 +218,7 @@ def load_compliance_lookup(
             f"Please ensure the pickle file is in the correct directory."
         )
 
-    # Load pickle
-    with open(full_path, 'rb') as f:
+    with full_path.open("rb") as f:
         compliance_table_dict = pickle.load(f)
 
     return compliance_table_dict

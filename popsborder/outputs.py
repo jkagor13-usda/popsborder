@@ -634,7 +634,12 @@ def flatten_nested_dict(dictionary, parent_key=None):
     return dict(_flatten_nested_dict_generator(dictionary, parent_key))
 
 
-def save_scenario_result_to_table(filename, results, config_columns, result_columns):
+def save_scenario_result_to_table(
+    filename: Union[str, Path],
+    results,
+    config_columns,
+    result_columns,
+) -> None:
     """Save selected values for a scenario results to CSV including configuration
 
     The results parameter is list of tuples which is output from the run_scenarios()
@@ -643,7 +648,8 @@ def save_scenario_result_to_table(filename, results, config_columns, result_colu
     Values from configuration or results are selected by columns parameters which are
     in format key/subkey/subsubkey.
     """
-    with open(filename, "w") as file:
+    path = Path(filename)
+    with path.open("w", newline="") as file:
         writer = csv.DictWriter(
             file,
             config_columns + result_columns,
@@ -713,10 +719,14 @@ def inspection_unit_detection_records_to_pandas(records):
     return pd.DataFrame.from_records(records)
 
 
-def save_inspection_unit_detection_records_to_csv(records, filename):
+def save_inspection_unit_detection_records_to_csv(
+    records,
+    filename: Union[str, Path],
+) -> pd.DataFrame:
     """Save per-inspection-unit detection records to CSV and return DataFrame."""
     df = pd.DataFrame.from_records(records)
-    df.to_csv(filename, index=False)
+    path = Path(filename)
+    df.to_csv(path, index=False)
     return df
 
 class PISSimData:
@@ -857,7 +867,11 @@ class PISSimData:
         "commodity_line_results": "synthetic_commodity_line_results_data.csv",
     }
 
-    def __init__(self, output_dir_rep: Optional[Path] = None, config: dict = None):
+    def __init__(
+            self,
+            output_dir_rep: Optional[Union[str, Path]] = None,
+            config: dict = None,
+    ):
         """
         Initialize SimData for a simulation replication.
 
@@ -866,31 +880,30 @@ class PISSimData:
                            Directory will be created if it doesn't exist.
            config: Config object.
         """
-        self.output_dir_rep = output_dir_rep
-        if output_dir_rep:
-            Path(output_dir_rep).mkdir(parents=True, exist_ok=True)
+        self.output_dir_rep = Path(output_dir_rep) if output_dir_rep is not None else None
+        if self.output_dir_rep is not None:
+            self.output_dir_rep.mkdir(parents=True, exist_ok=True)
 
-        # ID counter for consignments
         self.current_id: int = 0
 
-        # Read in the input file that has the commodity line/inspection unit data that's being used for the simulation
         config = config["consignment"]
         generation_method = config["generation_method"]
-        if (generation_method == "input_file") and (
-                config["input_file"]["file_type"] == "PIS"
+        if (
+                generation_method == "input_file"
+                and config["input_file"]["file_type"] == "PIS"
         ):
-            filename = config["input_file"]["file_name"]
-            self.pis_synthetic_data: Optional[pd.DataFrame] = pd.read_csv(filename, sep=",")
+            filename = Path(config["input_file"]["file_name"])
+            self.pis_synthetic_data: Optional[pd.DataFrame] = pd.read_csv(
+                filename,
+                sep=",",
+            )
         else:
-            self.pis_synthetic_data: Optional[pd.DataFrame] = None
+            self.pis_synthetic_data = None
 
-
-        # Efficient collection using lists (converted to DataFrames later)
         self.rbs_records: List[Dict] = []
         self.consignment_records: List[Dict] = []
         self.inspection_unit_detection_records: List[Dict] = []
 
-        # Final DataFrames (populated by finalize_dataframes())
         self.rbs_calc_synthetic_data: Optional[pd.DataFrame] = None
         self.consignments: Optional[pd.DataFrame] = None
         self.commodity_line_results: Optional[pd.DataFrame] = None

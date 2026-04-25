@@ -108,6 +108,8 @@ import csv
 import math
 import random
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -651,7 +653,11 @@ class PISConsignmentGenerator:
             file_name: "path/to/pis_data.csv"
     """
 
-    def __init__(self, filename, separator=",", risk_unit_config: RiskUnitConfig=RiskUnitConfig()):
+    def __init__(self,
+                 filename: Union[str, Path],
+                 separator=",",
+                 risk_unit_config: RiskUnitConfig=RiskUnitConfig()
+                 ):
         """Initialize PIS record-based consignment generator
 
         :param filename: CSV file containing PIS records with columns:
@@ -666,9 +672,11 @@ class PISConsignmentGenerator:
         :param risk_unit_config: RiskUnitConfig instance for attribute mapping
         """
 
-        self.df = pd.read_csv(filename, sep=separator)
+        path = Path(filename)
+        self.filename = path
+        self.df = pd.read_csv(path, sep=separator)
         # Group by inspection number to create consignments
-        self.consignment_groups = list(self.df.groupby('INSPECTION_NUMBER'))
+        self.consignment_groups = list(self.df.groupby("INSPECTION_NUMBER"))
         self.current_consignment_index = 0
         self.risk_unit_config = risk_unit_config or RiskUnitConfig()
 
@@ -1039,7 +1047,8 @@ def get_consignment_generator(config):
 
     if generation_method == "RBS":
         if "input_file" in config and "rbs_file_name" in config["input_file"]:
-            return PISConsignmentGenerator(filename=config["input_file"]["rbs_file_name"])
+            rbs_file = Path(config["input_file"]["rbs_file_name"])
+            return PISConsignmentGenerator(filename=rbs_file)
         _log("No consignment data available")
         return None
 
@@ -1048,7 +1057,7 @@ def get_consignment_generator(config):
 
     input_file = config["input_file"]
     file_type = input_file["file_type"]
-    filename = input_file["file_name"]
+    filename = Path(input_file["file_name"])
 
     if file_type == "F280":
         sample_units_config = config.get("sample_units_per_inspection_unit", config.get("items_per_box"))

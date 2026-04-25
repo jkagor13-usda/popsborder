@@ -41,6 +41,7 @@ from .inputs import update_config
 from .simulation import run_simulation
 from datetime import datetime
 from pathlib import Path
+from typing import Optional, Union
 import numpy as np
 
 from slippage_model_utils.r_script_wrapper import find_repo_root
@@ -48,12 +49,12 @@ from slippage_model_utils.r_script_wrapper import find_repo_root
 def run_scenarios(
     config,
     scenario_table,
-    seed,
-    num_simulations,
-    num_consignments,
+    seed: int,
+    num_simulations: int,
+    num_consignments: int,
     compliance_table=None,
-    detailed=False,
-    output_root=None,
+    detailed: bool = False,
+    output_root: Optional[Union[str, Path]] = None,
     progress_callback=None,
     use_rep_consignments: bool = False,
 ):

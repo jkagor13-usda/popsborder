@@ -250,13 +250,14 @@ class SyntheticConsignmentDataGenerator:
     based on configurable parameters or input data files. It supports multiple
     sampling methods for preserving statistical relationships in the data.
     """
-    
-    def __init__(self,
-                 config: dict = None,
-                 producer_group_mapping: pd.DataFrame = None,
-                 input_data_file: Path = None,
-                 rng: Generator = None
-                 ) -> None:
+
+    def __init__(
+            self,
+            config: Optional[dict] = None,
+            producer_group_mapping: Optional[pd.DataFrame] = None,
+            input_data_file: Optional[Union[str, Path]] = None,
+            rng: Optional[Generator] = None,
+    ) -> None:
         """Initialize the synthetic data generator
 
         :param config: Optional generator configuration
@@ -279,7 +280,9 @@ class SyntheticConsignmentDataGenerator:
         # np.random.seed(DEFAULT_RANDOM_STATE)
 
     @staticmethod
-    def _load_input_data(input_file):
+    def _load_input_data(
+            input_file: Optional[Union[str, Path]]
+    ) -> Optional[pd.DataFrame]:
         """Load input data file for training sampling models.
 
         :param input_file: Path to input data file (.csv, .xlsx, .xls)
@@ -287,25 +290,27 @@ class SyntheticConsignmentDataGenerator:
         """
         if input_file is None:
             return None
+
         try:
-            # Normalize path and detect extension
+            # Normalize to Path and detect extension
             input_path = Path(input_file)
             ext = input_path.suffix.lower()
 
             # Load based on extension
             if ext == ".csv":
                 # Detect encoding for CSV
-                with open(input_path, "rb") as f:
+                with input_path.open("rb") as f:
                     result = chardet.detect(f.read(100000))
                 detected = result.get("encoding") or "utf-8"
 
                 # Try detected encoding first, then common fallbacks.
-                encodings_to_try = []
+                encodings_to_try: list[str] = []
                 for enc in [detected, "utf-8-sig", "utf-8", "cp1252", "latin-1"]:
-                    if enc and enc.lower() not in [e.lower() for e in encodings_to_try]:
+                    if enc and enc.lower() not in (e.lower() for e in encodings_to_try):
                         encodings_to_try.append(enc)
 
-                last_error = None
+                last_error: Optional[UnicodeDecodeError] = None
+                df: Optional[pd.DataFrame] = None
                 for enc in encodings_to_try:
                     try:
                         df = pd.read_csv(input_path, encoding=enc)
@@ -317,25 +322,20 @@ class SyntheticConsignmentDataGenerator:
                     raise last_error
 
             elif ext in {".xlsx", ".xls"}:
-                # For Excel files, pandas handles encoding internally.
-                # You may specify engine="openpyxl" if you want to be explicit.
-                df = pd.read_excel(input_path)  # engine="openpyxl" for .xlsx if needed
+                df = pd.read_excel(input_path)
 
             else:
                 raise ValueError(
                     f"Unsupported file type '{ext}'. Supported types are .csv, .xlsx, .xls."
                 )
 
-            # ----- Cleaning logic -----
-            # Keep any row that has at least one value so we don't throw everything away.
+            # Cleaning logic (unchanged) ...
             df = df.dropna(how="all")
             if df.empty:
                 raise ValueError("Input data has no rows after removing empty records.")
 
-            # Fill missing values to avoid numpy.choice errors downstream.
             for col in df.columns:
                 if np.issubdtype(df[col].dtype, np.number):
-                    # If column is entirely NaN, fill with 0; otherwise use median.
                     if df[col].dropna().empty:
                         df[col] = df[col].fillna(0)
                     else:
@@ -347,7 +347,7 @@ class SyntheticConsignmentDataGenerator:
             return df
 
         except Exception as e:
-            _log(f"Error loading input data file '{input_file}': {e}")
+            _log(f"Error loading input data file '{input_path}': {e}")
             return None
 
     def _resolve_target_columns(self) -> list[str]:
@@ -1527,20 +1527,22 @@ class SyntheticConsignmentDataGenerator:
         return stats
 
 
-def save_to_csv(dataset, filename):
-    """Save dataset to CSV file
-    
-    :param dataset: DataFrame to save
-    :param filename: Output CSV filename
-    """
-    dataset.to_csv(filename, index=False)
-    _log(f"Saved {len(dataset)} records to {filename}")
+def save_to_csv(dataset: pd.DataFrame, filename: Union[str, Path]) -> None:
+    """Save dataset to CSV file.
 
-def save_to_json(dataset, filename):
-    """Save dataset to JSON file
-    
     :param dataset: DataFrame to save
-    :param filename: Output JSON filename
+    :param filename: Output CSV filename or Path
     """
-    dataset.to_json(filename, orient='records', indent=2)
-    _log(f"Saved {len(dataset)} records to {filename}")
+    path = Path(filename)
+    dataset.to_csv(path, index=False)
+    _log(f"Saved {len(dataset)} records to {path}")
+
+def save_to_json(dataset: pd.DataFrame, filename: Union[str, Path]) -> None:
+    """Save dataset to JSON file.
+
+    :param dataset: DataFrame to save
+    :param filename: Output JSON filename or Path
+    """
+    path = Path(filename)
+    dataset.to_json(path, orient="records", indent=2)
+    _log(f"Saved {len(dataset)} records to {path}")
