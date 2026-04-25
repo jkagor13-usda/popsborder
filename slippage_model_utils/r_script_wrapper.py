@@ -496,46 +496,6 @@ def _safe_parse_json_from_r_stdout(stdout: str, context: str) -> dict[str, Any]:
             f"Expected JSON from R ({context}); got (preview): {preview}"
         ) from e
 
-
-#### Helper for tuple range dictionary keys (if you still use it here) ####
-# def get_range_key(
-#     d: Dict[str, Any],
-#     num_plants: float,
-# ) -> Optional[str]:
-#     """Return the key whose numeric range contains ``num_plants``.
-#
-#     The dictionary ``d`` is expected to have some keys that are string
-#     representations of 2-tuples, e.g. ``"(0, 10)"``, ``"(10, 20)"``, etc.
-#     Each such key defines a half-open interval ``(lower, upper]``.
-#     The function returns the first key whose interval contains
-#     ``num_plants``. If none match, the key with the largest upper bound
-#     is returned. If no tuple-like keys exist, None is returned.
-#
-#     Args:
-#         d: Dictionary with tuple-like string keys defining numeric ranges.
-#         num_plants: Numeric value to locate within the ranges.
-#
-#     Returns:
-#         A key string matching the appropriate range, or the key with the
-#         highest upper bound, or None.
-#     """
-#     last_key: Optional[str] = None
-#     max_upper: float = float("-inf")
-#
-#     for key in d:
-#         if key.startswith("(") and key.endswith(")"):
-#             lower, upper = ast.literal_eval(key)
-#
-#             if upper > max_upper:
-#                 max_upper = upper
-#                 last_key = key
-#
-#             if lower < num_plants <= upper:
-#                 return key
-#
-#     return last_key
-
-
 #### Clark BB wrapper ####
 def run_clarke_bb_group_model(
     ty: Sequence[int],
