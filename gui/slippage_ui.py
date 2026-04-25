@@ -34,6 +34,15 @@ PREVIEW_ROWS = 10
 
 
 def _safe_preview(df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
+    """Return a small preview (head) of a DataFrame or None.
+
+    Args:
+        df: Input DataFrame or None.
+
+    Returns:
+        First ``PREVIEW_ROWS`` rows of ``df``, the original empty DataFrame,
+        or None if ``df`` is None.
+    """
     if df is None:
         return None
     if df.empty:
@@ -42,7 +51,15 @@ def _safe_preview(df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
 
 
 def _load_optional_scenario_dataframe(path: Optional[Path]) -> pd.DataFrame:
-    """Load scenario data when available, otherwise return an empty DataFrame."""
+    """Load scenario data when available, otherwise return an empty DataFrame.
+
+    Args:
+        path: Path to the scenario-table file or None.
+
+    Returns:
+        Scenario table as a DataFrame, or an empty DataFrame if the path
+        is missing or unreadable.
+    """
     if path is None:
         return pd.DataFrame()
     try:
@@ -55,10 +72,25 @@ def _load_optional_scenario_dataframe(path: Optional[Path]) -> pd.DataFrame:
 
 
 def _replace_paths(paths: SlippagePaths, **updates: Path) -> SlippagePaths:
+    """Return a copy of SlippagePaths with selected fields updated.
+
+    Args:
+        paths: Existing SlippagePaths instance.
+        **updates: Field/value overrides keyed by SlippagePaths attribute names.
+
+    Returns:
+        New SlippagePaths instance with the updates applied.
+    """
     return replace(paths, **updates)
 
 
 def _default_paths_with_tmp_overrides() -> SlippagePaths:
+    """Create default paths, overriding with temporary paths if present.
+
+    Returns:
+        SlippagePaths where config, PIS, and RBS paths are replaced by
+        temporary versions when those files exist.
+    """
     paths = create_default_paths()
     if TMP_CONFIG_PATH.exists():
         paths = _replace_paths(paths, config=TMP_CONFIG_PATH)
@@ -70,6 +102,16 @@ def _default_paths_with_tmp_overrides() -> SlippagePaths:
 
 
 def _infer_num_consignments_from_path(consignment_path: Optional[Path]) -> Optional[int]:
+    """Infer number of consignments from a consignment CSV path.
+
+    Uses the number of unique INSPECTION_NUMBER or INSPECTION_ID values.
+
+    Args:
+        consignment_path: Optional path to a consignment CSV.
+
+    Returns:
+        Number of unique consignments or None if inference is not possible.
+    """
     if not consignment_path or not consignment_path.exists():
         return None
     df = pd.read_csv(consignment_path)
@@ -83,6 +125,20 @@ def _resolve_experiment_input_paths(
     experiment_dir: Path,
     scenario_path: Path,
 ) -> tuple[Optional[Path], Optional[Path]]:
+    """Resolve consignment and compliance paths from an experiment scenario file.
+
+    The scenario table is inspected for
+    ``consignment/input_file/file_name`` and
+    ``inspection/compliance_table/file_name`` columns. If relative paths
+    are present, they are resolved relative to ``experiment_dir``.
+
+    Args:
+        experiment_dir: Path to the experiment directory.
+        scenario_path: Path to the scenario CSV.
+
+    Returns:
+        Tuple ``(consignment_path, compliance_path)``, each possibly None.
+    """
     consignment_path = None
     compliance_path = None
     scenario_df = pd.read_csv(scenario_path)
@@ -105,7 +161,14 @@ def _resolve_experiment_input_paths(
 
 
 def init_slippage_state() -> Dict[str, Any]:
-    """Initialize session state for slippage UI."""
+    """Initialize and return the Streamlit session state for slippage UI.
+
+    If state already exists under ``STATE_KEY``, it is returned as-is.
+    Otherwise, default paths and options are created and stored.
+
+    Returns:
+        Dictionary representing the slippage UI state.
+    """
     try:
         return st.session_state[STATE_KEY]
     except KeyError:
@@ -132,12 +195,21 @@ def init_slippage_state() -> Dict[str, Any]:
 
 
 def get_slippage_state() -> Dict[str, Any]:
-    """Convenience accessor for slippage state."""
+    """Convenience accessor returning the current slippage state.
+
+    Returns:
+        The dictionary stored under ``STATE_KEY`` in Streamlit session state.
+    """
     return init_slippage_state()
 
 
 def set_paths(**kwargs: Path):
-    """Update filesystem paths used by the pipeline."""
+    """Update filesystem paths used by the slippage pipeline.
+
+    Args:
+        **kwargs: Path overrides keyed by SlippagePaths attribute names,
+            e.g., ``config=Path("...")``, ``pis_data=...``.
+    """
     state = get_slippage_state()
     current_paths: SlippagePaths = state["paths"]
     updated = _replace_paths(current_paths, **kwargs)
@@ -147,32 +219,73 @@ def set_paths(**kwargs: Path):
 
 
 def set_scenario_dataframe(df: pd.DataFrame):
-    """Persist edits to the scenario table."""
+    """Persist edits to the scenario table in session state.
+
+    Args:
+        df: Updated scenario table DataFrame.
+    """
     state = get_slippage_state()
     state["scenario_df"] = df
 
 
 def set_synthetic_options(options: SyntheticOptions):
+    """Update synthetic data generation options in session state.
+
+    Args:
+        options: SyntheticOptions instance to store.
+    """
     state = get_slippage_state()
     state["synthetic_options"] = options
 
 
 def set_engine_options(**kwargs: Any):
+    """Update engine (simulation) options in session state.
+
+    Args:
+        **kwargs: Key/value options to merge into ``engine_options``, e.g.,
+            ``seed=123``, ``num_simulations=10``.
+    """
     state = get_slippage_state()
     options = state["engine_options"]
     options.update(kwargs)
 
 
 def record_pipeline_error(message: str):
+    """Record an error message and timestamp for the last pipeline run.
+
+    Args:
+        message: Error message describing why the run failed.
+    """
     state = get_slippage_state()
     state["run_error"] = message
     state["last_run"] = datetime.now(timezone.utc)
 
 
-
-
 def run_pipeline(experiment_dir, progress_callback=None):
-    """Execute the pipeline. If experiment_dir is provided, load all inputs from that folder."""
+    """Execute the slippage pipeline for a given experiment directory.
+
+    This function:
+
+    * Resolves configuration, scenario, consignment, and compliance paths
+      under ``experiment_dir``.
+    * Calls :func:`run_slippage_pipeline` with these paths and engine
+      options from the UI state.
+    * Stores results and metadata (e.g., num_consignments, output paths)
+      back into the Streamlit session state.
+
+    Args:
+        experiment_dir: Path to the experiment directory containing config,
+            scenario, and input data.
+        progress_callback: Optional callback for reporting progress, passed
+            through to :func:`run_slippage_pipeline`.
+
+    Returns:
+        The :class:`PipelineResult` returned by :func:`run_slippage_pipeline`.
+
+    Raises:
+        Exception: Any exception raised by the underlying pipeline is
+            re-raised after best-effort collection of ``num_consignments``.
+    """
     state = get_slippage_state()
     paths: SlippagePaths = state["paths"]
     engine_options = state["engine_options"]
