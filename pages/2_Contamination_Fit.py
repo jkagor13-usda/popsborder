@@ -41,6 +41,16 @@ CONTAM_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _load_preview(path: Optional[Path], rows: int = 50) -> Optional[pd.DataFrame]:
+    """Load a CSV preview (head) from ``path``, or None on failure.
+
+    Args:
+        path: Path to the CSV file or None.
+        rows: Number of rows to read for preview.
+
+    Returns:
+        DataFrame with up to ``rows`` rows, or None if the path is None
+        or the file cannot be read.
+    """
     if path is None:
         return None
     try:
@@ -50,8 +60,16 @@ def _load_preview(path: Optional[Path], rows: int = 50) -> Optional[pd.DataFrame
 
 
 def _beta_pdf(alpha: float, beta: float, num_points: int = 200) -> pd.DataFrame:
-    """Compute a normalized beta PDF."""
+    """Compute a normalized Beta PDF for visualization.
 
+    Args:
+        alpha: Alpha parameter of the Beta distribution.
+        beta: Beta parameter of the Beta distribution.
+        num_points: Number of points at which to evaluate the PDF.
+
+    Returns:
+        DataFrame with columns ``"prevalence"`` (x-axis) and ``"density"``.
+    """
     eps = 1e-6
     xs = np.linspace(eps, 1 - eps, num_points)
     log_norm = math.lgamma(alpha + beta) - math.lgamma(alpha) - math.lgamma(beta)
@@ -63,6 +81,16 @@ def _beta_pdf(alpha: float, beta: float, num_points: int = 200) -> pd.DataFrame:
 
 
 def _beta_chart(alpha: float, beta: float, title: str) -> alt.Chart:
+    """Build an Altair chart for a Beta PDF.
+
+    Args:
+        alpha: Alpha parameter for the Beta distribution.
+        beta: Beta parameter for the Beta distribution.
+        title: Chart title.
+
+    Returns:
+        Altair Chart object visualizing the Beta PDF.
+    """
     pdf = _beta_pdf(alpha, beta)
     y_max = float(pdf["density"].max() * 1.05) if not pdf.empty else 1.0
     base = alt.Chart(pdf).encode(
@@ -75,6 +103,12 @@ def _beta_chart(alpha: float, beta: float, title: str) -> alt.Chart:
 
 
 def _read_param_store() -> dict:
+    """Read the contamination parameter store JSON file.
+
+    Returns:
+        Dictionary of saved parameter sets, or an empty dict if the
+        store does not exist or cannot be read.
+    """
     if not PARAM_STORE.exists():
         return {}
     try:
@@ -84,11 +118,25 @@ def _read_param_store() -> dict:
 
 
 def _write_param_store(store: dict):
+    """Write a parameter store dictionary to disk as JSON.
+
+    Args:
+        store: Dictionary containing parameter sets keyed by name.
+    """
     PARAM_STORE.parent.mkdir(parents=True, exist_ok=True)
     PARAM_STORE.write_text(json.dumps(store, indent=2))
 
 
 def _next_param_name(store: dict, base: str = "contamination_param_set") -> str:
+    """Generate the next available parameter-set name.
+
+    Args:
+        store: Current parameter-store dictionary.
+        base: Base name prefix to use for new entries.
+
+    Returns:
+        A unique name of the form ``f"{base}_<index>"``.
+    """
     idx = 1
     while f"{base}_{idx}" in store:
         idx += 1
@@ -96,6 +144,14 @@ def _next_param_name(store: dict, base: str = "contamination_param_set") -> str:
 
 
 def _average_contamination_rate_percent(rate: Optional[float]) -> Optional[float]:
+    """Convert a mean contamination rate to a percentage.
+
+    Args:
+        rate: Mean contamination rate in [0, 1].
+
+    Returns:
+        Rate multiplied by 100, or None if conversion fails.
+    """
     if rate is None:
         return None
     try:
@@ -104,6 +160,18 @@ def _average_contamination_rate_percent(rate: Optional[float]) -> Optional[float
         return None
 
 def _save_param_set_fall_back(name: str, alpha: float, beta: float, theta: float, sample_unit_rate: Optional[float] = None) -> str:
+    """Save fallback contamination parameters as a named parameter set.
+
+    Args:
+        name: Proposed name for the parameter set (ignored, hard-coded name is used).
+        alpha: Alpha parameter.
+        beta: Beta parameter.
+        theta: Theta parameter.
+        sample_unit_rate: Optional sample-unit contamination rate.
+
+    Returns:
+        The name under which the fallback parameter set was saved.
+    """
     store = _read_param_store()
     name = 'FALL_BACK_CONTAMINATION_PARAMETERS'
     if not name:
@@ -118,6 +186,16 @@ def _save_param_set_fall_back(name: str, alpha: float, beta: float, theta: float
     return name
 
 def _save_param_set_fit(name: str, res: Dict[Tuple, Any], inputs_by_quantity: Dict[Any,Any]) -> str:
+    """Save a fitted contamination parameter set to the store.
+
+    Args:
+        name: Name for the parameter set; if empty, an auto-generated name is used.
+        res: Mapping from quantity ranges to fitted parameter dictionaries.
+        inputs_by_quantity: Mapping from quantity ranges to Clarke model input objects.
+
+    Returns:
+        The name under which the parameter set was saved.
+    """
     store = _read_param_store()
     if not name:
         name = _next_param_name(store)
@@ -141,6 +219,18 @@ def _save_param_set_fit(name: str, res: Dict[Tuple, Any], inputs_by_quantity: Di
 
 
 def _save_param_set_assign(name: str, alpha: float, beta: float, theta: float, sample_unit_rate: Optional[float] = None) -> str:
+    """Save manually assigned contamination parameters to the store.
+
+    Args:
+        name: Name for the new parameter set; if empty, an auto-generated name is used.
+        alpha: Alpha parameter.
+        beta: Beta parameter.
+        theta: Theta parameter.
+        sample_unit_rate: Optional sample-unit contamination prevalence.
+
+    Returns:
+        The name under which the parameter set was saved.
+    """
     store = _read_param_store()
     if not name:
         name = _next_param_name(store)
@@ -160,8 +250,22 @@ def calculate_beta_binomial_params(
         n_trials: int = 100,
         confidence_level: float = 0.95
 ) -> dict:
-    """
-    Calculate beta-binomial parameters and summary statistics.
+    """Calculate beta-binomial parameters and summary statistics.
+
+    Args:
+        sample_unit_rate: Average contamination rate at the lowest unit
+            level (0–1).
+        concentration_input: User-specified concentration slider value
+            (0–100%) controlling overdispersion.
+        n_trials: Number of trials for the beta-binomial (e.g., plants per sample).
+        confidence_level: Two-sided confidence level for interval estimates.
+
+    Returns:
+        Dictionary containing keys:
+
+        * ``alpha``, ``beta``, ``concentration``, ``variance``, ``rho``,
+          ``mean_clamped``, ``mean``, ``lower_bound``, ``upper_bound``,
+          and ``confidence_level``.
     """
     # Transform input to concentration
     concentration = transform_input_to_concentration(concentration_input)
@@ -205,23 +309,18 @@ def transform_input_to_concentration(
         conc_min: float = 0.5,
         conc_max: float = 100.0
 ) -> float:
-    """
-    Transform user input (0-100%) to concentration parameter using log scale.
+    """Transform 0–100% slider input into a concentration parameter (log-scale).
+
+    The transformation maps a UI-friendly confidence slider (0–100%) onto
+    an internal concentration (shape) parameter for the Beta distribution.
 
     Args:
-        concentration_input: User input in range [0, 100]
-        conc_min: Minimum concentration (default: 0.5)
-        conc_max: Maximum concentration (default: 100.0)
+        concentration_input: User input in range [0, 100].
+        conc_min: Minimum concentration value (default: 0.5).
+        conc_max: Maximum concentration value (default: 100.0).
 
     Returns:
-        Concentration parameter in range [conc_min, conc_max]
-
-    Mathematical justification:
-        - Log scaling provides proportional changes: equal input intervals
-          produce equal multiplicative changes in concentration
-        - This aligns with how concentration affects variance (1/κ² relationship)
-        - Provides better control in low-concentration regime where
-          overdispersion effects are strongest
+        Concentration parameter in range [conc_min, conc_max].
     """
     # Clamp input to valid range
     concentration_input = np.clip(concentration_input, 0.0, 100.0)
@@ -241,15 +340,35 @@ def transform_concentration_to_input(
         conc_min: float = 0.5,
         conc_max: float = 100.0
 ) -> float:
-    """Invert the UI concentration transform back to the 0-100 control scale."""
+    """Invert the concentration transform back to the 0–100 control scale.
+
+    Args:
+        concentration: Concentration parameter to map back to [0, 100].
+        conc_min: Minimum concentration value used in the forward transform.
+        conc_max: Maximum concentration value used in the forward transform.
+
+    Returns:
+        Slider-scale value in [0, 100].
+    """
     concentration = float(np.clip(concentration, conc_min, conc_max))
     log_min = np.log(conc_min)
     log_max = np.log(conc_max)
     return float(((np.log(concentration) - log_min) / (log_max - log_min)) * 100.0)
 
 
-
 def clean_range_key(key):
+    """Convert a tuple-like range key to a display-friendly string.
+
+    Examples:
+        ``"(0, 10)"`` → ``"0-10"``
+
+    Args:
+        key: Range key (tuple or string).
+
+    Returns:
+        String representation with parentheses removed and numbers
+        normalized.
+    """
     k = str(key).replace("(", "").replace(")", "").replace(" ", "")
     parts = k.split(",")
     cleaned_parts = []
@@ -266,6 +385,15 @@ def clean_range_key(key):
 
 
 def _find_column(df: pd.DataFrame, substrings: list[str]) -> Optional[str]:
+    """Find the first column whose lowercase name contains any substring.
+
+    Args:
+        df: DataFrame to search.
+        substrings: List of lowercase substrings to look for.
+
+    Returns:
+        Original column name if found, otherwise None.
+    """
     lower_map = {c.lower(): c for c in df.columns}
     for s in substrings:
         for lc, orig in lower_map.items():
@@ -275,6 +403,12 @@ def _find_column(df: pd.DataFrame, substrings: list[str]) -> Optional[str]:
 
 
 def _render_pis_summary(pis_df: pd.DataFrame) -> None:
+    """Render summary metrics for PIS/consignment data used for fitting.
+
+    Args:
+        pis_df: DataFrame containing inspection IDs, sampling, plant counts,
+            and an ``action`` indicator.
+    """
     ins_col = _find_column(pis_df, ["inspection"])
     samp_col = _find_column(pis_df, ["total_sampling"])
     plant_col = _find_column(pis_df, ["total_plant"])
@@ -305,6 +439,16 @@ def _fit_summary_lines(
         warnings: Iterable[tuple[Tuple, str]] = (),
         n: int = 1000
 ) -> list[str]:
+    """Generate human-readable summary lines for a fitted Clarke model.
+
+    Args:
+        fit: Mapping from quantity ranges to fitted parameter dicts.
+        warnings: Iterable of ``((lower, upper), message)`` warnings.
+        n: Number of trials used for mean/SD summary calculations.
+
+    Returns:
+        List of markdown strings describing the fit per quantity range.
+    """
     # Map key -> warning text for quick lookup
     warning_map: Dict[Tuple, list[str]] = {}
     for key, msg in warnings:
@@ -344,6 +488,12 @@ def _fit_summary_lines(
 
 
 def _render_saved_parameters(sel: str, params: Dict[str, Any]) -> None:
+    """Render a saved parameter set as metrics and Beta charts.
+
+    Args:
+        sel: Name of the selected parameter set.
+        params: Dictionary of parameter values or nested dict of ranges.
+    """
     if isinstance(params, dict) and params and all(isinstance(v, dict) for v in params.values()):
         st.markdown("### Parameter Ranges Summary")
         for key, pdict in params.items():
@@ -396,6 +546,14 @@ def _save_current_fit(
     inputs_by_quantity: Optional[Dict[Any, Any]],
     name_input: str,
 ) -> None:
+    """Save the current fitted or fallback contamination parameters.
+
+    Args:
+        fit_to_show: Dictionary of fitted parameters by quantity range, or None.
+        fall_back_fit_to_show: Fallback ClarkeFit instance if the fit failed.
+        inputs_by_quantity: Clarke-model input structures per quantity range.
+        name_input: Name to use when saving the parameter set.
+    """
     if fit_to_show is not None and inputs_by_quantity is not None:
         saved_name = _save_param_set_fit(
             name=name_input or _next_param_name(_read_param_store()),
@@ -419,7 +577,6 @@ def _save_current_fit(
         return
 
     st.error("No parameters to save. Fit parameters first.")
-
 
 
 # ---- Page setup ----
