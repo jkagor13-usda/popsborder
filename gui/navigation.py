@@ -4,6 +4,16 @@ import streamlit as st
 
 
 def render_sidebar_navigation():
+    """Render the global navigation sidebar for the Streamlit app.
+
+    This function:
+
+    * Displays the PoPS Border logo at the top.
+    * Adds page links for the Home page and Pages 1–6 (Consignment Generation
+      through Glossary).
+
+    It is intended to be called once at the top of each page script.
+    """
     with st.sidebar:
         st.image("gui/PoPS Border Logo.png", use_container_width=True)
         st.page_link("frontend.py", label="Home")
