@@ -624,22 +624,31 @@ class RVariableCreator:
         )
 
     def _call_r_function_df(
-        self,
-        function_name: str,
-        args: Optional[Dict[str, Any]] = None,
-        timeout_sec: float = 120.0,
-        use_parquet: bool = True,
+            self,
+            function_name: str,
+            args: Optional[Dict[str, Any]] = None,
+            timeout_sec: float = 120.0,
+            use_parquet: bool = True,
     ) -> Dict[str, Any]:
         """
         Call a specific R function from variable_creator.R using temp files for data transfer.
+        Ensures cleanup of both input temp files and R-generated df_results files,
+        even if the R script crashes or times out.
         """
         r_script_path = str(self._get_r_script_path())
         cmd, env = _pick_rscript_command()
 
-        temp_files: list[str] = []
+        temp_files: list[str] = []  # Python-created input temp files (JSON + DF inputs)
+        df_result_files: list[str] = []  # R-generated output files to be cleaned up
         temp_dir = tempfile.gettempdir()
 
+        proc = None
+        result: Dict[str, Any] | Any = {}
+
         try:
+            # ---------------------------
+            # Build payload & input temp files
+            # ---------------------------
             df_paths: Dict[str, str] = {}
             simple_args: Dict[str, Any] = {}
 
@@ -671,67 +680,113 @@ class RVariableCreator:
                 encoding="utf-8",
                 dir=temp_dir,
             )
-            json.dump(payload, tmp_json, allow_nan=False)
-            tmp_json.close()
+            try:
+                json.dump(payload, tmp_json, allow_nan=False)
+            finally:
+                # Make sure file handle is closed even if json.dump fails
+                tmp_json.close()
             temp_files.append(tmp_json.name)
 
-            proc = _run_rscript(
-                cmd,
-                r_script_path,
-                tmp_json.name,
-                env=env,
-                timeout_sec=timeout_sec,
+            # ---------------------------
+            # Call R
+            # ---------------------------
+            try:
+                proc = _run_rscript(
+                    cmd,
+                    r_script_path,
+                    tmp_json.name,
+                    env=env,
+                    timeout_sec=timeout_sec,
+                )
+            except subprocess.TimeoutExpired as e:
+                # Let the finally block handle cleanup of known temp files
+                raise TimeoutError(
+                    f"R function '{function_name}' timed out after {timeout_sec}s."
+                ) from e
+
+            # ---------------------------
+            # Parse JSON output from R
+            # ---------------------------
+            result = _safe_parse_json_from_r_stdout(
+                proc.stdout,
+                f"function '{function_name}' (df)",
             )
 
-        except subprocess.TimeoutExpired as e:
-            raise TimeoutError(
-                f"R function '{function_name}' timed out after {timeout_sec}s."
-            ) from e
+            # ---------------------------
+            # Handle df_result files
+            # ---------------------------
+            if isinstance(result, dict) and "df_results" in result:
+                file_paths = result["df_results"]
+                df_results: Dict[str, pd.DataFrame] = {}
+
+                # Track these paths so we can attempt cleanup in finally on any failure
+                for file_path in file_paths.values():
+                    if isinstance(file_path, str):
+                        df_result_files.append(file_path)
+
+                for key, file_path in file_paths.items():
+                    try:
+                        logger.debug("Looking for result file: %s", file_path)
+                        if os.path.exists(file_path):
+                            df_results[key] = _read_df_from_path(file_path)
+                            logger.debug(
+                                "Successfully read %d rows for key %s",
+                                len(df_results[key]),
+                                key,
+                            )
+                            try:
+                                os.unlink(file_path)
+                                logger.debug("Cleaned up: %s", file_path)
+                                # Also remove from df_result_files so we don't try twice in finally
+                                if file_path in df_result_files:
+                                    df_result_files.remove(file_path)
+                            except Exception as e:
+                                logger.warning("Could not delete %s: %s", file_path, e)
+                        else:
+                            logger.warning("File not found: %s", file_path)
+                    except Exception as read_err:
+                        logger.exception("Error reading file %s: %s", file_path, read_err)
+
+                # Merge DataFrame results with other results
+                result = {**result, **df_results}
+                if "df_results" in result:
+                    del result["df_results"]
+
+            return result
+
         finally:
-            # Clean up INPUT temp files only (not R-generated output files)
+            # ---------------------------
+            # Cleanup: input temp files (JSON & DF inputs)
+            # ---------------------------
             for tmp_file in temp_files:
                 try:
                     if os.path.exists(tmp_file):
                         os.unlink(tmp_file)
                 except Exception as cleanup_err:
-                    logger.warning("Could not delete temp file %s: %s", tmp_file, cleanup_err)
+                    logger.warning(
+                        "Could not delete temp file %s: %s",
+                        tmp_file,
+                        cleanup_err,
+                    )
 
-        # Parse JSON output and then handle df result files
-        result = _safe_parse_json_from_r_stdout(
-            proc.stdout,
-            f"function '{function_name}' (df)",
-        )
-
-        if isinstance(result, dict) and "df_results" in result:
-            file_paths = result["df_results"]
-            df_results: Dict[str, pd.DataFrame] = {}
-
-            for key, file_path in file_paths.items():
+            # ---------------------------
+            # Cleanup: df_result files (R outputs) if any remain
+            # This catches cases where:
+            #   - R crashed or timed out after writing files
+            #   - JSON parse failed
+            #   - Python raised before we read/delete them
+            # ---------------------------
+            for tmp_file in df_result_files:
                 try:
-                    logger.debug("Looking for result file: %s", file_path)
-                    if os.path.exists(file_path):
-                        df_results[key] = _read_df_from_path(file_path)
-                        logger.debug(
-                            "Successfully read %d rows for key %s",
-                            len(df_results[key]),
-                            key,
-                        )
-                        try:
-                            os.unlink(file_path)
-                            logger.debug("Cleaned up: %s", file_path)
-                        except Exception as e:
-                            logger.warning("Could not delete %s: %s", file_path, e)
-                    else:
-                        logger.warning("File not found: %s", file_path)
-                except Exception as read_err:
-                    logger.exception("Error reading file %s: %s", file_path, read_err)
-
-            # Merge DataFrame results with other results
-            result = {**result, **df_results}
-            if "df_results" in result:
-                del result["df_results"]
-
-        return result
+                    if os.path.exists(tmp_file):
+                        os.unlink(tmp_file)
+                        logger.debug("Cleaned up df_result file in finally: %s", tmp_file)
+                except Exception as cleanup_err:
+                    logger.warning(
+                        "Could not delete df_result file %s: %s",
+                        tmp_file,
+                        cleanup_err,
+                    )
 
     def basic_text_preproc(
         self,
