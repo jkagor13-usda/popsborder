@@ -17,6 +17,7 @@ from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
 from gui.page_styles import apply_shared_page_styles, render_labeled_help, render_page_intro
 from gui.slippage_ui import get_slippage_state
+from slippage_model_utils.references import engineered_features
 
 # --- Constants / setup --------------------------------------------------------
 TMP_DIR = Path("tmp")
@@ -379,6 +380,58 @@ def _normalize_rows(rows_df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+
+import pandas as pd
+import streamlit as st
+
+def _load_policy_df(pkl_path):
+    """Load the RBS Policy pickle into a DataFrame, handling several common dict shapes."""
+    try:
+        obj = pd.read_pickle(pkl_path)
+    except Exception as exc:  # pylint: disable=broad-except
+        st.error(f"Unable to read RBS policy file: {exc}")
+        return None
+
+    # Case 1: already a DataFrame
+    if isinstance(obj, pd.DataFrame):
+        return obj
+
+    # Case 2: list of dicts -> DataFrame
+    if isinstance(obj, list) and obj and isinstance(obj[0], dict):
+        try:
+            return pd.DataFrame(obj)
+        except Exception as exc:  # pylint: disable=broad-except
+            st.error(f"Could not convert list-of-dicts policy to DataFrame: {exc}")
+            return None
+
+    # Case 3: dict; try a few patterns
+    if isinstance(obj, dict):
+        # a) dict-of-dicts: treat values as row dicts
+        if all(isinstance(v, dict) for v in obj.values()):
+            try:
+                return pd.DataFrame.from_dict(obj, orient="index")
+            except Exception as exc:  # pylint: disable=broad-except
+                st.error(f"Could not convert dict-of-dicts policy to DataFrame: {exc}")
+                return None
+
+        # b) dict-of-lists/scalars: try DataFrame() directly
+        try:
+            return pd.DataFrame(obj)
+        except Exception:
+            # c) as a last resort, treat the whole dict as one row
+            try:
+                return pd.DataFrame([obj])
+            except Exception as exc:  # pylint: disable=broad-except
+                st.error(f"Could not convert dict policy to DataFrame: {exc}")
+                return None
+
+    st.error(f"Unsupported RBS policy object type: {type(obj)}")
+    return None
+
+
+
+
+
 tabs = st.tabs(["Saved Experiment Packages", "Upload Custom Scenario", "Build Experiments"])
 
 # --- Tab 1: Upload custom scenario -------------------------------------------
@@ -459,10 +512,320 @@ with tabs[1]:
             st.error(f"Failed to save custom scenario table: {exc}")
 
 # --- Tab 2: Build experiments -------------------------------------------------
+# with tabs[2]:
+#     st.subheader("Build experiments")
+#     st.write("Combine consignment files, contamination settings, and compliance policies into runnable scenario rows.")
+#     state.setdefault("experiment_rows", [])
+#     col_left, col_right = st.columns([2, 1])
+#
+#     consignment_files = _list_files(TMP_DIR / "consignments", "*.csv")
+#     compliance_files = _list_files(TMP_DIR / "compliance", "*.pkl")
+#     param_sets = _load_param_sets()
+#     param_keys = list(param_sets.keys())
+#
+#     with col_left:
+#         render_labeled_help(
+#             "Scenario label",
+#             "Unique label for the experiment (i.e., scenario). Existing scenarios with the same label are replaced when added.",
+#         )
+#         scenario_label = st.text_input(
+#             "Scenario label",
+#             value=f"scenario_{len(state.get('experiment_rows', [])) + 1}",
+#             label_visibility="collapsed",
+#         )
+#
+#         render_labeled_help(
+#             "Consignments",
+#             "Choose the .csv file of consignments generated on Page 1.",
+#         )
+#         consignment_choice = (
+#             st.selectbox(
+#                 "Consignment (RBS) file",
+#                 consignment_files,
+#                 format_func=lambda p: p.name,
+#                 label_visibility="collapsed",
+#             )
+#             if consignment_files
+#             else None
+#         )
+#
+#         render_labeled_help(
+#             "Contamination parameter set",
+#             "Choose the contamination parameter set generated on Page 2 that should be used in this experiment.",
+#         )
+#         param_choice = (
+#             st.selectbox("Contamination parameter set", param_keys, label_visibility="collapsed")
+#             if param_keys
+#             else None
+#         )
+#
+#         render_labeled_help(
+#             "RBS Policy",
+#             "Choose the compliance policy saved on Page 3 that the simulation will use for this scenario.",
+#         )
+#         compliance_choice = (
+#             st.selectbox(
+#                 "RBS compliance policy",
+#                 compliance_files,
+#                 format_func=lambda p: p.name,
+#                 label_visibility="collapsed",
+#             )
+#             if compliance_files
+#             else None
+#         )
+#
+#     with col_right:
+#         render_labeled_help(
+#             "Files available",
+#             "Inspect the files currently available for scenario construction before adding a row.",
+#         )
+#         with st.expander("Files available", expanded=True):
+#             _render_file_inventory("Consignments", consignment_files, lambda files: ", ".join(p.name for p in files))
+#             _render_file_inventory("Contamination", param_keys, lambda files: ", ".join(files))
+#             _render_file_inventory("RBS Compliance Policies", compliance_files, lambda files: ", ".join(p.name for p in files))
+#
+#
+#
+#
+#
+#     ##################################################################################################
+#     #### CHECKING COMPLIANCE TABLES AGAINST CONSIGNMENTS GENERATED ############################
+#     consignments_df = None
+#     policy_df = None
+#     missing_policy_cols = []
+#     mapping_complete = True  # will be set false if any missing column is not resolved
+#
+#     if consignment_choice is not None and compliance_choice is not None:
+#         try:
+#             consignments_df = pd.read_csv(consignment_choice)
+#         except Exception as exc:  # pylint: disable=broad-except
+#             st.error(f"Unable to read consignment CSV: {exc}")
+#
+#         try:
+#             policy_obj = pd.read_pickle(compliance_choice)
+#         except Exception as exc:  # pylint: disable=broad-except
+#             st.error(f"Unable to read RBS policy file: {exc}")
+#             policy_obj = None
+#
+#         # --- NEW: normalize to DataFrame ------------------------------------
+#         if policy_obj is not None:
+#             if isinstance(policy_obj, pd.DataFrame):
+#                 policy_df = policy_obj
+#             elif isinstance(policy_obj, dict):
+#                 # adjust to your real structure if needed
+#                 try:
+#                     policy_df = pd.DataFrame(policy_obj)
+#                 except Exception as exc:  # pylint: disable=broad-except
+#                     st.error(f"Could not convert policy dict to DataFrame: {exc}")
+#                     policy_df = None
+#             else:
+#                 st.error(
+#                     f"Unsupported RBS policy object type: {type(policy_obj)}. "
+#                     "Expected a DataFrame or a dict that can be converted to a DataFrame."
+#                 )
+#                 policy_df = None
+#         # --------------------------------------------------------------------
+#
+#         if consignments_df is not None and policy_df is not None:
+#             policy_cols = list(policy_df.columns)
+#             if len(policy_cols) >= 2:
+#                 # assume last column is Compliance
+#                 compliance_col = policy_cols[-1]
+#                 condition_cols = policy_cols[:-1]
+#             else:
+#                 compliance_col = None
+#                 condition_cols = policy_cols
+#
+#             cons_cols = list(consignments_df.columns)
+#             missing_policy_cols = [c for c in condition_cols if c not in cons_cols]
+#
+#             if missing_policy_cols:
+#                 st.warning(
+#                     "The selected RBS Policy requires the following columns that are not present "
+#                     "in the consignment file. For each missing column, either map it to an "
+#                     "existing consignment column or create it using a derived feature."
+#                 )
+#
+#                 state.setdefault("policy_column_resolution", {})
+#
+#                 with st.expander("Resolve missing policy columns", expanded=True):
+#                     for missing_col in missing_policy_cols:
+#                         st.markdown(f"#### Policy column: `{missing_col}`")
+#
+#                         choice_key = f"resolve_type_{missing_col}"
+#                         resolve_type = st.radio(
+#                             f"How should `{missing_col}` be provided?",
+#                             options=["Map to existing consignment column", "Create via engineered feature"],
+#                             key=choice_key,
+#                             horizontal=False,
+#                             label_visibility="collapsed",
+#                         )
+#
+#                         if resolve_type == "Map to existing consignment column":
+#                             map_key = f"map_{missing_col}"
+#                             mapped_col = st.selectbox(
+#                                 f"Map `{missing_col}` to consignment column",
+#                                 options=["-- select consignment column --"] + cons_cols,
+#                                 key=map_key,
+#                                 label_visibility="collapsed",
+#                             )
+#                             if mapped_col == "-- select consignment column --":
+#                                 mapping_complete = False
+#                                 st.info("Select a consignment column to map.")
+#                             else:
+#                                 state["policy_column_resolution"][missing_col] = {
+#                                     "mode": "map",
+#                                     "source_column": mapped_col,
+#                                 }
+#
+#                         else:  # "Create via engineered feature"
+#                             from references import engineered_features  # or at top of file
+#
+#                             feat_key = f"feat_{missing_col}"
+#                             feat_options = ["-- select engineered feature --"] + list(engineered_features.keys())
+#                             feat_choice = st.selectbox(
+#                                 f"Select an engineered feature for `{missing_col}`",
+#                                 options=feat_options,
+#                                 key=feat_key,
+#                                 label_visibility="collapsed",
+#                                 format_func=lambda k: (
+#                                     k
+#                                     if k == "-- select engineered feature --"
+#                                     else f"{k} – {engineered_features[k]}"
+#                                 ),
+#                             )
+#                             if feat_choice == "-- select engineered feature --":
+#                                 mapping_complete = False
+#                                 st.info("Select an engineered feature.")
+#                             else:
+#                                 state["policy_column_resolution"][missing_col] = {
+#                                     "mode": "engineer",
+#                                     "feature_name": feat_choice,
+#                                 }
+#
+#                 # Ensure all missing columns have resolutions
+#                 for col in missing_policy_cols:
+#                     if col not in state["policy_column_resolution"]:
+#                         mapping_complete = False
+#                 if not mapping_complete:
+#                     st.error(
+#                         "Not all missing policy columns have been resolved. "
+#                         "Please complete the mappings or feature selections."
+#                     )
+#             else:
+#                 st.caption("All RBS Policy condition columns are present in the consignment file.")
+#                 state["policy_column_resolution"] = {}
+#
+#     ##################################################################################################
+#
+#
+#     add_ready = all([scenario_label, consignment_choice, compliance_choice, param_choice])
+#     render_labeled_help(
+#         "Add scenario row",
+#         "Append the current selections as a scenario row, or replace an existing row with the same label.",
+#     )
+#     if st.button("Add scenario row", type="primary", disabled=not add_ready):
+#         scenario_row = _build_scenario_row(scenario_label, consignment_choice, compliance_choice, param_choice, param_sets)
+#
+#         # If a scenario with this label exists, replace it; otherwise append
+#         replaced = False
+#         for idx, row in enumerate(state["experiment_rows"]):
+#             if row.get("name") == scenario_label:
+#                 state["experiment_rows"][idx] = scenario_row
+#                 replaced = True
+#                 break
+#         if not replaced:
+#             state["experiment_rows"].append(scenario_row)
+#             st.success(f"Added scenario row '{scenario_label}'")
+#         else:
+#             st.success(f"Updated scenario row '{scenario_label}'")
+#
+#     rows_df = pd.DataFrame(state["experiment_rows"])
+#     if not rows_df.empty:
+#         st.dataframe(rows_df, use_container_width=True)
+#     else:
+#         st.info("Add at least one scenario row.")
+#
+#     col_actions = st.columns(2)
+#     with col_actions[0]:
+#         render_labeled_help(
+#             "Clear current rows",
+#             "Remove every scenario row currently staged in this session.",
+#         )
+#         if st.button("Clear current rows", type="secondary", disabled=rows_df.empty):
+#             state["experiment_rows"] = []
+#             st.rerun()
+#     with col_actions[1]:
+#         render_labeled_help(
+#             "Remove last row",
+#             "Drop only the most recently added scenario row from the current session.",
+#         )
+#         if st.button("Remove last row", type="secondary", disabled=rows_df.empty):
+#             if state["experiment_rows"]:
+#                 state["experiment_rows"].pop()
+#             st.rerun()
+#
+#     render_labeled_help(
+#         "Experiment set name (CSV)",
+#         "Folder and file name used when saving the assembled experiment package.",
+#     )
+#     scenario_set = st.text_input("Experiment set name (CSV)", value="experiment_set_1", label_visibility="collapsed")
+#     can_save = bool(scenario_set) and not rows_df.empty
+#
+#     render_labeled_help(
+#         "Save experiment package",
+#         "Write the current scenario rows and any referenced inputs into tmp/experiments as a runnable package.",
+#     )
+#     if st.button("Save experiment package", type="primary", disabled=not can_save):
+#         set_slug = _slugify(scenario_set)
+#         scenario_dir = SCENARIO_ROOT / set_slug
+#         try:
+#             scenario_dir.mkdir(parents=True, exist_ok=True)
+#             scenario_path = scenario_dir / SCENARIO_FILENAME
+#             raw_rows_df = rows_df.copy()
+#             template_cols = _default_template_columns(rows_df)
+#             if "consignment name" in template_cols and "consignment/input_file/file_name" not in template_cols:
+#                 template_cols = [c for c in template_cols if c != "consignment name"]
+#                 template_cols.append("consignment/input_file/file_name")
+#             if "inspection name" in template_cols and "inspection/compliance_table/file_name" not in template_cols:
+#                 template_cols = [c for c in template_cols if c != "inspection name"]
+#                 template_cols.append("inspection/compliance_table/file_name")
+#
+#             ordered_targets = [
+#                 "consignment/input_file/file_name",
+#                 "inspection/compliance_table/file_name",
+#             ]
+#             filtered_cols = [c for c in template_cols if c not in ordered_targets]
+#             anchor = next(
+#                 (i for i, c in enumerate(filtered_cols) if str(c).startswith("Unnamed")),
+#                 len(filtered_cols),
+#             )
+#             template_cols = (
+#                 filtered_cols[:anchor]
+#                 + [c for c in ordered_targets if c in template_cols]
+#                 + filtered_cols[anchor:]
+#             )
+#
+#             rows_df = _apply_scenario_defaults(_scenario_row_to_portable_paths(rows_df, set_slug))
+#             scenario_table = rows_df.reindex(columns=template_cols, fill_value="")
+#             scenario_table.to_csv(scenario_path, index=False)
+#
+#             copied = _copy_inputs(raw_rows_df, scenario_dir)
+#             st.caption(f"Copied files to {scenario_dir}: {', '.join(copied)}")
+#
+#             _update_state_paths(scenario_table=scenario_path)
+#             st.session_state["page4_save_success"] = f"Experiment saved to {scenario_path}"
+#             st.rerun()
+#         except Exception as exc:  # pylint: disable=broad-except
+#             st.error(f"Failed to save experiment: {exc}")
+
+
 with tabs[2]:
     st.subheader("Build experiments")
     st.write("Combine consignment files, contamination settings, and compliance policies into runnable scenario rows.")
     state.setdefault("experiment_rows", [])
+    state.setdefault("policy_column_resolution", {})
+
     col_left, col_right = st.columns([2, 1])
 
     consignment_files = _list_files(TMP_DIR / "consignments", "*.csv")
@@ -471,6 +834,7 @@ with tabs[2]:
     param_keys = list(param_sets.keys())
 
     with col_left:
+        # existing controls
         render_labeled_help(
             "Scenario label",
             "Unique label for the experiment (i.e., scenario). Existing scenarios with the same label are replaced when added.",
@@ -491,6 +855,7 @@ with tabs[2]:
                 consignment_files,
                 format_func=lambda p: p.name,
                 label_visibility="collapsed",
+                key="consignment_choice",
             )
             if consignment_files
             else None
@@ -501,7 +866,12 @@ with tabs[2]:
             "Choose the contamination parameter set generated on Page 2 that should be used in this experiment.",
         )
         param_choice = (
-            st.selectbox("Contamination parameter set", param_keys, label_visibility="collapsed")
+            st.selectbox(
+                "Contamination parameter set",
+                param_keys,
+                label_visibility="collapsed",
+                key="param_choice",
+            )
             if param_keys
             else None
         )
@@ -516,30 +886,151 @@ with tabs[2]:
                 compliance_files,
                 format_func=lambda p: p.name,
                 label_visibility="collapsed",
+                key="compliance_choice",
             )
             if compliance_files
             else None
         )
 
     with col_right:
-        render_labeled_help(
-            "Files available",
-            "Inspect the files currently available for scenario construction before adding a row.",
-        )
+        # your existing inventory expander
         with st.expander("Files available", expanded=True):
             _render_file_inventory("Consignments", consignment_files, lambda files: ", ".join(p.name for p in files))
             _render_file_inventory("Contamination", param_keys, lambda files: ", ".join(files))
             _render_file_inventory("RBS Compliance Policies", compliance_files, lambda files: ", ".join(p.name for p in files))
 
+    # --- NEW: detect missing columns & gather user resolutions ----------------
+    consignments_df = None
+    policy_df = None
+    missing_policy_cols: list[str] = []
+    mapping_complete = True  # flipped to False if any unresolved
+
+    # Reset stored resolutions when user changes either selection
+    # (so you don't reuse old mapping for a new policy/consignment)
+    sel_key = (str(consignment_choice), str(compliance_choice))
+    if state.get("last_policy_consignment_selection") != sel_key:
+        state["policy_column_resolution"] = {}
+        state["last_policy_consignment_selection"] = sel_key
+
+    if consignment_choice is not None and compliance_choice is not None:
+        # Always re-load on rerun (Streamlit is fast enough for typical file sizes)
+        try:
+            consignments_df = pd.read_csv(consignment_choice)
+        except Exception as exc:  # pylint: disable=broad-except
+            st.error(f"Unable to read consignment CSV: {exc}")
+
+        policy_df = _load_policy_df(compliance_choice)
+
+        if consignments_df is not None and policy_df is not None:
+            policy_cols = list(policy_df.columns)
+
+            if len(policy_cols) >= 2:
+                # assume last column is Compliance
+                compliance_col = policy_cols[-1]
+                condition_cols = policy_cols[:-1]
+            else:
+                compliance_col = None
+                condition_cols = policy_cols
+
+            cons_cols = list(consignments_df.columns)
+            missing_policy_cols = [c for c in condition_cols if c not in cons_cols]
+
+            if missing_policy_cols:
+                st.warning(
+                    "The selected RBS Policy requires the following columns that are not present "
+                    "in the consignment file. For each missing column, either map it to an "
+                    "existing consignment column or create it using a derived feature."
+                )
+
+                with st.expander("Resolve missing policy columns", expanded=True):
+                    for missing_col in missing_policy_cols:
+                        st.markdown(f"#### Policy column: `{missing_col}`")
+
+                        choice_key = f"resolve_type_{missing_col}"
+                        resolve_type = st.radio(
+                            f"How should `{missing_col}` be provided?",
+                            options=["Map to existing consignment column", "Create via engineered feature"],
+                            key=choice_key,
+                            horizontal=False,
+                            label_visibility="collapsed",
+                        )
+
+                        if resolve_type == "Map to existing consignment column":
+                            map_key = f"map_{missing_col}"
+                            mapped_col = st.selectbox(
+                                f"Map `{missing_col}` to consignment column",
+                                options=["-- select consignment column --"] + cons_cols,
+                                key=map_key,
+                                label_visibility="collapsed",
+                            )
+                            if mapped_col == "-- select consignment column --":
+                                mapping_complete = False
+                                st.info("Select a consignment column to map.")
+                            else:
+                                state["policy_column_resolution"][missing_col] = {
+                                    "mode": "map",
+                                    "source_column": mapped_col,
+                                }
+
+                        else:  # "Create via engineered feature"
+                            feat_key = f"feat_{missing_col}"
+                            feat_options = ["-- select engineered feature --"] + list(engineered_features.keys())
+                            feat_choice = st.selectbox(
+                                f"Select an engineered feature for `{missing_col}`",
+                                options=feat_options,
+                                key=feat_key,
+                                label_visibility="collapsed",
+                                format_func=lambda k: (
+                                    k
+                                    if k == "-- select engineered feature --"
+                                    else f"{k} – {engineered_features[k]}"
+                                ),
+                            )
+                            if feat_choice == "-- select engineered feature --":
+                                mapping_complete = False
+                                st.info("Select an engineered feature.")
+                            else:
+                                state["policy_column_resolution"][missing_col] = {
+                                    "mode": "engineer",
+                                    "feature_name": feat_choice,
+                                }
+
+                # ensure all missing columns have resolutions
+                for col in missing_policy_cols:
+                    if col not in state["policy_column_resolution"]:
+                        mapping_complete = False
+                if not mapping_complete:
+                    st.error(
+                        "Not all missing policy columns have been resolved. "
+                        "Please complete the mappings or feature selections."
+                    )
+            else:
+                st.caption("All RBS Policy condition columns are present in the consignment file.")
+                state["policy_column_resolution"] = {}
+
+    # --- integrate with your existing add_ready logic ------------------------
     add_ready = all([scenario_label, consignment_choice, compliance_choice, param_choice])
+
+    # If there are missing columns, user must resolve them
+    if consignment_choice is not None and compliance_choice is not None and missing_policy_cols:
+        add_ready = add_ready and mapping_complete
+
     render_labeled_help(
         "Add scenario row",
         "Append the current selections as a scenario row, or replace an existing row with the same label.",
     )
     if st.button("Add scenario row", type="primary", disabled=not add_ready):
-        scenario_row = _build_scenario_row(scenario_label, consignment_choice, compliance_choice, param_choice, param_sets)
+        scenario_row = _build_scenario_row(
+            scenario_label,
+            consignment_choice,
+            compliance_choice,
+            param_choice,
+            param_sets,
+        )
+        # attach resolution so you can use it later in processing
+        scenario_row["policy_column_resolution"] = state.get("policy_column_resolution", {}).copy()
 
-        # If a scenario with this label exists, replace it; otherwise append
+        # existing replace/append logic
         replaced = False
         for idx, row in enumerate(state["experiment_rows"]):
             if row.get("name") == scenario_label:
@@ -552,84 +1043,25 @@ with tabs[2]:
         else:
             st.success(f"Updated scenario row '{scenario_label}'")
 
-    rows_df = pd.DataFrame(state["experiment_rows"])
-    if not rows_df.empty:
-        st.dataframe(rows_df, use_container_width=True)
-    else:
-        st.info("Add at least one scenario row.")
 
-    col_actions = st.columns(2)
-    with col_actions[0]:
-        render_labeled_help(
-            "Clear current rows",
-            "Remove every scenario row currently staged in this session.",
-        )
-        if st.button("Clear current rows", type="secondary", disabled=rows_df.empty):
-            state["experiment_rows"] = []
-            st.rerun()
-    with col_actions[1]:
-        render_labeled_help(
-            "Remove last row",
-            "Drop only the most recently added scenario row from the current session.",
-        )
-        if st.button("Remove last row", type="secondary", disabled=rows_df.empty):
-            if state["experiment_rows"]:
-                state["experiment_rows"].pop()
-            st.rerun()
 
-    render_labeled_help(
-        "Experiment set name (CSV)",
-        "Folder and file name used when saving the assembled experiment package.",
-    )
-    scenario_set = st.text_input("Experiment set name (CSV)", value="experiment_set_1", label_visibility="collapsed")
-    can_save = bool(scenario_set) and not rows_df.empty
 
-    render_labeled_help(
-        "Save experiment package",
-        "Write the current scenario rows and any referenced inputs into tmp/experiments as a runnable package.",
-    )
-    if st.button("Save experiment package", type="primary", disabled=not can_save):
-        set_slug = _slugify(scenario_set)
-        scenario_dir = SCENARIO_ROOT / set_slug
-        try:
-            scenario_dir.mkdir(parents=True, exist_ok=True)
-            scenario_path = scenario_dir / SCENARIO_FILENAME
-            raw_rows_df = rows_df.copy()
-            template_cols = _default_template_columns(rows_df)
-            if "consignment name" in template_cols and "consignment/input_file/file_name" not in template_cols:
-                template_cols = [c for c in template_cols if c != "consignment name"]
-                template_cols.append("consignment/input_file/file_name")
-            if "inspection name" in template_cols and "inspection/compliance_table/file_name" not in template_cols:
-                template_cols = [c for c in template_cols if c != "inspection name"]
-                template_cols.append("inspection/compliance_table/file_name")
 
-            ordered_targets = [
-                "consignment/input_file/file_name",
-                "inspection/compliance_table/file_name",
-            ]
-            filtered_cols = [c for c in template_cols if c not in ordered_targets]
-            anchor = next(
-                (i for i, c in enumerate(filtered_cols) if str(c).startswith("Unnamed")),
-                len(filtered_cols),
-            )
-            template_cols = (
-                filtered_cols[:anchor]
-                + [c for c in ordered_targets if c in template_cols]
-                + filtered_cols[anchor:]
-            )
 
-            rows_df = _apply_scenario_defaults(_scenario_row_to_portable_paths(rows_df, set_slug))
-            scenario_table = rows_df.reindex(columns=template_cols, fill_value="")
-            scenario_table.to_csv(scenario_path, index=False)
 
-            copied = _copy_inputs(raw_rows_df, scenario_dir)
-            st.caption(f"Copied files to {scenario_dir}: {', '.join(copied)}")
 
-            _update_state_paths(scenario_table=scenario_path)
-            st.session_state["page4_save_success"] = f"Experiment saved to {scenario_path}"
-            st.rerun()
-        except Exception as exc:  # pylint: disable=broad-except
-            st.error(f"Failed to save experiment: {exc}")
+
+
+
+
+
+
+
+
+
+
+
+
 
 # --- Bottom navigation --------------------------------------------------------
 st.divider()
