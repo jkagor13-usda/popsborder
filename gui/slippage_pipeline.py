@@ -59,6 +59,7 @@ RESULT_COLUMNS = [
     "avg_plant_units_inspected_completion",
     "avg_plant_units_inspected_detection",
     "pct_plant_units_inspected_completion",
+    "pct_sample_units_inspected_completion",
     "pct_plant_units_inspected_detection",
     "total_missed_contaminants",
     "total_intercepted_contaminants",
@@ -74,7 +75,14 @@ RESULT_COLUMNS = [
 
 @dataclass
 class SyntheticOptions:
-    """Placeholder for interface compatibility (not used in simplified pipeline)."""
+    """Options for synthetic consignment data generation.
+
+    Attributes:
+        n_samples: Number of synthetic consignments to generate.
+        sampling_method: Sampling method passed to
+            :class:`SyntheticConsignmentDataGenerator` (e.g., "sequential",
+            "naive", "gmm").
+    """
 
     n_samples: int = 10
     sampling_method: str = "sequential"
@@ -88,7 +96,21 @@ CONFIG_FILENAME = "config.yml"
 
 @dataclass
 class SlippagePaths:
-    """Container for all filesystem paths used by the slippage pipeline."""
+    """Container for common filesystem paths used by the slippage pipeline.
+
+    Attributes:
+        data_dir: Base directory for input data.
+        config: Path to the main contamination/inspection config file.
+        scenario_table: Path to the slippage scenario table CSV.
+        compliance_lookup: Path to the RBS compliance table.
+        pis_data: Optional path to PIS input data (if precomputed).
+        rbs_data: Optional path to RBS calculator data (if precomputed).
+        synthetic_seed: Optional path to a file used as a seed for synthetic
+            consignment generation.
+        synthetic_output: Path where synthetic consignment data should be
+            written.
+        output_dir: Root directory for pipeline outputs.
+    """
 
     data_dir: Path = DEFAULT_DATA_DIR
     config: Path = DEFAULT_DATA_DIR / "config.yml"
@@ -103,7 +125,17 @@ class SlippagePaths:
 
 @dataclass
 class ExperimentPaths:
-    """Container for inputs in a specific experiment folder."""
+    """Container for an experiment's input paths.
+
+    Attributes:
+        experiment_dir: Root directory of the experiment.
+        scenario_table: Path to the scenario table for this experiment.
+        consignment: Optional explicit consignment file path (overrides
+            scenario entries).
+        compliance: Optional explicit compliance table file path (overrides
+            scenario entries).
+        config: Optional explicit config path (overrides default).
+    """
 
     experiment_dir: Path
     scenario_table: Path
@@ -114,7 +146,14 @@ class ExperimentPaths:
 
 @dataclass
 class ClarkeFit:
-    """Fitted contamination parameters."""
+    """Fitted parameters for the Clarke beta-binomial contamination model.
+
+    Attributes:
+        alpha: Fitted alpha parameter.
+        beta: Fitted beta parameter.
+        theta: Fitted clustering (theta) parameter.
+        raw_result: Raw result dictionary returned by the R model.
+    """
 
     alpha: float
     beta: float
@@ -124,7 +163,19 @@ class ClarkeFit:
 
 @dataclass
 class PipelineResult:
-    """Outputs from a pipeline run."""
+    """Outputs from a slippage pipeline run.
+
+    Attributes:
+        contamination_fit: Fitted contamination parameters (if applicable).
+        scenario_results: Scenario-level summary DataFrame.
+        config: Final configuration dictionary used for the run.
+        compliance_table: Loaded compliance lookup table/policy.
+        pis_data: PIS input DataFrame used (may be empty).
+        rbs_data: RBS input DataFrame used (may be empty).
+        num_consignments: Total number of consignments simulated or inferred.
+        output_dir: Directory where outputs were written.
+        output_files: List of paths to key output files (CSV, etc.).
+    """
 
     contamination_fit: ClarkeFit
     scenario_results: pd.DataFrame
@@ -138,7 +189,19 @@ class PipelineResult:
 
 
 def create_default_paths(base_dir: Path = DEFAULT_DATA_DIR) -> SlippagePaths:
-    """Return default data locations using ``base_dir``."""
+    """Create default SlippagePaths for a given base directory.
+
+    The function infers PIS and RBS data paths, falling back across
+    ``synthetic_rbs_calc_data_enriched.csv`` and
+    ``synthetic_rbs_calc_data.csv`` where necessary, and uses those to
+    set the ``synthetic_seed`` path if available.
+
+    Args:
+        base_dir: Base directory containing input files.
+
+    Returns:
+        A SlippagePaths instance with inferred defaults.
+    """
     pis_path = base_dir / "synthetic_pis_data.csv"
     rbs_enriched = base_dir / "synthetic_rbs_calc_data_enriched.csv"
     rbs_plain = base_dir / "synthetic_rbs_calc_data.csv"
@@ -153,13 +216,37 @@ def create_default_paths(base_dir: Path = DEFAULT_DATA_DIR) -> SlippagePaths:
 
 
 def load_scenario_dataframe(path: Path, *, dtype: str = "object"):
-    """Load the slippage scenario table using the shared popsborder loader and return a DataFrame."""
+    """Load the slippage scenario table as a pandas DataFrame.
+
+    This is a thin wrapper around :func:`popsborder.inputs.load_scenario_table`.
+
+    Args:
+        path: Path to a scenario-table CSV or spreadsheet.
+        dtype: Optional dtype for columns (currently unused; kept for
+            forward compatibility).
+
+    Returns:
+        Scenario table as a pandas DataFrame or list-of-dicts, depending on
+        the underlying loader.
+    """
     scenarios = load_scenario_table(path)
     return scenarios
 
 
 def load_compliance_policy(path: Path) -> Dict[str, Any]:
-    """Load either a CSV compliance table or a pickled compliance policy."""
+    """Load a compliance policy from CSV or a pickled dict.
+
+    Args:
+        path: Path to a CSV compliance table or a pickled dictionary.
+
+    Returns:
+        Compliance lookup structure (dict-like) as required by the
+        inspection module.
+
+    Raises:
+        FileNotFoundError: If the specified path does not exist.
+        pickle.UnpicklingError: If the pickle file cannot be loaded.
+    """
     policy_path = Path(path)
     if policy_path.suffix.lower() == ".pkl":
         with open(policy_path, "rb") as handle:
@@ -172,7 +259,31 @@ def generate_synthetic_data(
     options: SyntheticOptions,
     producer_grouping_path: Optional[Path] = None,
 ) -> pd.DataFrame:
-    """Generate synthetic consignment data and persist it."""
+    """Generate synthetic consignment data and save it to CSV.
+
+    This function:
+
+    * Loads a seed PIS/RBS dataset from ``seed_path``.
+    * Optionally loads a producer grouping file.
+    * Builds a :class:`SyntheticConsignmentDataGenerator` from these inputs.
+    * Generates synthetic consignment records using the specified sampling
+      method and sample size.
+    * Persists the synthetic data to ``output_path``.
+
+    Args:
+        seed_path: Path to seed input data used to train the generator.
+        output_path: Destination CSV file for synthetic consignments.
+        options: SyntheticOptions controlling sample size and method.
+        producer_grouping_path: Optional CSV containing producer grouping
+            fields (used for group-based features).
+
+    Returns:
+        A DataFrame containing the generated synthetic consignment data.
+
+    Raises:
+        FileNotFoundError: If the seed or producer grouping paths are
+            specified but do not exist.
+    """
     if seed_path is None:
         raise FileNotFoundError("Seed data path was not provided.")
     seed_path = Path(seed_path).resolve()
@@ -204,7 +315,18 @@ def generate_synthetic_data(
 
 
 def _infer_num_consignments(consignment_path: Optional[Path]) -> int:
-    """Estimate consignments by counting unique inspection IDs in the provided consignment file."""
+    """Infer number of consignments from a consignment file.
+
+    This counts unique inspection identifiers from commonly used ID
+    columns; if none are present or usable, it falls back to the total
+    number of rows.
+
+    Args:
+        consignment_path: Path to a CSV file containing consignment data.
+
+    Returns:
+        Estimated number of consignments (minimum 1).
+    """
     if consignment_path and Path(consignment_path).exists():
         try:
             df = pd.read_csv(consignment_path)
@@ -229,7 +351,35 @@ def _infer_num_consignments(consignment_path: Optional[Path]) -> int:
 def fit_contamination_distribution(
     pis_data_path: Path,
 ) -> Tuple[Dict[Tuple,Any], pd.DataFrame, Dict[Any, Any], list[tuple[tuple, str]]]:
-    """Fit contamination parameters using the Clarke beta-binomial model."""
+    """Fit contamination parameters using the Clarke beta-binomial model.
+
+    This helper:
+
+    * Loads a PIS dataset with an ``action`` column.
+    * Constructs Clarke-model inputs by quantity decile using
+      :func:`gen_clarke_model_inputs`.
+    * Invokes the R-side Clarke BB group model via
+      :func:`run_clarke_bb_group_model` for each decile.
+    * Enforces a default alpha/beta pair if the fitted values are both
+      zero, recording warnings for such cases.
+
+    Args:
+        pis_data_path: Path to the PIS data CSV with an ``"action"`` column.
+
+    Returns:
+        A tuple of:
+            * ``res``: Mapping from (lower, upper) quantity range to fitted
+              parameter dict.
+            * ``pis_df``: Original PIS DataFrame.
+            * ``inputs_by_quantity``: Input structures per quantity range.
+            * ``warnings``: List of ``((lower, upper), message)`` tuples for
+              ranges where defaults were used.
+
+    Raises:
+        FileNotFoundError: If the PIS data path does not exist.
+        ValueError: If required columns are missing or inputs cannot be
+            constructed.
+    """
     if pis_data_path is None or not Path(pis_data_path).exists():
         raise FileNotFoundError("PIS action data not provided. Upload on Page 2 - Contamination Fit.")
     pis_df = pd.read_csv(pis_data_path)
@@ -296,7 +446,36 @@ def run_slippage_pipeline(
     num_simulations: int = 1,
     progress_callback: Optional[Callable[[int, str], None]] = None,
 ) -> PipelineResult:
-    """Execute the pipeline using files inside a specific experiment folder."""
+    """Execute the end-to-end slippage simulation pipeline for an experiment.
+
+    The pipeline:
+
+    * Loads scenarios and base configuration.
+    * Resolves consignment and compliance-table inputs.
+    * Normalizes contamination and inspection settings per scenario.
+    * Runs :func:`popsborder.scenarios.run_scenarios` for each scenario,
+      with optional retries for specific numerical issues.
+    * Aggregates scenario-level and replication-level outputs.
+    * Writes scenario and all-run results to the experiment output folder.
+
+    Args:
+        exp_paths: ExperimentPaths specifying the experiment directory and
+            input files to use.
+        seed: Base random seed controlling scenario RNGs.
+        num_simulations: Number of simulation replications per scenario.
+        progress_callback: Optional callback invoked with progress updates;
+            should accept ``(percent, message, details_dict)``.
+
+    Returns:
+        PipelineResult capturing fitted contamination parameters, scenario
+        results, configuration, compliance policy, and output file paths.
+
+    Raises:
+        FileNotFoundError: If required inputs (consignment, config, compliance)
+            are missing.
+        ValueError: If scenario tables are empty or no results can be
+            generated.
+    """
 
     def _report_progress(percent: int, message: str, details: Optional[Dict[str, Any]] = None) -> None:
         if progress_callback is None:
@@ -476,6 +655,7 @@ def run_slippage_pipeline(
     skipped_scenarios: List[str] = []
 
     def _execute_all(base_cfg: Dict[str, Any]) -> Tuple[List[Tuple[Any, Dict, Dict]], List[int]]:
+        """Internal helper to run all scenarios with a given base config."""
         scenario_results_raw: List[Tuple[Any, Dict, Dict]] = []
         consignment_counts: List[int] = []
         total_scenarios = len(scenarios)

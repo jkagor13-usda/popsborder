@@ -109,7 +109,7 @@ Modifications:
 # this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
 
 
-"""Generating of various simulation outputs
+"""Generating of various simulation outputs.
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
 .. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
@@ -127,7 +127,7 @@ from collections.abc import MutableMapping
 from functools import reduce
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -135,11 +135,21 @@ import pandas as pd
 from .consignments import Consignment
 
 
-
 def pretty_content(array, config=None):
-    """Return string with array content nicely visualized as unicode text
+    """Return a unicode string visualizing array content.
 
-    Values evaluating to False are replaced with a flower, others with a bug.
+    Values evaluating to False are rendered as a "flower" and True values as a
+    "bug", using unicode symbols (configurable via ``config``).
+
+    Args:
+        array: Iterable of values to visualize.
+        config: Optional dictionary supporting:
+            * ``"flower"``: symbol for non-contaminated (default: BLACK FLORETTE).
+            * ``"bug"``: symbol for contaminated (default: BUG).
+            * ``"spaces"``: if True, insert spaces between symbols.
+
+    Returns:
+        A string representation of the array content.
     """
     config = config if config else {}
     flower_sign = config.get("flower", "\N{BLACK FLORETTE}")
@@ -161,11 +171,22 @@ def pretty_content(array, config=None):
 
 
 def pretty_header(consignment, line=None, config=None):
-    """Return header for a consignment
+    """Return a formatted header string for a consignment.
 
-    Basic info about the consignment is included and the remaining space
-    in a terminal window is filled with horizontal box characters.
-    (The assumption is that this will be printed in the terminal.)
+    Basic information about the consignment is included (number of inspection
+    units and sample units). The remainder of the line is filled with a box-
+    drawing character, intended for terminal display.
+
+    Args:
+        consignment: Consignment object with ``num_inspection_units`` and
+            ``num_sample_units`` attributes.
+        line: Optional line-style specifier (``"heavy"``, ``"light"``, or
+            ``"space"``), or a literal fill character/string.
+        config: Optional dictionary with key ``"horizontal_line"`` to override
+            line style.
+
+    Returns:
+        A single-line header string including consignment summary and padding.
     """
     config = config if config else {}
     size = 80
@@ -197,7 +218,16 @@ def pretty_header(consignment, line=None, config=None):
 
 
 def pretty_consignment_sample_units(consignment, config=None):
-    """Pretty-print consignment focusing on individual sample_units"""
+    """Pretty-print a consignment focusing on individual sample units.
+
+    Args:
+        consignment: Consignment object with ``sample_units``.
+        config: Optional formatting configuration forwarded to
+            :func:`pretty_header` and :func:`pretty_content`.
+
+    Returns:
+        Multiline string with header and visual representation of sample_units.
+    """
     config = config if config else {}
     header = pretty_header(consignment, config=config)
     body = pretty_content(consignment["sample_units"], config=config)
@@ -205,7 +235,22 @@ def pretty_consignment_sample_units(consignment, config=None):
 
 
 def pretty_consignment_inspection_units(consignment, config=None):
-    """Pretty-print consignment showing individual sample_units in inspection_units"""
+    """Pretty-print a consignment showing sample units grouped by inspection unit.
+
+    Each inspection unit is rendered as a group of sample-unit symbols,
+    separated by a configurable separator (e.g., ``" | "``).
+
+    Args:
+        consignment: Consignment object with ``inspection_units`` and
+            ``included_units`` in each inspection unit.
+        config: Optional formatting configuration, using keys:
+            * ``"inspection_unit_line"``: separator or alias (``"|"`` or
+              ``"pipe"``).
+            * ``"spaces"``: if True, add spaces around separator.
+
+    Returns:
+        Multiline string with header and group-wise visual representation.
+    """
     config = config if config else {}
     line = config.get("inspection_unit_line", "|")
     spaces = config.get("spaces", True)
@@ -223,7 +268,19 @@ def pretty_consignment_inspection_units(consignment, config=None):
 
 
 def pretty_consignment_inspection_units_only(consignment, config=None):
-    """Pretty-print consignment showing individual inspection_units"""
+    """Pretty-print a consignment as inspection units only.
+
+    Inspection units are represented as a single row of symbols, using a
+    configurable horizontal line style in the header.
+
+    Args:
+        consignment: Consignment object with ``inspection_units``.
+        config: Optional formatting configuration forwarded to
+            :func:`pretty_header` and :func:`pretty_content`.
+
+    Returns:
+        Multiline string with header and visual representation of inspection_units.
+    """
     config = config if config else {}
     line = config.get("horizontal_line", "light")
     header = pretty_header(consignment, line=line, config=config)
@@ -232,9 +289,19 @@ def pretty_consignment_inspection_units_only(consignment, config=None):
 
 
 def pretty_consignment(consignment, style, config=None):
-    """Pretty-print consignment in a given style
+    """Pretty-print a consignment in a given style.
 
-    :param style: Style of pretty-printing (inspection_units, inspection_units_only, sample_units)
+    Args:
+        consignment: Consignment to pretty-print.
+        style: One of ``"inspection_units"``, ``"inspection_units_only"``,
+            or ``"sample_units"``.
+        config: Optional formatting configuration forwarded to other helpers.
+
+    Returns:
+        Multiline string representation of the consignment.
+
+    Raises:
+        ValueError: If an unknown style is provided.
     """
     config = config if config else {}
     if style == "inspection_units":
@@ -250,7 +317,7 @@ def pretty_consignment(consignment, style, config=None):
 
 
 class PrintReporter(object):
-    """Reporter class which prints a message for each consignment"""
+    """Reporter that prints messages for each consignment."""
 
     # Reporter objects carry functions, but many not use any attributes.
     # pylint: disable=no-self-use,missing-function-docstring
@@ -268,7 +335,7 @@ class PrintReporter(object):
 
 
 class MuteReporter(object):
-    """Reporter class which is completely silent"""
+    """Reporter that remains silent (no output)."""
 
     # pylint: disable=no-self-use,missing-function-docstring
     def true_negative(self):
@@ -282,14 +349,16 @@ class MuteReporter(object):
 
 
 class Form280(object):
-    """Creates F280 records from the simulated data"""
+    """Create F280 records from simulated data."""
 
     def __init__(self, file, disposition_codes, separator=","):
-        """Prepares file for writing
+        """Prepare the F280 output file for writing.
 
-        :param file: Name of the file to write to or ``-`` (dash) for printing
-        :param disposition_codes: Conversion table for output disposition codes
-        :param separator: Value (field) separator for the output CSV file
+        Args:
+            file: Name of the file to write to or ``"-"`` (or ``"stdout"``/
+                ``"print"``) for printing to stdout.
+            disposition_codes: Mapping of disposition code labels to strings.
+            separator: Field separator for the output CSV file.
         """
         self.print_to_stdout = False
         self.file = None
@@ -314,12 +383,18 @@ class Form280(object):
             self.writer.writerow(columns)
 
     def disposition(self, ok, must_inspect, applied_program):
-        """Get disposition code for the given parameters
+        """Return disposition code for given parameters.
 
-        Provides defaults if the disposition code table does not contain
-        a specific value.
+        Provides defaults if the disposition code table does not contain a
+        specific value.
 
-        See :meth:`fill` for details about the parameters.
+        Args:
+            ok: True if the consignment tested negative (no pest present).
+            must_inspect: True if the consignment was selected for inspection.
+            applied_program: Identifier of the program applied or None.
+
+        Returns:
+            A disposition string based on program, inspection selection, and result.
         """
         codes = self.codes
         if applied_program in ["naive_cfrp"]:
@@ -340,13 +415,14 @@ class Form280(object):
         return disposition
 
     def fill(self, date, consignment, ok, must_inspect, applied_program):
-        """Fill one entry in the F280 form
+        """Fill one entry in the F280 form.
 
-        :param date: Consignment or inspection date
-        :param consignment: Consignment which was tested
-        :param ok: True if the consignment was tested negative (no pest present)
-        :param must_inspect: True if the consignment was selected for inspection
-        :param applied_program: Identifier of the program applied or None
+        Args:
+            date: Consignment or inspection date (datetime).
+            consignment: Consignment that was tested.
+            ok: True if the consignment was tested negative.
+            must_inspect: True if the consignment was selected for inspection.
+            applied_program: Identifier of the program applied or None.
         """
         disposition_code = self.disposition(ok, must_inspect, applied_program)
         if self.file:
@@ -367,10 +443,15 @@ class Form280(object):
 
 
 class SuccessRates(object):
-    """Record and accumulate success rates"""
+    """Record and accumulate success rates across consignments."""
 
     def __init__(self, reporter):
-        """Initialize values to zero and set the reporter object"""
+        """Initialize counters and set the reporter.
+
+        Args:
+            reporter: Object with ``true_negative``, ``true_positive``,
+                and ``false_negative`` methods for reporting.
+        """
         self.ok = 0
         self.true_positive = 0
         self.true_negative = 0
@@ -378,11 +459,16 @@ class SuccessRates(object):
         self.reporter = reporter
 
     def record_success_rate(self, checked_ok, actually_ok, consignment):
-        """Record testing result for one consignment
+        """Record testing result for one consignment.
 
-        :param checked_ok: True if no contaminant was found in consignment
-        :param actually_ok: True if the consignment actually does not have contamination
-        :param consignment: The shipment itself (for reporting purposes)
+        Args:
+            checked_ok: True if no contaminant was found during inspection.
+            actually_ok: True if the consignment actually contained no contamination.
+            consignment: The consignment being evaluated.
+
+        Raises:
+            RuntimeError: If the inspection result is contaminated but the
+                consignment is actually clean (logic error).
         """
         if checked_ok and actually_ok:
             self.true_negative += 1
@@ -402,7 +488,18 @@ class SuccessRates(object):
 
 
 def config_to_simplified_simulation_params(config):
-    """Convert configuration into a simplified set of selected parameters"""
+    """Convert configuration into a simplified set of selected parameters.
+
+    The returned SimpleNamespace includes key inspection and contamination
+    parameters (e.g., unit, strategy, cluster settings) used for printing
+    simulation summaries.
+
+    Args:
+        config: Full configuration dictionary.
+
+    Returns:
+        SimpleNamespace with simplified simulation parameters.
+    """
     sim_params = types.SimpleNamespace(
         tolerance_level="",
         contamination_unit="",
@@ -478,7 +575,13 @@ def config_to_simplified_simulation_params(config):
 
 
 def print_totals_as_text(num_consignments, config, totals):
-    """Prints simulation result as text"""
+    """Print simulation results and parameters as formatted text.
+
+    Args:
+        num_consignments: Number of simulated consignments.
+        config: Full configuration dictionary.
+        totals: Namespace or object with aggregated simulation metrics.
+    """
     # This is straightforward printing with simpler branches. Only few variables.
     # pylint: disable=too-many-branches,too-many-statements
 
@@ -616,11 +719,12 @@ def print_totals_as_text(num_consignments, config, totals):
 
 
 def get_item_from_nested_dict(dictionary, keys):
-    """Get value from a nested dictionary by a nested keys-value pair"""
+    """Get a value from a nested dictionary using a sequence of keys."""
     return reduce(operator.getitem, keys, dictionary)
 
 
 def _flatten_nested_dict_generator(dictionary, parent_key):
+    """Yield key/value pairs from a nested dictionary using slash-separated keys."""
     for key, value in dictionary.items():
         new_key = f"{parent_key}/{key}" if parent_key else key
         if isinstance(value, MutableMapping):
@@ -630,20 +734,38 @@ def _flatten_nested_dict_generator(dictionary, parent_key):
 
 
 def flatten_nested_dict(dictionary, parent_key=None):
-    """Make a nested dictionary flat with key/subkey/subsubkey keys"""
+    """Flatten a nested dictionary using key/subkey/subsubkey style keys.
+
+    Args:
+        dictionary: Nested dictionary.
+        parent_key: Optional parent key used in recursion.
+
+    Returns:
+        Flat dictionary mapping slash-separated paths to scalar values.
+    """
     return dict(_flatten_nested_dict_generator(dictionary, parent_key))
 
 
-def save_scenario_result_to_table(filename, results, config_columns, result_columns):
-    """Save selected values for a scenario results to CSV including configuration
+def save_scenario_result_to_table(
+    filename: Union[str, Path],
+    results,
+    config_columns,
+    result_columns,
+) -> None:
+    """Save scenario results and configuration to CSV.
 
-    The results parameter is list of tuples which is output from the run_scenarios()
-    function.
+    The ``results`` parameter is a list of tuples as output from
+    :func:`run_scenarios`. For each (result, config), selected values are
+    written both from the configuration and the result object.
 
-    Values from configuration or results are selected by columns parameters which are
-    in format key/subkey/subsubkey.
+    Args:
+        filename: Output CSV filename or path.
+        results: List of ``(result, config)`` tuples.
+        config_columns: List of slash-separated config key paths to save.
+        result_columns: List of slash-separated result attribute paths to save.
     """
-    with open(filename, "w") as file:
+    path = Path(filename)
+    with path.open("w", newline="") as file:
         writer = csv.DictWriter(
             file,
             config_columns + result_columns,
@@ -667,20 +789,42 @@ def save_scenario_result_to_table(filename, results, config_columns, result_colu
 def save_simulation_result_to_pandas(
     result, config=None, config_columns=None, result_columns=None
 ):
-    """Save result of one simulation to pandas DataFrame"""
+    """Save result of one simulation to a pandas DataFrame.
+
+    This is a convenience wrapper around :func:`save_scenario_result_to_pandas`
+    for a single scenario.
+
+    Args:
+        result: Simulation result namespace or object.
+        config: Associated configuration dictionary.
+        config_columns: Optional list of config columns to include.
+        result_columns: Optional list of result columns to include.
+
+    Returns:
+        DataFrame containing the selected configuration and result fields.
+    """
     return save_scenario_result_to_pandas(
         [(result, config)], config_columns=config_columns, result_columns=result_columns
     )
 
 
 def save_scenario_result_to_pandas(results, config_columns=None, result_columns=None):
-    """Save selected values for a scenario to a pandas DataFrame.
+    """Save selected scenario values to a pandas DataFrame.
 
-    The results parameter is list of tuples which is output from the run_scenarios()
-    function.
+    The ``results`` parameter is a list of tuples (result, config) as returned
+    from :func:`run_scenarios`. Configuration and result fields are selected
+    using slash-separated key paths.
 
-    Values from configuration or results are selected by columns parameters which are
-    in format key/subkey/subsubkey.
+    Args:
+        results: List of (result, config) tuples.
+        config_columns: Optional list of slash-separated config key paths.
+            If None, all flattened config keys are included; if [], no config
+            columns are included.
+        result_columns: Optional list of slash-separated result attribute paths.
+            If None, all attributes from the result namespace are included.
+
+    Returns:
+        DataFrame representing the scenario results.
     """
     # We don't want a special dependency to fail import of this file
     # in case this function is not used.
@@ -709,20 +853,41 @@ def save_scenario_result_to_pandas(results, config_columns=None, result_columns=
 
 
 def inspection_unit_detection_records_to_pandas(records):
-    """Convert per-inspection-unit detection records (list of dicts) to DataFrame."""
+    """Convert per-inspection-unit detection records (list of dicts) to DataFrame.
+
+    Args:
+        records: List of dictionaries describing detection per inspection unit.
+
+    Returns:
+        DataFrame of inspection-unit detection records.
+    """
     return pd.DataFrame.from_records(records)
 
 
-def save_inspection_unit_detection_records_to_csv(records, filename):
-    """Save per-inspection-unit detection records to CSV and return DataFrame."""
+def save_inspection_unit_detection_records_to_csv(
+    records,
+    filename: Union[str, Path],
+) -> pd.DataFrame:
+    """Save per-inspection-unit detection records to CSV and return DataFrame.
+
+    Args:
+        records: List of per-inspection-unit detection records.
+        filename: Output CSV filename or path.
+
+    Returns:
+        DataFrame of detection records written to disk.
+    """
     df = pd.DataFrame.from_records(records)
-    df.to_csv(filename, index=False)
+    path = Path(filename)
+    df.to_csv(path, index=False)
     return df
 
+
 class PISSimData:
-    """
-    Data collection class for simulation runs with multiple replications.
-    Efficiently collects data during simulation and provides analysis tools.
+    """Data collection class for simulation runs with multiple replications.
+
+    Efficiently collects data during simulation and provides tools for
+    writing and analyzing synthetic PIS, RBS, and consignment data.
     """
 
     # Class-level constants (shared across all instances)
@@ -857,46 +1022,48 @@ class PISSimData:
         "commodity_line_results": "synthetic_commodity_line_results_data.csv",
     }
 
-    def __init__(self, output_dir_rep: Optional[Path] = None, config: dict = None):
-        """
-        Initialize SimData for a simulation replication.
+    def __init__(
+            self,
+            output_dir_rep: Optional[Union[str, Path]] = None,
+            config: dict = None,
+    ):
+        """Initialize PISSimData for a simulation replication.
 
         Args:
-            output_dir_rep: Optional directory path for saving replication data.
-                           Directory will be created if it doesn't exist.
-           config: Config object.
+            output_dir_rep: Optional directory for saving replication data.
+                The directory is created if it does not exist.
+            config: Full configuration dictionary (used for input-file metadata).
         """
-        self.output_dir_rep = output_dir_rep
-        if output_dir_rep:
-            Path(output_dir_rep).mkdir(parents=True, exist_ok=True)
+        self.output_dir_rep = Path(output_dir_rep) if output_dir_rep is not None else None
+        if self.output_dir_rep is not None:
+            self.output_dir_rep.mkdir(parents=True, exist_ok=True)
 
-        # ID counter for consignments
         self.current_id: int = 0
 
-        # Read in the input file that has the commodity line/inspection unit data that's being used for the simulation
         config = config["consignment"]
         generation_method = config["generation_method"]
-        if (generation_method == "input_file") and (
-                config["input_file"]["file_type"] == "PIS"
+        if (
+                generation_method == "input_file"
+                and config["input_file"]["file_type"] == "PIS"
         ):
-            filename = config["input_file"]["file_name"]
-            self.pis_synthetic_data: Optional[pd.DataFrame] = pd.read_csv(filename, sep=",")
+            filename = Path(config["input_file"]["file_name"])
+            self.pis_synthetic_data: Optional[pd.DataFrame] = pd.read_csv(
+                filename,
+                sep=",",
+            )
         else:
-            self.pis_synthetic_data: Optional[pd.DataFrame] = None
+            self.pis_synthetic_data = None
 
-
-        # Efficient collection using lists (converted to DataFrames later)
         self.rbs_records: List[Dict] = []
         self.consignment_records: List[Dict] = []
         self.inspection_unit_detection_records: List[Dict] = []
 
-        # Final DataFrames (populated by finalize_dataframes())
         self.rbs_calc_synthetic_data: Optional[pd.DataFrame] = None
         self.consignments: Optional[pd.DataFrame] = None
         self.commodity_line_results: Optional[pd.DataFrame] = None
 
     def __repr__(self) -> str:
-        """Provide useful string representation."""
+        """Return a concise string representation for debugging."""
         return (
             f"SimData(records_collected={self._commodity_line_record_count() + len(self.rbs_records) + len(self.consignment_records)}, "
             f"current_id={self.current_id}, "
@@ -904,27 +1071,31 @@ class PISSimData:
         )
 
     def _commodity_line_record_count(self) -> int:
+        """Return count of commodity-line records (or detection records if unset)."""
         if self.commodity_line_results is not None:
             return len(self.commodity_line_results)
         return len(self.inspection_unit_detection_records)
 
     @staticmethod
     def _has_rows(df: Optional[pd.DataFrame]) -> bool:
+        """Return True if DataFrame is non-null and non-empty."""
         return df is not None and not df.empty
 
     @classmethod
     def _output_paths(cls, output_path: Path) -> Dict[str, Path]:
+        """Return mapping of dataset keys to output file paths."""
         return {key: output_path / filename for key, filename in cls.OUTPUT_FILENAMES.items()}
 
     @staticmethod
     def _write_dataframe_to_csv(df: Optional[pd.DataFrame], destination: Path, empty_message: str) -> None:
+        """Write DataFrame to CSV or print an informational message if empty."""
         if df is not None and not df.empty:
             df.to_csv(destination, index=False)
         else:
             print(empty_message)
 
     def clear_all(self) -> None:
-        """Clear all DataFrames and reset ID counter."""
+        """Clear all collected data and reset ID counter."""
         self.pis_synthetic_data = pd.DataFrame(columns=self.PIS_COLUMNS)
         self.rbs_calc_synthetic_data = pd.DataFrame(columns=self.RBS_COLUMNS)
         self.consignments = pd.DataFrame(columns=self.CONSIGNMENT_COLUMNS)
@@ -934,24 +1105,25 @@ class PISSimData:
         self.inspection_unit_detection_records = []
         self.current_id = 0
 
-
     def write_synthetic_data_to_csv(self) -> None:
-        """
-        Write all synthetic datasets to CSV files in the output directory.
+        """Write all synthetic datasets to CSV files in the output directory.
 
-        Creates three CSV files:
-        - synthetic_consignment_data.csv: Consignment-level data
-        - synthetic_pis_data.csv: Plant Inspection System records
-        - synthetic_rbs_calc_data.csv: Risk-Based Sampling calculation data
+        Creates:
 
-        Raises:
-            ValueError: If output_dir_rep is not set
-            OSError: If unable to write to output directory
+        - ``synthetic_consignment_data.csv``: Consignment-level data.
+        - ``synthetic_pis_data.csv``: Plant Inspection System records.
+        - ``synthetic_rbs_calc_data.csv``: Risk-Based Sampling calculation data.
+        - ``synthetic_commodity_line_results_data.csv``: Commodity-line level
+          inspection results.
 
         Notes:
-            - If using list collection pattern, call finalize_dataframes() first
-            - Existing files will be overwritten
-            - Creates output directory if it doesn't exist
+            * Call :meth:`finalize_dataframes` first if using list collection.
+            * Existing files are overwritten.
+            * Output directory is created if needed.
+
+        Raises:
+            ValueError: If ``output_dir_rep`` is not set.
+            OSError: If writing to the output directory fails.
         """
         if not self.output_dir_rep:
             raise ValueError(
@@ -993,17 +1165,14 @@ class PISSimData:
             raise OSError(f"Failed to write CSV files to {output_path}: {e}") from e
 
     def finalize_dataframes(self) -> None:
-        """
-        Convert collected record lists to pandas DataFrames.
+        """Convert collected record lists into DataFrames.
 
-        Call this method after data collection is complete and before writing to CSV
-        or performing analysis. This is only needed if using the efficient list
-        collection pattern.
+        Call this method after collection is complete and before writing
+        to CSV or performing analysis. Safe to call multiple times.
 
         Notes:
-            - Converts rbs_records and consignment_records to DataFrames
-            - Safe to call multiple times (won't duplicate data)
-            - No-op if records are already converted or empty
+            * Converts ``rbs_records`` and ``consignment_records`` to DataFrames.
+            * Populates ``commodity_line_results`` from detection records.
         """
         if self.rbs_records and not self._has_rows(self.rbs_calc_synthetic_data):
             self.rbs_calc_synthetic_data = pd.DataFrame(self.rbs_records, columns=self.RBS_COLUMNS)
@@ -1016,32 +1185,31 @@ class PISSimData:
         self.commodity_line_results = inspection_unit_detection_records_to_pandas(self.inspection_unit_detection_records)
 
     def get_next_consignment_id(self) -> int:
-        """
-        Generate and return the next unique consignment ID.
+        """Generate and return the next unique consignment ID.
 
-        Increments the internal ID counter and returns the new value.
-        IDs are sequential integers starting from 0.
+        The internal ID counter is incremented and the new value is returned.
 
         Returns:
-            Integer ID for the next consignment
+            Sequential integer ID for the next consignment.
         """
         self.current_id += 1
         return self.current_id
 
     def reset_id_counter(self) -> None:
-        """
-        Reset the consignment ID counter to 0.
-
-        Useful when starting a new replication or simulation run.
-        """
+        """Reset the consignment ID counter to zero."""
         self.current_id = 0
 
     def get_summary_stats(self) -> dict:
-        """
-        Get summary statistics for all collected data.
+        """Return summary statistics for all collected data.
 
         Returns:
-            Dictionary with record counts and basic statistics
+            Dictionary containing record counts and basic metadata:
+                * ``commodity_line_records``
+                * ``rbs_records``
+                * ``consignments``
+                * ``total_records``
+                * ``current_id``
+                * ``output_dir``
         """
         commodity_line_count = self._commodity_line_record_count()
         rbs_count = len(self.rbs_records) if self.rbs_records else (
@@ -1060,34 +1228,20 @@ class PISSimData:
             'output_dir': str(self.output_dir_rep) if self.output_dir_rep else None,
         }
 
-
     def add_consignment(self, consignment: Consignment) -> None:
+        """Add a consignment record with infestation summary.
+
+        This method:
+
+        * Validates that the consignment has required attributes.
+        * Analyzes infestation across risk and inspection units.
+        * Appends a summary record to the internal ``consignment_records`` list.
+
+        Args:
+            consignment: Consignment object containing attributes such as
+                inspection_number, origin, pathway, port, num_sample_units,
+                num_plants, plants, risk_units, and inspection_units.
         """
-            Add a consignment record to the dataset with contamination analysis.
-
-            This method processes a Consignment object (which inherits from UserDict),
-            analyzes contamination across inspection units and sample units, and adds
-            the summarized data to the consignments collection.
-
-            Args:
-                consignment: A Consignment object containing:
-                    - inspection_number: Unique identifier for the inspection
-                    - origin: Country or location of origin
-                    - pathway: Import pathway
-                    - port: Port of entry
-                    - num_sample_units: Total number of sample units
-                    - plants_per_sample_unit: Number of plants per sample unit
-                    - num_plants: Total number of plants in consignment
-                    - plants: List/array of contamination counts
-                    - inspection_units: List of InspectionUnit objects, each containing
-                      included_unit_objects with plants attributes
-
-            Notes:
-                - Contamination is determined by checking if sum(consignment.plants) > 0
-                - Each inspection unit is counted as contaminated only once, even if
-                  multiple sample units within it are contaminated
-                - Records are appended to internal list for efficient batch processing
-            """
         # Optional validation
         self._validate_consignment(consignment)
 
@@ -1114,45 +1268,26 @@ class PISSimData:
 
     @staticmethod
     def _analyze_infestation(consignment: Consignment) -> Dict[str, Any]:
-        """
-        Analyze infestation distribution across risk, inspection, and sample units.
+        """Analyze infestation distribution across risk, inspection, and sample units.
 
-        Processes the consignment's inspection units to determine:
-        1. Total infested plants
-        2. Number of inspection units with at least one infested sample unit
-        3. Detailed infestation count per sample unit within each inspection unit
-        3. Number of risk units with at least one infested inspection unit
+        This function examines nested risk units, inspection units, and sample
+        units within a consignment to determine:
+
+        * total infested plants,
+        * number of inspection units with contamination,
+        * contamination counts per sample unit (by inspection unit),
+        * number of risk units with at least one contaminated inspection unit.
 
         Args:
-            consignment: Consignment object with risk unit objects, inspection unit objects, sample
-                         unit objects, and plant array
+            consignment: Consignment object with risk units, inspection units,
+                sample units, and plant data.
 
         Returns:
             Dictionary with keys:
-                - total_infested (int): Sum of all infested plants
-                - num_infested_inspection_units (int): Count of inspection units with contamination
-                - pests_per_inspection_unit (List[List[int]]): Nested list where each inner
-                  list contains contamination counts for sample units within an inspection unit
-                - num_infested_risk_units (int):  Count of risk units on consignment with contamination
-
-
-        Example:
-            If consignment has 1 risk unit with 2 inspection units:
-            - Inspection Unit 1: [0, 5, 0] (3 sample units, 1 infested with 5 plants)
-            - Inspection Unit 2: [2, 0, 3] (3 sample units, 2 infested with 2 and 3 plants)
-
-            Returns:
-            {
-                'total_infested': 10,
-                'num_infested_units': 2,
-                'contaminants_per_unit': [[0, 5, 0], [2, 0, 3]]
-            }
-            {
-                'total_infested': 10,
-                'num_infested_inspection_units': 2,
-                'pests_per_inspection_unit': [[0, 5, 0], [2, 0, 3]],
-                'num_infested_risk_units': 1,
-            }
+                * ``total_infested`` (int)
+                * ``num_infested_inspection_units`` (int)
+                * ``pests_per_inspection_unit`` (List[List[int]])
+                * ``num_infested_risk_units`` (int)
         """
         # Calculate total infested plants across entire consignment
         total_infested = sum(consignment.plants) if consignment.plants is not None else 0
@@ -1187,8 +1322,8 @@ class PISSimData:
                     if unit_has_contamination:
                         num_infested_inspection_units += 1
                         infection_indicator = 1
-                if infection_indicator == 1: num_infested_risk_units+=1
-
+                if infection_indicator == 1:
+                    num_infested_risk_units += 1
 
         return {
             'total_infested': total_infested,
@@ -1199,15 +1334,15 @@ class PISSimData:
 
     @staticmethod
     def _validate_consignment(consignment: Consignment) -> None:
-        """
-        Validate that consignment has required attributes.
+        """Validate that a consignment has required attributes and is self-consistent.
 
         Args:
-            consignment: Consignment object to validate
+            consignment: Consignment object to validate.
 
         Raises:
-            AttributeError: If required attributes are missing
-            ValueError: If data is invalid
+            AttributeError: If required attributes are missing or None.
+            ValueError: If ``num_inspection_units`` does not match the length
+                of ``inspection_units``.
         """
         required_attrs = [
             'inspection_number', 'origin', 'pathway', 'port',
@@ -1232,35 +1367,23 @@ class PISSimData:
             consignment: Consignment,
             n_units_to_inspect: int
     ) -> None:
-        """
-        Add inspection results to PIS and RBS synthetic datasets.
+        """Add inspection results to PIS and RBS synthetic datasets.
 
-        For each inspected box/inspection unit in the inspection results, creates
-        corresponding records in both the PIS (Plant Inspection Data) and RBS
-        (Risk Calculator Data) calculation datasets.
+        For each inspection unit in the results, this method creates
+        detection records and then builds corresponding RBS calculator
+        records (one per risk unit).
 
         Args:
-            ret: SimpleNamespace object returned from inspect() containing:
-                - inspected_box_indexes: List of inspection unit indices that were inspected
-                - inspected_box_result: List of results per box (1=contamination found, 0=clean)
-                - inspected_sample_unit_indexes: List of all sample unit indices inspected
-                - inspection_units_opened_completion: Total inspection units opened
-                - sample_units_inspected_completion: Total sample units inspected
-                - contaminated_sample_units_completion: Total contaminated units found
-                - consignment_checked_ok: Boolean indicating if consignment passed
-            consignment: Consignment object with inspection details
-            n_units_to_inspect: Required number of boxes/units to inspect (from sampling plan)
-
-        Notes:
-            - Creates one PIS record and one RBS record per inspected box
-            - Only processes records if inspected_box_result is populated
-            - Uses efficient list collection for batch DataFrame creation
-            - Box result codes: 1 = contamination found, 0 = no contamination
+            ret: SimpleNamespace returned from :func:`inspect`, containing
+                attributes such as ``inspected_sample_unit_indexes``,
+                ``inspection_units_opened_completion``, etc.
+            consignment: Consignment with inspection and sample-unit details.
+            n_units_to_inspect: Required number of units to inspect according
+                to the sampling plan.
 
         Raises:
-            ValueError: If inspected_box_result length doesn't match inspected_box_indexes
+            ValueError: If required data are inconsistent (not currently used).
         """
-
         sample_unit_to_inspection = getattr(consignment, "sample_unit_to_inspection_unit", {}) or {}
         inspected_sample_unit_indexes = ret.inspected_sample_unit_indexes
         inspected_counts_by_inspection_unit = Counter()
@@ -1306,7 +1429,6 @@ class PISSimData:
                 }
             )
 
-
         # Create the calculator records
         self._create_rbs_records(
             consignment=consignment,
@@ -1314,23 +1436,22 @@ class PISSimData:
             inspection_result=ret
         )
 
-
     def _create_rbs_records(
             self,
             consignment: Consignment,
             n_units_to_inspect: int,
             inspection_result: SimpleNamespace
     ) -> None:
-        """
-        Create a single RBS (Risk-Based Sampling) calculation record.
+        """Create RBS (Risk-Based Sampling) calculation records for a consignment.
+
+        For each risk unit in the consignment, one RBS record is created.
 
         Args:
-            consignment: Consignment object with inspection details
-            n_units_to_inspect: Required number of boxes to inspect
-            inspection_result: SimpleNamespace from inspect() with inspection metrics
-
-        Returns:
-            Dictionary with RBS record data including sampling plan and results
+            consignment: Consignment object with risk units and plant info.
+            n_units_to_inspect: Required number of units to inspect (currently
+                not stored in the record).
+            inspection_result: SimpleNamespace with inspection metrics (not
+                used in the current implementation).
         """
         for risk_unit in consignment.risk_units:
             rbs_record = {
@@ -1347,8 +1468,5 @@ class PISSimData:
                 # 'CONTAMINATED_UNITS_FOUND': inspection_result.contaminated_sample_units_completion,
             }
 
-            # Add to collections (efficient batch approach)
+            # Add to collections (efficient for batch processing)
             self.rbs_records.append(rbs_record)
-
-
-

@@ -1,10 +1,10 @@
 # Simulation of contaminated consignments and their inspections
-# Copyright (C) 2018-2022 Vaclav Petras and others (see below)
+# Copyright (C) 2018-2021 Vaclav Petras and others (see below)
 # © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
 """
 Modifications:
-- 10/3/2025: Modeifications described below (Gary Lin and Joseph Agor)
+- 10/3/2025: Modeifications described below (Gary Lin)
     Following Functions Modified
     ----------------
     - simulation():
@@ -46,7 +46,7 @@ Modifications:
 # this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
 
 
-"""Single and multiple runs of the simulation
+"""Single and multiple runs of the simulation.
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
 .. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
@@ -54,7 +54,6 @@ Modifications:
 .. codeauthor:: Joseph Agor <Joseph.Agor jhuapl edu>
 """
 
-import random
 import types
 from collections import Counter
 from typing import Callable, Optional
@@ -84,36 +83,67 @@ from .outputs import (
 )
 from .skipping import get_inspection_needed_function
 
-def random_seed(seed):
-    """Set seed for all generators used"""
-    random.seed(seed)  # random package
-    np.random.seed(seed)  # NumPy and SciPy
-
 
 def simulation(
     config,
     num_consignments,
     rng=None,
+    rng_inspection=None,
     output_f280_file=None,
     verbose=False,
     pretty=None,
     detailed=False,
     output_dir_rep=None,
     shipment_progress_callback: Optional[Callable[[int, int], None]] = None,
+    sim_rep: int | bool = None
 ):
-    """Simulate consignments, their contamination, and their inspection
+    """Simulate consignments, their contamination, and inspection.
 
-    :param config: Simulation configuration as a dictionary
-    :param num_consignments: Number of consignments to generate
-    :param f280_file: Filename for output F280 records
-    :param verbose: If True, prints messages about each consignment
-    :param rng : numpy.random.Generator or None
-        Random number generator for this simulation.
+    This function runs a single simulation replication. For each consignment,
+    it:
+
+    1. Generates a consignment using the configured generator.
+    2. Applies contamination using the configured contaminant function.
+    3. Synchronizes contamination from plant-level truth up to sample and
+       inspection-unit arrays.
+    4. Decides whether inspection is needed.
+    5. If inspection occurs, selects units to inspect, performs inspection,
+       and records detection statistics.
+    6. Accumulates totals and RBS-specific metrics.
+
+    At the end, aggregated metrics are returned as a SimpleNamespace, with
+    optional detailed per-consignment records.
+
+    Args:
+        config: Full simulation configuration dictionary.
+        num_consignments: Number of consignments (shipments) to simulate.
+        rng: numpy.random.Generator for contamination and generation.
+        rng_inspection: numpy.random.Generator for inspection sampling.
+        output_f280_file: Optional filename/path for F280 CSV output.
+        verbose: If True, print messages about each consignment via reporter.
+        pretty: Optional pretty-print style for consignments (see
+            :func:`pretty_consignment`).
+        detailed: If True, attach detailed per-consignment records to the
+            returned namespace.
+        output_dir_rep: Optional directory for writing replication-level
+            synthetic data (PIS/RBS/consignment CSVs).
+        shipment_progress_callback: Optional callback that receives
+            ``(processed, total)`` consignments after each iteration.
+        sim_rep: Optional replication index; if provided and
+            ``use_rep_consignments`` is enabled upstream, may select a
+            specific synthetic input file.
+
+    Returns:
+        SimpleNamespace with aggregated simulation metrics such as:
+        * missing, false_neg, missed_within_tolerance, intercepted,
+        * total_num_inspection_units, total_num_sample_units, total_num_plants,
+        * averages and percentages of inspected units and contaminants,
+        * additional RBS-related metrics (slippage counts and rates).
+
+        If ``detailed`` is True, a ``details`` attribute is added containing
+        lists of sample-unit details and detection records.
     """
     # pylint: disable=too-many-locals,too-many-branches,too-many-statements
-
-    if rng is None:
-        rng = np.random.default_rng()
 
     pis_sim_data = PISSimData(output_dir_rep=output_dir_rep, config=config)
 
@@ -153,12 +183,21 @@ def simulation(
         inspected_sample_unit_details = []
         inspection_unit_detection_records = []
 
-    consignment_generator = get_consignment_generator(config)
-    add_contaminant = get_contaminant_function(config)
-    is_inspection_needed = get_inspection_needed_function(config)
-    sample = get_sample_function(config)
-    tolerance_level = config["inspection"]["tolerance_level"]
+    if sim_rep is not None:
+        config["consignment"]["input_file"][
+            "file_name"] = f"development_files/slippage_data/rep_synthetic_data/Synthetic_Base_Use_rep_{sim_rep}.csv"
 
+    consignment_generator = get_consignment_generator(config)
+    add_contaminant = get_contaminant_function(
+        config=config,
+        rng=rng
+    )
+    is_inspection_needed = get_inspection_needed_function(config)
+    sample = get_sample_function(
+        config=config,
+        rng=rng
+    )
+    tolerance_level = config["inspection"]["tolerance_level"]
 
     # Dictionary to capture additional metrics per consignment
     rbs_additional_metrics = {}
@@ -206,15 +245,6 @@ def simulation(
                     total_contaminated_inspection_units += 1
                 inspection_unit_counter+=1
 
-            # print(f'\n**** CONSIGNMENT {i+1} CONTAMINATED.  SUMMARY INFO BELOW ****')
-            # print(f'   Number of Contaminated Plants: {total_contaminated_units}')
-            # print(f'   Proportion of Contaminated Plants (total # of plants = {len(consignment.plants)}): {total_contaminated_units/len(consignment.plants)}')
-            # print(f'\n   Number of Contaminated Sample Units: {total_contaminated_sample_units}')
-            # print(f'   Proportion of Contaminated Sample Units (total # sample units= {len(consignment.sample_units)}): {total_contaminated_sample_units/len(consignment.sample_units)}')
-            # print(f'\n   Number of Contaminated Inspection Units: {total_contaminated_inspection_units}')
-            # print(f'   Proportion of Contaminated Inspection Units (total # inspection units = {len(consignment.inspection_units)}): {total_contaminated_inspection_units/len(consignment.inspection_units)}')
-
-
             pis_sim_data.add_consignment(consignment)
             if detailed:
                 for inspection_unit in consignment.inspection_units:
@@ -227,12 +257,9 @@ def simulation(
                 consignment, consignment.date
             )
             if must_inspect:
-                #print(f'\n\n==== INSPECTION OF CONSIGNMENT {i + 1} NOW BEING EXECUTED ====')
                 n_units_to_inspect = sample(consignment)
-                #print(f"   Requested sample units to inspect (total): {n_units_to_inspect}")
-                ret = inspect(config, consignment, n_units_to_inspect, detailed)
+                ret = inspect(config, consignment, n_units_to_inspect, detailed, rng=rng_inspection)
                 pis_sim_data.add_to_pis_synthetic_data(ret, consignment, n_units_to_inspect)
-                #print(f"   Completed inspection. Sample units inspected: {ret.sample_units_inspected_completion}")
                 consignment_checked_ok = ret.consignment_checked_ok
                 num_inspections += 1
                 total_num_inspection_units += consignment.num_inspection_units
@@ -313,8 +340,6 @@ def simulation(
                         }
                     )
 
-            #print(f'\n==== INSPECTION OF CONSIGNMENT {i + 1} COMPLETED ====')
-
             form280.fill(
                 consignment.date,
                 consignment,
@@ -322,7 +347,6 @@ def simulation(
                 must_inspect,
                 applied_program,
             )
-            #consignment_actually_ok = not is_consignment_contaminated(consignment)
             consignment_actually_ok = total_contaminated_units == 0
             success_rates.record_success_rate(
                 consignment_checked_ok, consignment_actually_ok, consignment
@@ -342,8 +366,7 @@ def simulation(
                     )
                     total_intercepted_contaminants += consignment.count_contaminated()
 
-
-            # Add tracking of addition rbs metrics
+            # Add tracking of additional RBS metrics
             rbs_additional_metrics[i] = {
                 'number_missed_units': ret.number_units_missed,
                 'number_missed_sample_units': ret.number_sample_units_missed,
@@ -416,9 +439,6 @@ def simulation(
     avg_slipped_units_per_consignment /= num_consignments
     avg_slipped_sample_units_per_consignment /= num_consignments
 
-
-
-
     simulation_results = types.SimpleNamespace(
         missing=missing,
         false_neg=false_neg,
@@ -488,29 +508,54 @@ def run_simulation(
     config,
     num_simulations,
     num_consignments,
-    rng=None,
+    rngs=None,
+    rngs_inspections=None,
     output_f280_file=None,
     verbose=False,
     pretty=None,
     detailed=False,
     output_dir=None,
     progress_callback: Optional[Callable[[int, int, int, int], None]] = None,
+    use_rep_consignments: bool = False,
 ):
-    """Run the simulation function specified number of times
+    """Run the simulation function multiple times and aggregate results.
 
-    See :func:`simulation` function for explanation of parameters.
+    This function runs :func:`simulation` ``num_simulations`` times and
+    accumulates/averages the metrics returned from each replication. It also
+    computes replication-level RBS metrics and confidence intervals.
 
-    Returns averages computed from the individual simulation runs otherwise
-    it relies on :func:`simulation` function to do the hard work.
+    Args:
+        config: Full configuration dictionary.
+        num_simulations: Number of simulation replications.
+        num_consignments: Number of consignments per replication.
+        rngs: Optional sequence of numpy.random.Generator instances, one per
+            replication for generation/contamination. If None, new generators
+            are created.
+        rngs_inspections: Optional sequence of Generators for inspection. If
+            ``rngs`` is None, default inspection generators are created.
+        output_f280_file: Optional F280 output filename/path.
+        verbose: If True, enable verbose logging inside :func:`simulation`.
+        pretty: Optional pretty-print style for consignments.
+        detailed: If True, also return per-consignment details from the first
+            replication.
+        output_dir: Root directory for writing replication-level output
+            (each replication gets its own subdirectory).
+        progress_callback: Optional callback receiving
+            ``(replications_done, num_simulations, consignments_done, num_consignments)``.
+        use_rep_consignments: If True, reuse fixed synthetic consignments per
+            replication when reading from ``input_file``.
 
-    rng : numpy.random.Generator or None
-        Random number generator. If None, creates a new unseeded one.
+    Returns:
+        If ``detailed`` is False, a SimpleNamespace ``totals`` with aggregated
+        metrics across replications. If ``detailed`` is True, a tuple
+        ``(details, totals)`` where ``details`` comes from the first replication.
     """
-    if rng is None:
-        rng = np.random.default_rng()
+    if rngs is None:
+        rngs = [np.random.default_rng() for _ in range(num_simulations)]
+        rngs_inspections = [np.random.default_rng(50) for _ in range(num_simulations)]
+    else:
+        assert len(rngs) == num_simulations, "rngs must have one RNG per simulation"
 
-    # Spawn independent RNGs for each simulation run
-    simulation_rngs = rng.spawn(num_simulations)
     # pylint: disable=too-many-branches,too-many-statements
 
     totals = types.SimpleNamespace(
@@ -582,10 +627,19 @@ def run_simulation(
         output_dir_rep = output_dir / f"rep_{i}"
         output_dir_rep.mkdir(parents=True, exist_ok=True)
 
+        rng = rngs[i]
+        rng_inspection = rngs_inspections[i]
+
+        if use_rep_consignments:
+            sim_rep = i
+        else:
+            sim_rep = None
+
         result = simulation(
             config=config,
             num_consignments=num_consignments,
-            rng=simulation_rngs[i],
+            rng=rng,
+            rng_inspection=rng_inspection,
             output_f280_file=output_f280_file,
             verbose=verbose,
             pretty=pretty,
@@ -599,6 +653,7 @@ def run_simulation(
                     total,
                 )
             ) if progress_callback is not None else None,
+            sim_rep=sim_rep if sim_rep is not None else None
         )
         if progress_callback is not None:
             progress_callback(i + 1, num_simulations, num_consignments, num_consignments)
@@ -689,7 +744,6 @@ def run_simulation(
         sim_rep_outputs[f'Rep_{i}']['pct_sample_units_inspected_completion'] = result.pct_sample_units_inspected_completion
         sim_rep_outputs[f'Rep_{i}']['pct_inspection_units_opened_completion'] = result.pct_inspection_units_opened_completion
 
-
     # Convert the sim replication metric storage to a dataframe for analysis
     df_rep_outputs = pd.DataFrame.from_dict(sim_rep_outputs, orient='index')
     totals.replication_outputs = df_rep_outputs.reset_index(drop=True)
@@ -768,5 +822,3 @@ def run_simulation(
         return details, totals
     else:
         return totals
-
-

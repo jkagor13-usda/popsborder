@@ -1,3 +1,5 @@
+# © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
 from __future__ import annotations
 
 import ast
@@ -24,6 +26,7 @@ from typing import (
 import numpy as np
 import pandas as pd
 from numpy.random import Generator
+from .general_utils import get_range_key
 
 # === LOGGING ===
 logger = logging.getLogger(__name__)
@@ -37,6 +40,17 @@ R_SCRIPT_REL = Path("slippage_model_utils") / "clarke_bb_model.R"
 
 
 class OptimResult(TypedDict):
+    """Typed dictionary representation of an R optim() result.
+
+    Attributes:
+        value: Optimized objective function value.
+        par: Tuple of optimized parameters (length 2).
+        counts: Tuple with number of function evaluations and a status string.
+        convergence: 0 on success, non-zero on convergence issues.
+        message: Additional optimizer messages (often empty).
+        hessian: 2x2 Hessian matrix as nested tuples.
+    """
+
     value: float
     par: Tuple[float, float]  # two parameters
     counts: Tuple[int, str]  # R's optim: (fn_evals, "NA")
@@ -47,8 +61,14 @@ class OptimResult(TypedDict):
 
 #### Repo & script path utilities ####
 def find_repo_root() -> Optional[Path]:
-    """
-    Find the repo root by looking for REPO_NAME or '.git'.
+    """Find the repository root directory.
+
+    The search starts from the current file's directory and walks up the
+    parent chain. The repo root is identified as the first directory whose
+    name matches ``REPO_NAME`` or that contains a ``.git`` subdirectory.
+
+    Returns:
+        Path to the repository root if found, otherwise None.
     """
     start = Path(__file__).resolve()
     for parent in [start, *start.parents]:
@@ -58,18 +78,18 @@ def find_repo_root() -> Optional[Path]:
 
 
 def get_script_path(relative: Path, *, repo_root: Optional[Path] = None) -> Path:
-    """
-    Resolve path to an R script via repo root discovery.
+    """Resolve an R script path relative to the repository root.
 
     Args:
-        relative: Path relative to repo root.
-        repo_root: Explicit repo root. If None, auto-detect via find_repo_root().
+        relative: Path to the R script, relative to the repo root.
+        repo_root: Optional explicit repo root. If None, this is discovered
+            via :func:`find_repo_root`.
 
     Returns:
         Absolute path to the script.
 
     Raises:
-        FileNotFoundError: If script cannot be located.
+        FileNotFoundError: If the script cannot be located.
     """
     # Try explicit root first
     if repo_root:
@@ -92,24 +112,30 @@ def get_script_path(relative: Path, *, repo_root: Optional[Path] = None) -> Path
 
 
 def get_r_script_path() -> Path:
-    """
-    Resolve the path to clarke_bb_model.R via repo root discovery + R_SCRIPT_REL.
+    """Resolve the path to ``clarke_bb_model.R`` using repo-root discovery.
+
+    Returns:
+        Path to the R script.
 
     Raises:
-        FileNotFoundError if not found.
+        FileNotFoundError: If the script cannot be found.
     """
     return get_script_path(R_SCRIPT_REL)
-
 
 
 #### Conda / R discovery utilities ####
 
 def _find_conda_exe() -> Optional[Path]:
-    """
-    Auto-locate conda executable via:
-      1) POPS_CONDA_EXE / CONDA_EXE
-      2) PATH
-      3) Common Anaconda/Miniconda install locations
+    """Locate the conda executable.
+
+    Search order:
+
+    1. Environment variables ``POPS_CONDA_EXE`` or ``CONDA_EXE``.
+    2. The system PATH (using ``shutil.which``).
+    3. Common Anaconda/Miniconda install locations.
+
+    Returns:
+        Path to the conda executable or None if not found.
     """
     # Explicit overrides
     for env_var in ("POPS_CONDA_EXE", "CONDA_EXE"):
@@ -157,11 +183,10 @@ def _find_conda_exe() -> Optional[Path]:
 
 
 def _find_conda_env_dir(env_name: str) -> Optional[Path]:
-    """
-    Locate the directory of a conda environment by name.
+    """Locate the directory of a conda environment by name.
 
     Args:
-        env_name: Name of the conda environment
+        env_name: Name of the conda environment.
 
     Returns:
         Path to the environment directory, or None if not found.
@@ -267,8 +292,13 @@ def _find_conda_env_dir(env_name: str) -> Optional[Path]:
 
 
 def _build_windows_r_env(env_dir: Path) -> dict[str, str]:
-    """
-    Build environment variables for running Rscript on Windows via a conda env.
+    """Build environment variables to run Rscript from a Windows conda env.
+
+    Args:
+        env_dir: Path to the conda environment directory.
+
+    Returns:
+        Dictionary of environment variables to use when launching Rscript.
     """
     env = os.environ.copy()
     prepend = [
@@ -282,13 +312,20 @@ def _build_windows_r_env(env_dir: Path) -> dict[str, str]:
 
 
 def _pick_rscript_command() -> tuple[list[str], dict[str, str]]:
-    """
-    Determine command to run Rscript and environment variables.
+    """Determine the command and environment for running Rscript.
+
+    On Windows, this locates ``Rscript.exe`` inside the target conda
+    environment and builds an appropriate PATH. On Unix-like systems,
+    it uses ``conda run -n <env> Rscript``.
 
     Returns:
-        Tuple of (command_list, env_dict)
-        - command_list: The command to execute
-        - env_dict: Environment variables to use (or empty dict to use conda run)
+        Tuple ``(command_list, env_dict)`` where:
+            * ``command_list`` is the base command to execute.
+            * ``env_dict`` is the environment to use (empty dict indicates
+              that ``conda run`` will manage the environment).
+
+    Raises:
+        RuntimeError: If the conda environment or Rscript cannot be located.
     """
     if not CONDA_ENV_NAME:
         raise RuntimeError(
@@ -360,8 +397,24 @@ def _run_rscript(
     env: Optional[dict[str, str]] = None,
     timeout_sec: float = 120.0,
 ) -> subprocess.CompletedProcess[str]:
-    """
-    Run Rscript with a single JSON or file-path argument and common error handling.
+    """Run an R script with a single argument and common error handling.
+
+    Args:
+        cmd: Base command list for invoking Rscript (e.g., from
+            :func:`_pick_rscript_command`).
+        script_path: Full path to the R script.
+        arg: Single string argument passed to the R script (JSON payload or
+            file path).
+        env: Optional environment variables for the subprocess.
+        timeout_sec: Maximum time in seconds to allow the R script to run.
+
+    Returns:
+        CompletedProcess object representing the R subprocess.
+
+    Raises:
+        TimeoutError: If the R script exceeds ``timeout_sec``.
+        subprocess.CalledProcessError: If the R script exits with non-zero
+            return code.
     """
     subprocess_env = env if env else None
 
@@ -393,9 +446,20 @@ def _run_rscript(
 
 
 def _parse_json_from_r_stdout(stdout: str) -> dict[str, Any]:
-    """
-    Extract the final JSON object from mixed R stdout (startup messages, warnings, etc.).
-    Returns a raw dict.
+    """Extract the final JSON object from noisy R stdout.
+
+    R often prints startup messages, warnings, and other text before or
+    after the JSON payload. This helper searches from the end of stdout
+    to find the last well-formed JSON object.
+
+    Args:
+        stdout: Raw stdout string emitted by the R subprocess.
+
+    Returns:
+        Parsed JSON object as a Python dictionary.
+
+    Raises:
+        ValueError: If no JSON-like object can be located.
     """
     lines = [ln.strip() for ln in stdout.splitlines() if ln.strip()]
     for ln in reversed(lines):
@@ -411,8 +475,18 @@ def _parse_json_from_r_stdout(stdout: str) -> dict[str, Any]:
 
 
 def _safe_parse_json_from_r_stdout(stdout: str, context: str) -> dict[str, Any]:
-    """
-    Parse JSON from R stdout, raising a ValueError with context on failure.
+    """Parse JSON from R stdout with additional context in error messages.
+
+    Args:
+        stdout: Raw stdout string from the R subprocess.
+        context: Human-readable description of the calling context.
+
+    Returns:
+        Parsed JSON object as a dictionary.
+
+    Raises:
+        ValueError: If JSON parsing fails; the error message includes a
+            preview of stdout and the context string.
     """
     try:
         return _parse_json_from_r_stdout(stdout)
@@ -421,38 +495,6 @@ def _safe_parse_json_from_r_stdout(stdout: str, context: str) -> dict[str, Any]:
         raise ValueError(
             f"Expected JSON from R ({context}); got (preview): {preview}"
         ) from e
-
-
-#### Helper for tuple range dictionary keys (if you still use it here) ####
-def get_range_key(
-    d: Dict[str, Any],
-    num_plants: float,
-) -> Optional[str]:
-    """
-    Get the key in a dictionary corresponding to a numeric range that
-    contains the given number of plants.
-
-    The dictionary `d` is expected to have some keys that are string
-    representations of 2‑tuples, e.g. "(0, 10)", "(10, 20)", etc.
-    Each such key defines a half-open interval `(lower, upper]`.
-    """
-    last_key: Optional[str] = None
-    max_upper: float = float("-inf")
-
-    for key in d:
-        if key.startswith("(") and key.endswith(")"):
-            lower, upper = ast.literal_eval(key)
-
-            if upper > max_upper:
-                max_upper = upper
-                last_key = key
-
-            if lower < num_plants <= upper:
-                return key
-
-    return last_key
-
-
 
 #### Clark BB wrapper ####
 def run_clarke_bb_group_model(
@@ -468,14 +510,35 @@ def run_clarke_bb_group_model(
     *,
     timeout_sec: float = 120.0,
 ) -> dict[str, Any]:
-    """
-    Runs the Clark BB group model via an R script and returns parsed JSON.
+    """Run the Clarke beta-binomial group model via R and return results.
+
+    The function constructs a JSON payload with model inputs, invokes
+    ``clarke_bb_model.R`` through the configured conda-based R wrapper, and
+    parses the resulting JSON.
+
+    Args:
+        ty: Sequence of unique counts of groups testing positive.
+        b: Number of groups per consignment.
+        B: Number of consignments.
+        Nbar: Average items per group.
+        freq: Sequence of frequencies corresponding to ``ty``.
+        theta: Clustering hyperparameter (use ``np.inf`` for no extra clustering).
+        R: Number of Monte Carlo or sensitivity runs.
+        startval: Initial values for optimizer (e.g., [log-alpha, log-beta]).
+        se: If True, request standard errors.
+        timeout_sec: Maximum time allowed for the R script to complete.
+
+    Returns:
+        Dictionary parsed from R stdout, typically containing model
+        parameters and diagnostics.
 
     Raises:
-      - FileNotFoundError if the script is missing
-      - CalledProcessError if the R subprocess fails
-      - TimeoutError if R does not complete in time
-      - ValueError if stdout is not valid JSON in the expected schema
+        FileNotFoundError: If the R script cannot be found.
+        subprocess.CalledProcessError: If the R subprocess exits with
+            non-zero status.
+        TimeoutError: If R does not complete within ``timeout_sec``.
+        ValueError: If stdout does not contain valid JSON in the expected
+            format.
     """
     r_script_path_bb_cli = str(get_r_script_path())
     if not Path(r_script_path_bb_cli).exists():
@@ -515,8 +578,18 @@ def _write_df_temp(
     use_parquet: bool,
     temp_dir: str,
 ) -> str:
-    """
-    Write a DataFrame to a temp file and return its path.
+    """Write a DataFrame to a temporary file and return its path.
+
+    Depending on ``use_parquet``, writes either a Parquet or CSV file into
+    the provided temporary directory.
+
+    Args:
+        df: DataFrame to serialize.
+        use_parquet: If True, write a ``.parquet`` file; otherwise write CSV.
+        temp_dir: Directory in which to create the temporary file.
+
+    Returns:
+        Path to the temporary file as a string.
     """
     if use_parquet:
         tmp_file = tempfile.NamedTemporaryFile(
@@ -541,8 +614,13 @@ def _write_df_temp(
 
 
 def _read_df_from_path(path: str) -> pd.DataFrame:
-    """
-    Read a DataFrame from a parquet or CSV file.
+    """Read a DataFrame from a Parquet or CSV file.
+
+    Args:
+        path: Path to the file.
+
+    Returns:
+        DataFrame loaded from the given path.
     """
     if path.endswith(".parquet"):
         return pd.read_parquet(path, engine="pyarrow")
@@ -551,31 +629,33 @@ def _read_df_from_path(path: str) -> pd.DataFrame:
 
 #### R variable creator wrapper class for engineered features ####
 class RVariableCreator:
-    """
-    Executes R functions from variable_creator.R using the conda-based R wrapper infrastructure.
+    """Wrapper for calling R-based feature engineering functions.
+
+    This class executes functions defined in ``variable_creator.R`` using
+    the conda-based R wrapper infrastructure. It supports both simple
+    JSON-based calls and DataFrame payloads via temporary files.
     """
 
     # Name of the R script (relative to repo root)
     R_SCRIPT_REL = Path("slippage_model_utils") / "variable_creator.R"
 
-    def __init__(self, repo_root: Optional[str] = None) -> None:
-        """
-        Initialize variable creator.
+    def __init__(self, repo_root: Optional[Union[str, Path]] = None) -> None:
+        """Initialize a new RVariableCreator.
 
         Args:
-            repo_root: Root directory of the repository. If None, attempts auto-detection.
+            repo_root: Root directory of the repository. If None, the root
+                is auto-detected via :func:`find_repo_root`.
         """
         self.repo_root = Path(repo_root) if repo_root is not None else None
 
     def _get_r_script_path(self) -> Path:
-        """
-        Resolve the path to variable_creator.R.
+        """Resolve the path to ``variable_creator.R``.
 
         Returns:
             Path to the R script.
 
         Raises:
-            FileNotFoundError: If script cannot be found.
+            FileNotFoundError: If the script cannot be found.
         """
         return get_script_path(self.R_SCRIPT_REL, repo_root=self.repo_root)
 
@@ -585,8 +665,20 @@ class RVariableCreator:
         args: Optional[Dict[str, Any]] = None,
         timeout_sec: float = 120.0,
     ) -> Dict[str, Any]:
-        """
-        Call a specific R function from variable_creator.R using JSON payload.
+        """Call an R function (no DataFrames) via JSON payload.
+
+        Args:
+            function_name: Name of the R function to invoke.
+            args: Dictionary of argument values passed through JSON.
+            timeout_sec: Maximum time to allow the R function to run.
+
+        Returns:
+            Dictionary parsed from the R function's JSON output.
+
+        Raises:
+            subprocess.CalledProcessError: If the R process fails.
+            TimeoutError: If the R function times out.
+            ValueError: If the R output is not valid JSON.
         """
         r_script_path = str(self._get_r_script_path())
         cmd, env = _pick_rscript_command()
@@ -624,22 +716,51 @@ class RVariableCreator:
         )
 
     def _call_r_function_df(
-        self,
-        function_name: str,
-        args: Optional[Dict[str, Any]] = None,
-        timeout_sec: float = 120.0,
-        use_parquet: bool = True,
+            self,
+            function_name: str,
+            args: Optional[Dict[str, Any]] = None,
+            timeout_sec: float = 120.0,
+            use_parquet: bool = True,
     ) -> Dict[str, Any]:
-        """
-        Call a specific R function from variable_creator.R using temp files for data transfer.
+        """Call an R function with DataFrame arguments via temp files.
+
+        DataFrames are written to temporary files (CSV or Parquet), and the
+        file paths are passed to the R script. R writes result DataFrames to
+        ``df_results`` files, which are read back into Python and then
+        cleaned up. All temporary files (inputs and outputs) are deleted
+        even if errors occur.
+
+        Args:
+            function_name: Name of the R function to invoke.
+            args: Dictionary of arguments; any pandas DataFrame values
+                are written to temporary files.
+            timeout_sec: Maximum time to allow the R function to run.
+            use_parquet: If True, use Parquet for DataFrame transfer;
+                otherwise use CSV.
+
+        Returns:
+            Dictionary of non-DataFrame results along with any DataFrames
+            produced by the R function.
+
+        Raises:
+            TimeoutError: If the R function times out.
+            subprocess.CalledProcessError: If the R process fails.
+            ValueError: If the R output is not valid JSON.
         """
         r_script_path = str(self._get_r_script_path())
         cmd, env = _pick_rscript_command()
 
-        temp_files: list[str] = []
+        temp_files: list[str] = []  # Python-created input temp files (JSON + DF inputs)
+        df_result_files: list[str] = []  # R-generated output files to be cleaned up
         temp_dir = tempfile.gettempdir()
 
+        proc = None
+        result: Dict[str, Any] | Any = {}
+
         try:
+            # ---------------------------
+            # Build payload & input temp files
+            # ---------------------------
             df_paths: Dict[str, str] = {}
             simple_args: Dict[str, Any] = {}
 
@@ -671,67 +792,109 @@ class RVariableCreator:
                 encoding="utf-8",
                 dir=temp_dir,
             )
-            json.dump(payload, tmp_json, allow_nan=False)
-            tmp_json.close()
+            try:
+                json.dump(payload, tmp_json, allow_nan=False)
+            finally:
+                # Make sure file handle is closed even if json.dump fails
+                tmp_json.close()
             temp_files.append(tmp_json.name)
 
-            proc = _run_rscript(
-                cmd,
-                r_script_path,
-                tmp_json.name,
-                env=env,
-                timeout_sec=timeout_sec,
+            # ---------------------------
+            # Call R
+            # ---------------------------
+            try:
+                proc = _run_rscript(
+                    cmd,
+                    r_script_path,
+                    tmp_json.name,
+                    env=env,
+                    timeout_sec=timeout_sec,
+                )
+            except subprocess.TimeoutExpired as e:
+                # Let the finally block handle cleanup of known temp files
+                raise TimeoutError(
+                    f"R function '{function_name}' timed out after {timeout_sec}s."
+                ) from e
+
+            # ---------------------------
+            # Parse JSON output from R
+            # ---------------------------
+            result = _safe_parse_json_from_r_stdout(
+                proc.stdout,
+                f"function '{function_name}' (df)",
             )
 
-        except subprocess.TimeoutExpired as e:
-            raise TimeoutError(
-                f"R function '{function_name}' timed out after {timeout_sec}s."
-            ) from e
+            # ---------------------------
+            # Handle df_result files
+            # ---------------------------
+            if isinstance(result, dict) and "df_results" in result:
+                file_paths = result["df_results"]
+                df_results: Dict[str, pd.DataFrame] = {}
+
+                # Track these paths so we can attempt cleanup in finally on any failure
+                for file_path in file_paths.values():
+                    if isinstance(file_path, str):
+                        df_result_files.append(file_path)
+
+                for key, file_path in file_paths.items():
+                    try:
+                        logger.debug("Looking for result file: %s", file_path)
+                        if os.path.exists(file_path):
+                            df_results[key] = _read_df_from_path(file_path)
+                            logger.debug(
+                                "Successfully read %d rows for key %s",
+                                len(df_results[key]),
+                                key,
+                            )
+                            try:
+                                os.unlink(file_path)
+                                logger.debug("Cleaned up: %s", file_path)
+                                # Also remove from df_result_files so we don't try twice in finally
+                                if file_path in df_result_files:
+                                    df_result_files.remove(file_path)
+                            except Exception as e:
+                                logger.warning("Could not delete %s: %s", file_path, e)
+                        else:
+                            logger.warning("File not found: %s", file_path)
+                    except Exception as read_err:
+                        logger.exception("Error reading file %s: %s", file_path, read_err)
+
+                # Merge DataFrame results with other results
+                result = {**result, **df_results}
+                if "df_results" in result:
+                    del result["df_results"]
+
+            return result
+
         finally:
-            # Clean up INPUT temp files only (not R-generated output files)
+            # ---------------------------
+            # Cleanup: input temp files (JSON & DF inputs)
+            # ---------------------------
             for tmp_file in temp_files:
                 try:
                     if os.path.exists(tmp_file):
                         os.unlink(tmp_file)
                 except Exception as cleanup_err:
-                    logger.warning("Could not delete temp file %s: %s", tmp_file, cleanup_err)
+                    logger.warning(
+                        "Could not delete temp file %s: %s",
+                        tmp_file,
+                        cleanup_err,
+                    )
 
-        # Parse JSON output and then handle df result files
-        result = _safe_parse_json_from_r_stdout(
-            proc.stdout,
-            f"function '{function_name}' (df)",
-        )
-
-        if isinstance(result, dict) and "df_results" in result:
-            file_paths = result["df_results"]
-            df_results: Dict[str, pd.DataFrame] = {}
-
-            for key, file_path in file_paths.items():
+            # ---------------------------
+            # Cleanup: df_result files (R outputs) if any remain
+            # ---------------------------
+            for tmp_file in df_result_files:
                 try:
-                    logger.debug("Looking for result file: %s", file_path)
-                    if os.path.exists(file_path):
-                        df_results[key] = _read_df_from_path(file_path)
-                        logger.debug(
-                            "Successfully read %d rows for key %s",
-                            len(df_results[key]),
-                            key,
-                        )
-                        try:
-                            os.unlink(file_path)
-                            logger.debug("Cleaned up: %s", file_path)
-                        except Exception as e:
-                            logger.warning("Could not delete %s: %s", file_path, e)
-                    else:
-                        logger.warning("File not found: %s", file_path)
-                except Exception as read_err:
-                    logger.exception("Error reading file %s: %s", file_path, read_err)
-
-            # Merge DataFrame results with other results
-            result = {**result, **df_results}
-            if "df_results" in result:
-                del result["df_results"]
-
-        return result
+                    if os.path.exists(tmp_file):
+                        os.unlink(tmp_file)
+                        logger.debug("Cleaned up df_result file in finally: %s", tmp_file)
+                except Exception as cleanup_err:
+                    logger.warning(
+                        "Could not delete df_result file %s: %s",
+                        tmp_file,
+                        cleanup_err,
+                    )
 
     def basic_text_preproc(
         self,
@@ -740,8 +903,20 @@ class RVariableCreator:
         prefix_string: Optional[str] = None,
         timeout_sec: float = 120.0,
     ) -> str:
-        """
-        Executes R basic_text_preproc function to clean and normalize text.
+        """Execute R ``basic_text_preproc`` to clean and normalize text.
+
+        Args:
+            text_field: Input text string to preprocess.
+            suffix_string: Optional regex pattern for suffix removal.
+            prefix_string: Optional regex pattern for prefix removal.
+            timeout_sec: Maximum time to allow the R function to run.
+
+        Returns:
+            Cleaned and normalized text string.
+
+        Raises:
+            ValueError: If the R function reports an error or returns an
+                unexpected payload.
         """
         args: Dict[str, Any] = {"text_field": str(text_field)}
         if suffix_string is not None:
@@ -776,12 +951,29 @@ class RVariableCreator:
             prefix_string: Optional[str] = None,
             timeout_sec: float = 120.0,
     ) -> List[str]:
-        """
-        Batch version of basic_text_preproc that sends a list of text fields to R.
+        """Batch version of ``basic_text_preproc`` for lists of strings.
 
-        This version matches the original behavior where the payload is
-        written to a temporary JSON file, and the path is passed to R.
-        The R script is expected to treat the argument as a file path.
+        This method:
+
+        * Writes a JSON payload to a temporary file.
+        * Calls the R function with that file path.
+        * Parses and returns a list of processed text entries.
+
+        Args:
+            text_fields: Sequence of text strings to preprocess.
+            suffix_string: Optional regex pattern for suffix removal.
+            prefix_string: Optional regex pattern for prefix removal.
+            timeout_sec: Maximum time to allow the R function to run.
+
+        Returns:
+            List of cleaned/normalized text strings.
+
+        Raises:
+            TimeoutError: If the R process times out.
+            subprocess.CalledProcessError: If the R process returns a non-zero
+                exit code.
+            ValueError: If the R output is not valid JSON with the expected
+                schema.
         """
         # Prepare argument payload
         args: Dict[str, Any] = {"text_field": list(map(str, text_fields))}
@@ -877,6 +1069,85 @@ class RVariableCreator:
 
         raise ValueError("R did not return processed_text")
 
+
+    def entity_resolution(
+        self,
+        df: pd.DataFrame,
+        entity_resolution_lookup_table: pd.DataFrame,
+        use_parquet: bool = True,
+        timeout_sec: float = 120.0,
+    ) -> pd.DataFrame:
+        """Run the R ``entity_resolution`` function to group producer names.
+
+        This function calls an R routine that generates
+        ``PRODUCER_GROUP_NAME`` and ``PRODUCER_GROUP_NAME1`` columns,
+        based on a lookup table of names and group IDs.
+
+        Args:
+            df: Main DataFrame, which must include columns:
+                ``PRODUCER_NAME``, ``PRODUCER_NAME1``, ``QUANTITY``,
+                ``COUNTRY_OF_ORIGIN_NAME``, ``PROPAGATIVE_MATERIAL_TYPE``,
+                ``INSPECTION_NUMBER``.
+            entity_resolution_lookup_table: DataFrame with columns ``name``
+                and ``group`` describing entity groups.
+            use_parquet: If True, use Parquet for DataFrame transfer.
+            timeout_sec: Maximum time to allow the R function to run.
+
+        Returns:
+            DataFrame including new ``PRODUCER_GROUP_NAME`` and
+            ``PRODUCER_GROUP_NAME1`` columns.
+
+        Raises:
+            ValueError: If required columns are missing or if the R function
+                reports an error or returns an unexpected payload.
+        """
+        required_dt = {
+            "PRODUCER_NAME",
+            "PRODUCER_NAME1",
+            "QUANTITY",
+            "COUNTRY_OF_ORIGIN_NAME",
+            "PROPAGATIVE_MATERIAL_TYPE",
+            "INSPECTION_NUMBER",
+        }
+        missing_dt = required_dt - set(df.columns)
+        if missing_dt:
+            raise ValueError(
+                f"df missing required columns for entity_resolution: {missing_dt}"
+            )
+
+        required_lookup = {"name", "group"}
+        missing_lookup = required_lookup - set(entity_resolution_lookup_table.columns)
+        if missing_lookup:
+            raise ValueError(
+                "entity_resolution_lookup_table missing required columns: "
+                f"{missing_lookup}"
+            )
+
+        args: Dict[str, Any] = {
+            "dt": df,
+            "entity_resolution_lookup_table": entity_resolution_lookup_table,
+        }
+
+        result = self._call_r_function_df(
+            "entity_resolution",
+            args=args,
+            timeout_sec=timeout_sec,
+            use_parquet=use_parquet,
+        )
+
+        if isinstance(result, dict) and result.get("status") == "error":
+            raise ValueError(f"R function error: {result.get('error')}")
+
+        if "result_df" in result:
+            result_df = result["result_df"]
+            if isinstance(result_df, pd.DataFrame):
+                return result_df
+            raise ValueError(f"Expected DataFrame, got {type(result_df)}")
+
+        raise ValueError(f"No 'result_df' in result: {result.keys()}")
+
+
+
     def generate_quantity_binaries(
         self,
         df: pd.DataFrame,
@@ -885,14 +1156,28 @@ class RVariableCreator:
         use_parquet: bool = True,
         timeout_sec: float = 120.0,
     ) -> pd.DataFrame:
-        """
-        Aggregate data by inspection (or custom grouping) and calculate quantity binary features.
+        """Aggregate data and create binary features based on quantity.
+
+        This function delegates to an R routine that:
+
+        * Groups data by the provided ``group_cols`` (default R-side grouping).
+        * Computes aggregate statistics and flags indicating whether quantities
+          exceed a given threshold.
 
         Args:
-            df: Input DataFrame with QUANTITY column.
+            df: Input DataFrame that must contain a ``'QUANTITY'`` column.
             quantity_threshold: Threshold for binary classification.
-            group_cols: Columns to group by (default: ['RISK_UNIT'] on R side).
-            use_parquet: If True, use Parquet format for file transfer (faster for large data).
+            group_cols: Columns to group by (default behavior is implemented
+                R-side, often ``['RISK_UNIT']``).
+            use_parquet: If True, use Parquet for DataFrame transfer.
+            timeout_sec: Maximum time to allow the R function to run.
+
+        Returns:
+            DataFrame of aggregated groups with quantity-based binary features.
+
+        Raises:
+            ValueError: If ``'QUANTITY'`` is missing or if the R function
+                reports an error or returns an unexpected payload.
         """
         if "QUANTITY" not in df.columns:
             raise ValueError("DataFrame must contain 'QUANTITY' column")
@@ -918,6 +1203,146 @@ class RVariableCreator:
             result_df = result["result_df"]
             if isinstance(result_df, pd.DataFrame):
                 logger.debug("Aggregated to %d groups", result_df.shape[0])
+                return result_df
+            raise ValueError(f"Expected DataFrame, got {type(result_df)}")
+
+        raise ValueError(f"No 'result_df' in result: {result.keys()}")
+
+    def generate_producer_top_strata_features(
+        self,
+        df: pd.DataFrame,
+        dt_train: pd.DataFrame,
+        max_strat_count: int = 50,
+        min_action_rate: float = 0.02,
+        min_records: int = 5,
+        use_parquet: bool = True,
+        timeout_sec: float = 120.0,
+    ) -> pd.DataFrame:
+        """Add top-producer strata features based on action rates.
+
+        This function calls an R routine to compute stratified producer
+        groups (``PRODUCER_GROUP_TOP``) using both the main DataFrame and a
+        training DataFrame.
+
+        Args:
+            df: Input DataFrame containing at least ``'action'`` and
+                ``'PRODUCER_GROUP_NAME1'``.
+            dt_train: Training DataFrame with the same required columns.
+            max_strat_count: Maximum number of strata to retain.
+            min_action_rate: Minimum action rate threshold for including a
+                stratum.
+            min_records: Minimum number of records required per stratum.
+            use_parquet: If True, use Parquet for DataFrame transfer.
+            timeout_sec: Maximum time to allow the R function to run.
+
+        Returns:
+            DataFrame with a new ``PRODUCER_GROUP_TOP`` feature (and any
+            other R-generated columns).
+
+        Raises:
+            ValueError: If required columns are missing or if the R function
+                reports an error or returns an unexpected payload.
+        """
+        required = {"action", "PRODUCER_GROUP_NAME1"}
+        missing = required - set(df.columns)
+        missing_train = required - set(dt_train.columns)
+        if missing:
+            raise ValueError(f"DataFrame missing required columns: {missing}")
+
+        if missing_train:
+            raise ValueError(f"Training DataFrame missing required columns: {missing_train}")
+
+        args: Dict[str, Any] = {
+            "df": df,
+            "dt_train": dt_train,
+            "maxStratCount": int(max_strat_count),
+            "minActionRate": float(min_action_rate),
+            "minRecords": int(min_records),
+        }
+
+        result = self._call_r_function_df(
+            "generate_producer_top_strata_features",
+            args=args,
+            timeout_sec=timeout_sec,
+            use_parquet=use_parquet,
+        )
+
+        if isinstance(result, dict) and result.get("status") == "error":
+            raise ValueError(f"R function error: {result.get('error')}")
+
+        if "result_df" in result:
+            result_df = result["result_df"]
+            if isinstance(result_df, pd.DataFrame):
+                return result_df
+            raise ValueError(f"Expected DataFrame, got {type(result_df)}")
+
+        raise ValueError(f"No 'result_df' in result: {result.keys()}")
+
+
+    def generate_importer_top_strata_features(
+        self,
+        df: pd.DataFrame,
+        dt_train: pd.DataFrame,
+        max_strat_count: int = 50,
+        min_action_rate: float = 0.02,
+        min_records: int = 5,
+        use_parquet: bool = True,
+        timeout_sec: float = 120.0,
+    ) -> pd.DataFrame:
+        """Add top-importer strata features based on action rates.
+
+        This function calls an R routine to compute stratified importer
+        groups (``IMPORTER_NAME_TOP``) using the main and training DataFrames.
+
+        Args:
+            df: Input DataFrame containing at least ``'action'`` and
+                ``'IMPORTER_NAME1'``.
+            dt_train: Training DataFrame with the same required columns.
+            max_strat_count: Maximum number of strata to retain.
+            min_action_rate: Minimum action rate threshold for including a
+                stratum.
+            min_records: Minimum number of records required per stratum.
+            use_parquet: If True, use Parquet for DataFrame transfer.
+            timeout_sec: Maximum time to allow the R function to run.
+
+        Returns:
+            DataFrame with a new ``IMPORTER_NAME_TOP`` feature (and any
+            other R-generated columns).
+
+        Raises:
+            ValueError: If required columns are missing or if the R function
+                reports an error or returns an unexpected payload.
+        """
+        required = {"action", "IMPORTER_NAME1"}
+        missing = required - set(df.columns)
+        missing_train = required - set(dt_train.columns)
+        if missing:
+            raise ValueError(f"DataFrame missing required columns: {missing}")
+
+        if missing_train:
+            raise ValueError(f"Training DataFrame missing required columns: {missing_train}")
+
+        args: Dict[str, Any] = {
+            "df": df,
+            "dt_train": dt_train,
+            "maxStratCount": int(max_strat_count),
+            "minActionRate": float(min_action_rate),
+            "minRecords": int(min_records),
+        }
+
+        result = self._call_r_function_df(
+            "generate_importer_top_strata_features",
+            args=args,
+            timeout_sec=timeout_sec,
+            use_parquet=use_parquet,
+        )
+
+        if isinstance(result, dict) and result.get("status") == "error":
+            raise ValueError(f"R function error: {result.get('error')}")
+
+        if "result_df" in result:
+            result_df = result["result_df"]
+            if isinstance(result_df, pd.DataFrame):
                 return result_df
             raise ValueError(f"Expected DataFrame, got {type(result_df)}")
 

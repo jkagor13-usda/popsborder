@@ -22,6 +22,7 @@ from gui.page_styles import (
     render_page_intro,
     render_section_header,
 )
+from gui.report_export import build_run_report_docx_bytes
 from gui.slippage_ui import get_slippage_state, run_pipeline, set_engine_options
 from gui.slippage_pipeline import create_default_paths
 
@@ -44,6 +45,15 @@ MIN_REPLICATIONS_FOR_INTERVAL = 5
 
 
 def _latest_output_run_dir(experiment_dir: Optional[Path]) -> Optional[Path]:
+    """Return the latest output_* directory under an experiment directory.
+
+    Args:
+        experiment_dir: Experiment directory containing one or more
+            ``output_*`` subdirectories.
+
+    Returns:
+        Path to the most recently modified output directory, or None.
+    """
     if experiment_dir is None or not experiment_dir.exists():
         return None
     candidates = [p for p in experiment_dir.glob("output_*") if p.is_dir()]
@@ -53,6 +63,14 @@ def _latest_output_run_dir(experiment_dir: Optional[Path]) -> Optional[Path]:
 
 
 def _load_all_runs_df(output_dir: Optional[Path]) -> Optional[pd.DataFrame]:
+    """Load per-replication summary CSV from a run output directory.
+
+    Args:
+        output_dir: Output directory produced by a run.
+
+    Returns:
+        DataFrame from ``all_runs.csv`` or None if not found/invalid.
+    """
     if output_dir is None:
         return None
     all_runs_path = output_dir / "all_runs.csv"
@@ -64,7 +82,40 @@ def _load_all_runs_df(output_dir: Optional[Path]) -> Optional[pd.DataFrame]:
         return None
 
 
+def _load_scenario_table_df(output_dir: Optional[Path]) -> Optional[pd.DataFrame]:
+    """Load the scenario_table.csv associated with an output directory.
+
+    Args:
+        output_dir: Output directory produced by a run.
+
+    Returns:
+        Scenario table DataFrame or None if not found/invalid.
+    """
+    if output_dir is None:
+        return None
+    scenario_table_path = output_dir.parent / "scenario_table.csv"
+    if not scenario_table_path.exists():
+        return None
+    try:
+        return pd.read_csv(scenario_table_path)
+    except Exception:  # pylint: disable=broad-except
+        return None
+
+
 def _load_inspection_action_runs_df(output_dir: Optional[Path]) -> Optional[pd.DataFrame]:
+    """Aggregate inspection-level action metrics from synthetic result CSVs.
+
+    This scans ``output_dir`` for CSVs named
+    ``synthetic_commodity_line_results_data.csv`` under each scenario/rep
+    and derives inspection- and consignment-level action counts.
+
+    Args:
+        output_dir: Output directory produced by a run.
+
+    Returns:
+        DataFrame with one row per (scenario, replication), or None if no
+        valid records are found.
+    """
     if output_dir is None or not output_dir.exists():
         return None
     records = []
@@ -128,6 +179,16 @@ def _load_inspection_action_runs_df(output_dir: Optional[Path]) -> Optional[pd.D
 
 
 def _styled_summary_table(df: pd.DataFrame, mean_columns: list[str], interval_columns: list[str]):
+    """Apply styling to summary tables showing means and intervals.
+
+    Args:
+        df: DataFrame to style.
+        mean_columns: Columns containing mean values to highlight.
+        interval_columns: Columns containing interval strings (e.g., 95% CI).
+
+    Returns:
+        pandas Styler with custom formatting applied.
+    """
     label_columns = [col for col in ["Scenario", "Level"] if col in df.columns]
     return (
         df.style
@@ -147,6 +208,7 @@ def _styled_summary_table(df: pd.DataFrame, mean_columns: list[str], interval_co
 
 
 def _safe_float(value) -> float:
+    """Safely coerce a value to float, returning 0.0 on failure/NaN."""
     try:
         if pd.isna(value):
             return 0.0
@@ -156,10 +218,12 @@ def _safe_float(value) -> float:
 
 
 def _format_count(value) -> str:
+    """Format a numeric count with 1 decimal place and thousands separator."""
     return f"{_safe_float(value):,.1f}"
 
 
 def _format_percent(value) -> str:
+    """Format a numeric value as a percentage string with 2 decimals."""
     if value is None or pd.isna(value):
         return "n/a"
     return f"{_safe_float(value):.2f}%"
@@ -173,12 +237,32 @@ def _interval_text(
     digits: int = 2,
     suffix: str = "",
 ) -> str:
+    """Format a 95% interval string or return 'n/a' if insufficient data.
+
+    Args:
+        lower: Lower interval bound or NaN.
+        upper: Upper interval bound or NaN.
+        replications: Number of replications used to compute the interval.
+        digits: Number of decimal digits for formatting.
+        suffix: Optional suffix appended to each bound (e.g., "%").
+
+    Returns:
+        Formatted interval string or "n/a".
+    """
     if pd.isna(lower) or pd.isna(upper) or replications < MIN_REPLICATIONS_FOR_INTERVAL:
         return "n/a"
     return f"{float(lower):.{digits}f}{suffix} - {float(upper):.{digits}f}{suffix}"
 
 
 def _maybe_warning_for_replications(all_runs_df: Optional[pd.DataFrame]) -> bool:
+    """Warn if some scenarios have too few replications for intervals.
+
+    Args:
+        all_runs_df: Per-run summary DataFrame.
+
+    Returns:
+        True if a warning was shown, False otherwise.
+    """
     if all_runs_df is not None and not all_runs_df.empty and "replication" in all_runs_df.columns:
         rep_counts = all_runs_df.groupby("name").size()
         if (rep_counts < MIN_REPLICATIONS_FOR_INTERVAL).any():
@@ -190,6 +274,15 @@ def _maybe_warning_for_replications(all_runs_df: Optional[pd.DataFrame]) -> bool
 
 
 def _unique_non_empty_values(df: Optional[pd.DataFrame], column: str) -> list[str]:
+    """Get unique non-empty string values from a column.
+
+    Args:
+        df: Input DataFrame or None.
+        column: Column name.
+
+    Returns:
+        Sorted list of non-empty, non-'nan' strings from the column.
+    """
     if df is None or df.empty or column not in df.columns:
         return []
     values = []
@@ -201,6 +294,15 @@ def _unique_non_empty_values(df: Optional[pd.DataFrame], column: str) -> list[st
 
 
 def _format_list_preview(values: list[str], *, max_items: int = 5) -> str:
+    """Summarize a list of values for display.
+
+    Args:
+        values: List of values.
+        max_items: Maximum number of items to show before truncating.
+
+    Returns:
+        Comma-separated string, with an indicator if items are omitted.
+    """
     if not values:
         return "n/a"
     if len(values) <= max_items:
@@ -209,6 +311,7 @@ def _format_list_preview(values: list[str], *, max_items: int = 5) -> str:
 
 
 def _format_detail_number(value) -> str:
+    """Format numeric-like values in param details (including 'inf')."""
     coerced = _coerce_numeric_like(value)
     if coerced is None:
         return "n/a"
@@ -220,6 +323,14 @@ def _format_detail_number(value) -> str:
 
 
 def _load_param_snapshot(output_dir: Optional[Path]) -> dict:
+    """Load contamination parameter snapshot near a run output directory.
+
+    Args:
+        output_dir: Run output directory.
+
+    Returns:
+        Dictionary of parameter sets or an empty dict if not found/invalid.
+    """
     if output_dir is None:
         return {}
     candidate_paths = [
@@ -238,6 +349,16 @@ def _load_param_snapshot(output_dir: Optional[Path]) -> dict:
 
 
 def _coerce_numeric_like(value):
+    """Coerce various string/number values into floats or normalized strings.
+
+    Handles NaNs, 'inf', 'infinity', and numeric strings.
+
+    Args:
+        value: Arbitrary value.
+
+    Returns:
+        Float, cleaned string, or None if the value is empty/NaN.
+    """
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
     text = str(value).strip().lower()
@@ -252,6 +373,15 @@ def _coerce_numeric_like(value):
 
 
 def _values_match(left, right) -> bool:
+    """Compare two values, treating numeric equivalence and 'inf' robustly.
+
+    Args:
+        left: First value.
+        right: Second value.
+
+    Returns:
+        True if they match within tolerance, False otherwise.
+    """
     left_value = _coerce_numeric_like(left)
     right_value = _coerce_numeric_like(right)
     if left_value is None or right_value is None:
@@ -264,6 +394,15 @@ def _values_match(left, right) -> bool:
 
 
 def _find_matching_param_set(param_store: dict, scenario_row: pd.Series) -> str:
+    """Find the name of a parameter set that matches scenario parameters.
+
+    Args:
+        param_store: Parameter-store dictionary.
+        scenario_row: Scenario row (Series) with /alpha, /beta, /theta columns.
+
+    Returns:
+        Name of the matching parameter set, or an empty string if none match.
+    """
     alpha_cols = [col for col in scenario_row.index if col.endswith("/alpha")]
     beta_cols = [col for col in scenario_row.index if col.endswith("/beta")]
     theta_cols = [col for col in scenario_row.index if col.endswith("/theta")]
@@ -298,6 +437,16 @@ def _find_matching_param_set(param_store: dict, scenario_row: pd.Series) -> str:
 
 
 def _format_param_details(param_store: dict, param_name: str) -> str:
+    """Format contamination parameter details for display.
+
+    Args:
+        param_store: Parameter-store dictionary.
+        param_name: Name of the parameter set.
+
+    Returns:
+        A human-readable description combining alpha, beta, theta,
+        and average contamination rate when available.
+    """
     if not param_name:
         return "n/a"
     param_value = param_store.get(param_name)
@@ -350,6 +499,16 @@ def _format_param_details(param_store: dict, param_name: str) -> str:
 
 
 def _render_run_details(results_df: pd.DataFrame, all_runs_df: Optional[pd.DataFrame]) -> None:
+    """Render a summary of the scenario setup used for the current run.
+
+    Uses the scenario_table.csv (if available) plus the parameter store
+    to show which consignment file, parameter set, and compliance policy
+    were applied for each scenario.
+
+    Args:
+        results_df: Scenario-level results DataFrame from the pipeline.
+        all_runs_df: Per-run DataFrame (unused here, included for signature consistency).
+    """
     output_dir = Path(state["run_output_dir"]) if state.get("run_output_dir") else None
     scenario_table_path = output_dir.parent / "scenario_table.csv" if output_dir is not None else None
     param_store = _load_param_snapshot(output_dir)
@@ -390,6 +549,18 @@ def _render_consignments_visual(
     statistic_label: str = "Mean",
     record_agg: str = "mean",
 ) -> None:
+    """Render stacked bar charts of action outcomes by level and scenario.
+
+    Levels include Consignment, Inspection (if available), Sample (if
+    available), and Plant.
+
+    Args:
+        action_results_source: DataFrame with scenario-level metrics.
+        total_consignments: Total consignments per replication (for derived metrics).
+        inspection_action_runs_df: Optional record-level action DataFrame.
+        statistic_label: Label describing the aggregation (e.g., "Mean").
+        record_agg: Aggregation method for record-level metrics (e.g., "mean").
+    """
     render_labeled_help(
         "Simulation summary",
         f"Shows the {statistic_label.lower()} percentage of clean inspected, clean not inspected, intercepted, and slipped items across consignment, inspection, sample, and plant levels for each scenario.",
@@ -771,6 +942,7 @@ saved_output_files = state.get("run_output_files") or []
 selected_experiment_dir = selected_experiment.parent if selected_experiment else None
 latest_output_dir = _latest_output_run_dir(selected_experiment_dir)
 all_runs_df = _load_all_runs_df(latest_output_dir)
+scenario_table_df = _load_scenario_table_df(latest_output_dir)
 inspection_action_runs_df = _load_inspection_action_runs_df(latest_output_dir)
 saved_output_dir = state.get("run_output_dir")
 if latest_output_dir is not None:
@@ -785,6 +957,28 @@ if saved_output_dir:
         f"Latest output: `{output_dir_path.name}` in `tmp/experiments/{output_dir_path.parent.parent.name}`. "
         f"Files: {output_file_names}."
     )
+    try:
+        report_bytes = build_run_report_docx_bytes(
+            results_df=results_df,
+            all_runs_df=all_runs_df,
+            scenario_table_df=scenario_table_df,
+            inspection_action_runs_df=inspection_action_runs_df,
+            metadata={
+                "experiment": output_dir_path.parent.name,
+                "output_dir": str(output_dir_path),
+            },
+        )
+        st.download_button(
+            "Download Run Report (.docx)",
+            data=report_bytes,
+            file_name=f"{output_dir_path.parent.name}_run_report.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            type="primary",
+        )
+    except ImportError:
+        st.info("Word report export is currently unavailable.")
+    except Exception as exc:  # pylint: disable=broad-except
+        st.warning(f"Unable to build run report: {exc}")
 
 _render_run_details(results_df, all_runs_df)
 
@@ -875,14 +1069,6 @@ if simulation_summary_runs_source is not None and simulation_summary_record_runs
 
 st.header("Results Summary")
 st.write("Review the scenario-level results, progress details, and aggregated slippage outcomes from the completed run.")
-render_labeled_help(
-    "Results Summary",
-    "Review the combined scenario results after the pipeline finishes, including slippage, inspection workload, and action-level outcomes.",
-)
-render_labeled_help(
-    "Expand all sections",
-    "Open the slippage, inspection workload, and action level sections at the same time.",
-)
 expand_all_summary_sections = st.toggle(
     "Expand all sections",
     value=False,

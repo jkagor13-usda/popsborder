@@ -29,7 +29,7 @@ from popsborder.inspections import normalize_rbs_variables_against_consignment, 
 # Import utility functions for contamination module
 from slippage_model_utils.r_script_wrapper import *
 from slippage_model_utils.clarke_model_support_functions import *
-from slippage_model_utils.engineered_feature_creator import  create_engineered_features
+from slippage_model_utils.engineered_feature_creator import  create_engineered_features, map_group_to_shortest_name
 from slippage_model_utils.paths import BoxPaths, DefaultPaths
 from pathlib import Path
 import pickle
@@ -47,6 +47,9 @@ def main():
     shared_ppq_data_path = box_paths.shared_ppq_data()
     model_testing_data_path = box_paths.model_testing_data_folder()
     data_dir = default_paths.slippage_data_dir()
+    pis_data_train = val_data_path / 'train.csv'
+    pis_data_train2 = val_data_path / 'training_data_for_test_set.csv'
+    pis_data_test_path = val_data_path / 'test.csv'
 
     ### Configuration file  specification
     config_file = "config_test.yml"
@@ -73,35 +76,75 @@ def main():
     # Load producer group mapping
     producer_group_mapping = pd.read_csv(producer_group_mapping_path)
 
+    # Define synthetically generated data file name
+    synthetic_data_file_name = "Synthetic_Bas_TEST.csv"
+
     ### Synthetic data generation
     historical = False
-    num_consignments_to_simulate = 5 # Added input parameter to be the number of consignments you want simulated
+    num_consignments_to_simulate = 5
     synthetic_data_generator = SyntheticConsignmentDataGenerator(config=config,
                                                                  producer_group_mapping=producer_group_mapping,
                                                                  input_data_file=pis_data_updated)
-
+    synth_out_path = data_dir / synthetic_data_file_name
     if historical:
-        included_inspection_nums = synthetic_data_generator.input_data["INSPECTION_NUMBER"].sample(n=num_consignments_to_simulate)
-        synth_data = synthetic_data_generator.input_data[synthetic_data_generator.input_data["INSPECTION_NUMBER"].isin(included_inspection_nums)]
-        synth_data.loc[:, 'Row_ID'] = 'CR-' + (synth_data.index + 1).astype(str)
-        synth_out_path = data_dir / "Historical_PIS_SampleQuantity.csv"
-        config["consignment"]["input_file"]["file_name"] = "development_files/slippage_data/Historical_PIS_SampleQuantity.csv"
+        synth_data = pd.read_csv(pis_data_train)
+        config["consignment"]["input_file"]["file_name"] = str(synth_out_path)
     else:
+        print(
+            f'\nStarting Consignment Generation Process of {num_consignments_to_simulate} Requested Consignments...')
         synth_data = synthetic_data_generator.generate_from_input_data(
             n_consignments=num_consignments_to_simulate,
             sampling_method="sequential"
         )
-        synth_out_path = data_dir / "Synthetic_PIS_SampleQuantity.csv"
-        config["consignment"]["input_file"]["file_name"] = "development_files/slippage_data/Synthetic_PIS_SampleQuantity.csv"
+        config["consignment"]["input_file"]["file_name"] = str(synth_out_path)
+    synth_data.loc[:, 'Row_ID'] = 'CR-' + (synth_data.index + 1).astype(str)
 
-    # # Pull in the VariableCreator object to use R code to create engineered columns
+    ### Creating of Engineered Features ###
+    # Create features from the R script using the R wrapper
+    creator = RVariableCreator()
+
+    # Read in training data used to create producer and importer top variables
+    dt_train = pd.read_csv(pis_data_train2)
+
+    print(f'  Cleaning (and grouping where applicable) Categorical Names')
+    print(f'      Cleaning Producer Name')
+    synth_data['PRODUCER_NAME_RAW'] = synth_data['PRODUCER_NAME']
+    synth_data['PRODUCER_NAME1'] = creator.batch_basic_text_preproc(text_fields=synth_data['PRODUCER_NAME_RAW'])
+
+    producer_group_mapping = producer_group_mapping.rename(
+        columns={"PRODUCER_NAME": "name", "grouping": "group"}
+    )
+
+    print(f'      Creating producer group mappings')
+    synth_data = creator.entity_resolution(
+        df=synth_data,
+        entity_resolution_lookup_table=producer_group_mapping,
+        use_parquet=False,  # or True, as you prefer
+    )
+
+    print(f'      Cleaning Importer Name')
+    # Create a raw IMPORTER_NAME column with the original importer name
+    synth_data['IMPORTER_NAME_RAW'] = synth_data['IMPORTER_NAME']
+
+    # Update the IMPORTER_NAME column with the cleaned version.
+    synth_data['IMPORTER_NAME1'] = creator.batch_basic_text_preproc(synth_data['IMPORTER_NAME_RAW'])
+
+    # Reconstruct risk units based on configuration specification
+    synth_data['PRODUCER_NAME'] = synth_data['PRODUCER_GROUP_NAME1']
+    synth_data['IMPORTER_NAME'] = synth_data['IMPORTER_NAME1']
+    synth_data = construct_risk_units(config=config, data=synth_data)
+
+    # Pull in the VariableCreator object to use R code to create engineered columns based on created risk units
     synth_data = create_engineered_features(
         synth_data=synth_data,
+        dt_train=dt_train,
         producer_group_mapping=producer_group_mapping
     )
 
-    synth_data = construct_risk_units(config=config, data=synth_data)
-    synth_data.to_parquet(data_dir / "Synthetic_PIS_SampleQuantity.parquet", compression='snappy', index=False)
+    # Create a producer_group column
+    synth_data['producer_group'] = synth_data['PRODUCER_GROUP_TOP']
+    synth_data['IMPORTER_NAME'] = synth_data['IMPORTER_NAME_TOP']
+
     synth_data.to_csv(synth_out_path)
 
 
@@ -118,7 +161,7 @@ def main():
     ####################
 
     # # Load in PIS Data
-    df_pis_data = pd.read_csv(pis_data_updated)
+    df_pis_data = pd.read_csv(pis_data_train)
 
     ### Generate clarke inputs via input data
     inputs_by_quantity = gen_clarke_model_inputs(df_pis_data)
@@ -278,76 +321,105 @@ def main():
 
     config["inspection"]["compliance_table"]['file_name'] = data_dir / 'compliance_lookup_final.pkl'
 
-
-
     temp_compliance_table = pd.read_csv(compliance_table_path)
 
+    # Helper to count "Reference" in a column
+    def count_reference(df: pd.DataFrame, col: str) -> int:
+        return (df[col] == "Reference").sum()
+
+    # --- PRODUCER GROUP ---
+
     if "prod_group_name" in temp_compliance_table.columns:
+        col = "producer_group"
+        comp_col = "prod_group_name"
+
+        before_ref = count_reference(synth_data, col)
+
         # Find values in synth_data that are NOT in temp_compliance_table
-        mask = ~synth_data["producer_group"].isin(temp_compliance_table["prod_group_name"])
+        mask = ~synth_data[col].isin(temp_compliance_table[comp_col])
 
         # Collect the values that will be replaced (unique)
-        replaced_values = synth_data.loc[mask, "producer_group"].unique()
+        replaced_values = synth_data.loc[mask, col].unique()
 
         # Create a DataFrame for these values
         replaced_df = pd.DataFrame(replaced_values, columns=["Replaced_Producer_Group"])
-
-        # Write to CSV
         replaced_df.to_csv(data_dir / "replaced_producer_group_from_prod_group_name.csv", index=False)
 
         # Replace those values with "Reference"
-        synth_data.loc[mask, "producer_group"] = "Reference"
+        synth_data.loc[mask, col] = "Reference"
+
+        after_ref = count_reference(synth_data, col)
+
+        print(f"[Producer groups vs {comp_col}] 'Reference' count before: {before_ref}, after: {after_ref}")
 
         # Check if ALL values in synth_data are in temp_compliance_table
-        all_present = synth_data["producer_group"].isin(temp_compliance_table["prod_group_name"]).all()
-
+        all_present = synth_data[col].isin(temp_compliance_table[comp_col]).all()
         if all_present:
             print("✓ All producer groups are valid!")
         else:
             print("✗ Some producer groups are missing from temp_compliance_table")
+
     elif "PRODUCER_GROUP_TOP" in temp_compliance_table.columns:
+        col = "producer_group"
+        comp_col = "PRODUCER_GROUP_TOP"
+
+        before_ref = count_reference(synth_data, col)
+
         # Find values in synth_data that are NOT in temp_compliance_table
-        mask = ~synth_data["producer_group"].isin(temp_compliance_table["PRODUCER_GROUP_TOP"])
+        mask = ~synth_data[col].isin(temp_compliance_table[comp_col])
 
         # Collect the values that will be replaced (unique)
-        replaced_values = synth_data.loc[mask, "producer_group"].unique()
+        replaced_values = synth_data.loc[mask, col].unique()
 
         # Create a DataFrame for these values
         replaced_df = pd.DataFrame(replaced_values, columns=["Replaced_Producer_Group"])
-
-        # Write to CSV
         replaced_df.to_csv(data_dir / "replaced_producer_group_from_PRODUCER_GROUP_TOP.csv", index=False)
 
         # Replace those values with "Reference"
-        synth_data.loc[mask, "producer_group"] = "Reference"
+        synth_data.loc[mask, col] = "Reference"
+
+        after_ref = count_reference(synth_data, col)
+
+        print(f"[Producer groups vs {comp_col}] 'Reference' count before: {before_ref}, after: {after_ref}")
 
         # Check if ALL values in synth_data are in temp_compliance_table
-        all_present = synth_data["producer_group"].isin(temp_compliance_table["PRODUCER_GROUP_TOP"]).all()
-
+        all_present = synth_data[col].isin(temp_compliance_table[comp_col]).all()
         if all_present:
             print("✓ All producer groups are valid!")
         else:
             print("✗ Some producer groups are missing from temp_compliance_table")
+
+    # --- IMPORTER NAME ---
+
     if "IMPORTER_NAME_TOP" in temp_compliance_table.columns:
+        col = "IMPORTER_NAME"
+        comp_col = "IMPORTER_NAME_TOP"
+
+        before_ref = count_reference(synth_data, col)
+
         # Find values in synth_data that are NOT in temp_compliance_table
-        mask = ~synth_data["IMPORTER_NAME"].isin(temp_compliance_table["IMPORTER_NAME_TOP"])
+        mask = ~synth_data[col].isin(temp_compliance_table[comp_col])
 
         # Collect the replaced rows (both columns)
         replaced_df = synth_data.loc[mask, ["IMPORTER_NAME", "IMPORTER_NAME_RAW"]].drop_duplicates()
-
-        # Rename columns for clarity
-        replaced_df.rename(columns={"IMPORTER_NAME": "Replaced_Importer_Name",
-                                    "IMPORTER_NAME_RAW": "Raw_Importer_Name"}, inplace=True)
-
-        # Write to CSV
+        replaced_df.rename(
+            columns={
+                "IMPORTER_NAME": "Replaced_Importer_Name",
+                "IMPORTER_NAME_RAW": "Raw_Importer_Name",
+            },
+            inplace=True,
+        )
         replaced_df.to_csv(data_dir / "replaced_importer_names.csv", index=False)
 
         # Replace those values with "Reference"
-        synth_data.loc[mask, "IMPORTER_NAME"] = "Reference"
+        synth_data.loc[mask, col] = "Reference"
+
+        after_ref = count_reference(synth_data, col)
+
+        print(f"[Importer names vs {comp_col}] 'Reference' count before: {before_ref}, after: {after_ref}")
 
         # Check if ALL values in synth_data are in temp_compliance_table
-        all_present = synth_data["IMPORTER_NAME"].isin(temp_compliance_table["IMPORTER_NAME_TOP"]).all()
-
+        all_present = synth_data[col].isin(temp_compliance_table[comp_col]).all()
         if all_present:
             print("✓ All importer names are valid!")
         else:

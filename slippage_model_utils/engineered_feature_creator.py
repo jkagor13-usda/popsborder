@@ -1,191 +1,189 @@
 # © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 from slippage_model_utils.r_script_wrapper import RVariableCreator
 import pandas as pd
-from pathlib import Path
-import re
+from typing import Dict
 
 
+def build_shortest_name_lookup(producer_group_mapping: pd.DataFrame) -> Dict[str, str]:
+    """Build a lookup from group ID to shortest name in a mapping table.
 
-def preprocess_producer_name(name, suffix_string=None, prefix_string=None):
-    """
-    Preprocess a single producer name according to specified rules.
-    Mimics the R function basic_text_preproc.
-
-    Args:
-        name: Raw producer name string
-        suffix_string: Custom regex pattern for suffixes to remove
-        prefix_string: Custom regex pattern for prefixes to remove
-
-    Returns:
-        Preprocessed and truncated name (max 15 chars)
-    """
-    # Convert to string and lowercase FIRST
-    text = str(name).lower() if pd.notna(name) else name
-
-    # Handle NA/Not Selected - convert to "missing"
-    if pd.isna(text) or text.strip() == "not selected":
-        return "missing"  # Changed from 'NA/NOT SELECTED' to match R
-
-    # Remove punctuation (this happens BEFORE box removal in R)
-    text = re.sub(r'[^\w\s]', '', text)
-
-    # Remove end of string starting with "box"
-    # R code finds position of "box" and truncates there
-    box_match = re.search(r'box', text)
-    if box_match:
-        box_position = box_match.start()
-        if box_position > 0:
-            text = text[:box_position]
-        # If box_position == 0, keep the whole string (mimics R's if_else logic)
-
-    # Remove stand-alone numeric sequences
-    text = re.sub(r'\b\d+\b', '', text)
-
-    # Replace multiple blanks with single blank AND strip leading/trailing
-    # (str_squish in R does both)
-    text = re.sub(r'\s+', ' ', text).strip()
-
-    # Define default suffix pattern if not provided
-    if suffix_string is None:
-        # Note: R uses " sa| s a|sociedad" (space before "sa", no space before "|sociedad")
-        suffix_string = r'( sa| s a|sociedad anonima| inc| llc| ltd| ltda| cv| rl| co| co ltd| corp| bv| b v| corporation| company| limited)$'
-
-    # Define default prefix pattern if not provided
-    if prefix_string is None:
-        prefix_string = r'^(mr |m r )'
-
-    # Remove suffixes and prefixes
-    text = re.sub(suffix_string, '', text)
-    text = re.sub(prefix_string, '', text)
-
-    # Final cleanup after suffix/prefix removal
-    text = re.sub(r'\s+', ' ', text).strip()
-
-    # Truncate to first 15 characters
-    text = text[:15]
-
-    return text
-
-
-def create_producer_mapping(producer_group_mapping_df, use_shortest_name=True):
-    """
-    Create a mapping dictionary from producer names to groups.
+    For each unique value in ``producer_group_mapping["group"]``, this function
+    finds the shortest corresponding ``"name"`` string (by character length,
+    breaking ties using alphabetical order) and returns a mapping.
 
     Args:
-        producer_group_mapping_df: DataFrame with 'PRODUCER_NAME' and 'grouping' columns
-        use_shortest_name: If True, use shortest raw name as group label instead of numeric grouping
+        producer_group_mapping: DataFrame with at least ``"name"`` and
+            ``"group"`` columns.
 
     Returns:
-        Dictionary mapping preprocessed producer names to group labels
+        Dictionary of the form ``{group_value_as_str: shortest_name}``.
+
+    Raises:
+        ValueError: If required columns are missing from
+            ``producer_group_mapping``.
     """
-    # Create a copy to avoid modifying original
-    mapping_df = producer_group_mapping_df.copy()
+    # Ensure required columns exist
+    required = {"name", "group"}
+    missing = required - set(producer_group_mapping.columns)
+    if missing:
+        raise ValueError(f"producer_group_mapping missing columns: {missing}")
 
-    # Preprocess all producer names in the mapping file
-    mapping_df['producer_name_preprocessed'] = mapping_df['PRODUCER_NAME'].apply(preprocess_producer_name)
+    # Drop NA in required columns
+    pgm = producer_group_mapping.dropna(subset=["name", "group"]).copy()
 
-    # If using shortest name as group label
-    if use_shortest_name:
-        # For each group, find the shortest original name
-        group_labels = (
-            mapping_df.groupby('grouping')['PRODUCER_NAME']
-            .apply(lambda x: min(x, key=len))
-            .to_dict()
-        )
-        # Map each preprocessed name to its group's shortest name
-        mapping_df['group_label'] = mapping_df['grouping'].map(group_labels)
-    else:
-        # Use the numeric grouping as-is
-        mapping_df['group_label'] = mapping_df['grouping']
+    # Coerce 'group' to string to standardize key type
+    pgm["group_str"] = pgm["group"].astype(str)
 
-    # Create the mapping dictionary
-    producer_to_group = mapping_df.set_index('producer_name_preprocessed')['group_label'].to_dict()
-
-    return producer_to_group
-
-
-def apply_producer_grouping(input_data, producer_group_mapping_df, use_shortest_name=True):
-    """
-    Apply producer name preprocessing and grouping to input data.
-
-    Args:
-        input_data: DataFrame with 'PRODUCER_NAME' column
-        producer_group_mapping_df: DataFrame with 'PRODUCER_NAME' and 'grouping' columns
-        use_shortest_name: If True, use shortest raw name as group label.  If False, use the numeric grouping number
-
-    Returns:
-        DataFrame with added 'producer_name_preprocessed' and 'producer_group' columns
-    """
-    # Create a copy to avoid modifying original
-    data = input_data.copy()
-
-    merged_data = data.merge(
-        producer_group_mapping_df,
-        on='PRODUCER_NAME',
-        how='left'  # 'left' keeps all rows from 'data' and adds 'grouping' where possible
+    # Compute length of name and pick shortest per group_str
+    shortest = (
+        pgm.assign(name_len=pgm["name"].astype(str).str.len())
+           .sort_values(["group_str", "name_len", "name"])
+           .drop_duplicates(subset=["group_str"], keep="first")
     )
 
-    # Identify shortest name in the group mapping
-    shortest_name_per_group = (
-        producer_group_mapping_df
-        .groupby('grouping')['PRODUCER_NAME']
-        .apply(lambda names: min([preprocess_producer_name(n) for n in names], key=len))
-        .reset_index()
-        .rename(columns={'PRODUCER_NAME': 'producer_group'})
-    )
+    # Build mapping: group_str -> name
+    return dict(zip(shortest["group_str"], shortest["name"]))
 
-    # Merge the shortest name input into the merged_data
-    final_merged = merged_data.merge(shortest_name_per_group, on='grouping', how='left')
 
-    # Fill any producers without matching with a no group match indicator string
-    final_merged['producer_group'] = final_merged['producer_group'].fillna('NO_GROUP_MATCH')
+def map_group_to_shortest_name(
+    synth_data: pd.DataFrame,
+    group_col: str,
+    producer_group_mapping: pd.DataFrame,
+    output_col: str = None,
+    default_value: str = "Reference",
+) -> pd.DataFrame:
+    """Map group IDs to the shortest name for that group.
 
-    return final_merged
+    Group IDs in ``synth_data[group_col]`` are mapped to the shortest name
+    per group based on ``producer_group_mapping``. All group values are
+    coerced to strings for alignment, and missing mappings are filled with a
+    default label.
 
+    Args:
+        synth_data: DataFrame containing a column of group IDs (e.g.,
+            ``"PRODUCER_GROUP_TOP"``).
+        group_col: Name of the column in ``synth_data`` that contains group
+            values (numeric or string).
+        producer_group_mapping: DataFrame with ``"name"`` and ``"group"``
+            columns used to derive shortest names per group.
+        output_col: Name of the output column to store mapped names. If None,
+            ``group_col`` is overwritten in-place.
+        default_value: Value used for group IDs not found in the mapping
+            (e.g., ``"Reference"``).
+
+    Returns:
+        The input ``synth_data`` with the mapped column added or overwritten.
+
+    Raises:
+        ValueError: If ``group_col`` is not found in ``synth_data``.
+    """
+    if group_col not in synth_data.columns:
+        raise ValueError(f"{group_col} not found in synth_data")
+
+    # Build lookup {group_str -> shortest name}
+    group_to_shortest_name = build_shortest_name_lookup(producer_group_mapping)
+
+    # Determine target column name
+    if output_col is None:
+        output_col = group_col
+
+    # Coerce group_col to string to align with mapping keys
+    group_values_str = synth_data[group_col].astype(str)
+
+    # Map; values not found will become NaN
+    mapped = group_values_str.map(group_to_shortest_name)
+
+    # Fill missing mappings with default_value (e.g. "Reference")
+    mapped = mapped.fillna(default_value)
+
+    synth_data[output_col] = mapped
+
+    return synth_data
 
 
 def create_engineered_features(
     synth_data: pd.DataFrame = None,
-    producer_group_mapping: pd.DataFrame=None,
+    dt_train: pd.DataFrame = None,
+    producer_group_mapping: pd.DataFrame = None,
 ) -> pd.DataFrame:
+    """Create engineered features for synthetic PIS/RBS data.
 
+    This function:
+
+    1. Validates that ``synth_data`` is provided.
+    2. Uses the R-based ``RVariableCreator`` to generate:
+       * ``PRODUCER_GROUP_TOP`` strata features,
+       * ``IMPORTER_NAME_TOP`` strata features,
+       * binary quantity features per risk unit.
+    3. Merges the generated quantity-binary features into ``synth_data``,
+       after dropping any existing conflicting columns.
+
+    Args:
+        synth_data: Synthetic data DataFrame with risk-unit level records.
+        dt_train: Training DataFrame used by the R script for strata feature
+            generation.
+        producer_group_mapping: Optional producer grouping DataFrame (not used
+            directly here but may be required upstream).
+
+    Returns:
+        Updated ``synth_data`` DataFrame with engineered features added.
+
+    Raises:
+        ValueError: If ``synth_data`` is None.
+    """
     if synth_data is None:
         raise ValueError('Synthetic Data Passed is None')
 
-
     print(f'\nCreating Engineered Features...')
-    print(f'   Creating producer mappings')
-    # Create producer mappings
-    synth_data = apply_producer_grouping(
-        synth_data,
-        producer_group_mapping,
-        use_shortest_name=True  # Set to False if wanting to use numeric grouping labels
-    )
 
     print(f'   Creating features generated by the R script')
     # Create features from the R script using the R wrapper
     creator = RVariableCreator()
 
-    print(f'      Cleaning Importer Name')
-    # Create a raw IMPORTER_NAME column with the original importer name
-    synth_data['IMPORTER_NAME_RAW'] = synth_data['IMPORTER_NAME']
+    print(f'      Creating PRODUCER_GROUP_TOP feature')
+    synth_data = creator.generate_producer_top_strata_features(
+        df=synth_data,
+        dt_train=dt_train,
+        max_strat_count=50,
+        min_action_rate=0.02,
+        min_records=5,
+        use_parquet=False,
+    )
 
-    # Update the IMPORTER_NAME column with the cleaned version.
-    synth_data['IMPORTER_NAME'] = creator.batch_basic_text_preproc(synth_data['IMPORTER_NAME_RAW'])
+    print(f'      Creating IMPORTER_NAME_TOP feature')
+    synth_data = creator.generate_importer_top_strata_features(
+        df=synth_data,
+        dt_train=dt_train,
+        max_strat_count=50,
+        min_action_rate=0.02,
+        min_records=5,
+        use_parquet=False,
+    )
 
     print(f'      Creating Quantity Binary Features')
     # Fall back to CSV if needed (smaller data, compatibility)
+    key_col = "RISK_UNIT"
     quantity_binary_variables = creator.generate_quantity_binaries(
         df=synth_data,
         quantity_threshold=200,
-        group_cols=['RISK_UNIT'],
+        group_cols=[key_col],
         use_parquet=False
     )
 
+    # Identify non-key columns coming from quantity_binary_variables
+    new_cols = [c for c in quantity_binary_variables.columns if c != key_col]
+
+    # Drop any of those columns from synth_data if they already exist
+    cols_to_drop = [c for c in new_cols if c in synth_data.columns]
+    if cols_to_drop:
+        synth_data = synth_data.drop(columns=cols_to_drop)
+
+    # 4. Merge – no name conflict → no _x/_y suffixes
+    # TODO: Avoid using merge for larger dataframes
     synth_data = synth_data.merge(
         quantity_binary_variables,
-        on='RISK_UNIT',
-        how='left'
+        on=key_col,
+        how='left',
     )
 
     print(f'      Done')

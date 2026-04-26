@@ -1,6 +1,6 @@
 # © 2025 The Johns Hopkins University Applied Physics Laboratory LLC
 # Core scientific and data packages
-numpy==2.3.5
+numpy==2.4.4
 pandas==2.3.3
 scipy==1.17.0
 scikit-learn==1.8.0
@@ -20,3 +20,6 @@ pytest-datadir==1.8.0
 streamlit==1.54.0
 chardet==5.2.0
 plotly==6.5.2
+python-docx==1.2.0
+matplotlib==3.10.7
+altair==5.3.0

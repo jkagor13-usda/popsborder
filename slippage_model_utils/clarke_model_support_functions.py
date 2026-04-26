@@ -6,23 +6,33 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from scipy.optimize import minimize_scalar
 from scipy import stats
 import pandas as pd
 from collections import defaultdict
-
-
-
-
 from dataclasses import dataclass, asdict
-from typing import List, Tuple, Optional
 from slippage_model_utils.references import REQUIRED_FIELDS_CLARK_INPUT_GENERATION
 
 
 @dataclass
 class ClarkeModelInputs:
+    """Container for inputs to the Clarke beta-binomial (BB) group model.
+
+    Attributes:
+        ty: Unique counts of groups testing positive.
+        freq: Frequencies corresponding to each entry in ``ty``.
+        b: Number of groups per consignment (e.g., boxes per inspection).
+        B: Number of consignments (inspections).
+        Nbar: Average items per group (e.g., plants per sampling unit).
+        theta: Clustering hyperparameter for the beta distribution.
+        lambda_test: Extra tuning or tracking parameter.
+        R: Number of Monte Carlo / sensitivity runs.
+        start_val: Optimizer start values as (log-alpha, log-beta).
+        se: If True, request standard errors from the optimizer/model.
+    """
+
     # required by the BB model
     ty: List[int]                  # unique counts of groups testing positive
     freq: List[int]                # frequency per ty
@@ -36,13 +46,29 @@ class ClarkeModelInputs:
     se: bool                       # request standard errors
 
     def to_kwargs(self) -> dict:
-        """Convenience: kwargs for your BB model call (omit DataFrame)."""
+        """Return a kwargs dict suitable for calling the BB model.
+
+        This converts the dataclass to a dictionary and removes any extra
+        keys (e.g., internal-only attributes) that the BB model does not
+        expect.
+
+        Returns:
+            Dictionary of keyword arguments for the model call.
+        """
         d = asdict(self)
         d.pop("action_summary", None)
         return d
 
     @staticmethod
     def default() -> 'ClarkeModelInputs':
+        """Return a ClarkeModelInputs instance with default values.
+
+        The defaults include empty ``ty`` and ``freq``, and generic values for
+        group counts, clustering, and optimizer settings.
+
+        Returns:
+            A ClarkeModelInputs instance initialized with defaults.
+        """
         return ClarkeModelInputs(
             ty=[],
             freq=[],
@@ -57,8 +83,38 @@ class ClarkeModelInputs:
         )
 
 
-
 def get_inputs(df_pis_data_filtered: pd.DataFrame):
+    """Compute ClarkeModelInputs grouped by quantity deciles from PIS data.
+
+    This function:
+
+    1. Validates required columns.
+    2. Filters outliers in ``TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT``,
+       ``REQUIRED_NUMBER_OF_BOXES``, and ``QUANTITY`` using an IQR rule.
+    3. Bins consignments into deciles by ``QUANTITY``.
+    4. For each decile, computes:
+
+       * ``b``: groups per consignment (max required boxes).
+       * ``B``: mean total sampling units per risk unit (rounded).
+       * ``Nbar``: average items per group (plants per sampling unit).
+       * ``ty`` and ``freq``: unique counts of groups testing positive and
+         their frequencies.
+
+    The result is a mapping whose keys are decile intervals (as tuples) and
+    whose values are ClarkeModelInputs instances.
+
+    Args:
+        df_pis_data_filtered: PIS DataFrame already filtered to records of
+            interest; must contain the fields listed in
+            ``REQUIRED_FIELDS_CLARK_INPUT_GENERATION``.
+
+    Returns:
+        Dictionary mapping quantity-decile intervals to ClarkeModelInputs
+        instances.
+
+    Raises:
+        KeyError: If any required columns are missing.
+    """
     print("   Determining Inputs 'b', 'B', 'Nbar', 'ty, and 'freq'")
 
     # ---- Required columns ----
@@ -190,32 +246,37 @@ def get_inputs(df_pis_data_filtered: pd.DataFrame):
 def gen_clarke_model_inputs(
     df_pis_data: pd.DataFrame
 ) -> dict[Any, Any]:
-    """
-    Function to construct inputs for the Clarke/BB-group model:
-    ty: List[int]                  # unique counts of groups testing positive
-    freq: List[int]                # frequency per ty
-    b: int                         # groups per consignment (boxes per inspection)
-    B: int                         # number of consignments (inspections)
-    Nbar: int                      # items per group
-    theta: float                   # clustering hyperparameter
-    lambda_default: float          # clustering hyperparameter
-    R: int                         # MC / sensitivity runs
-    start_val: Tuple[float, float]  # optimizer start (log-alpha, log-beta)
-    se: bool                       # request standard errors
+    """Construct ClarkeModelInputs for the Clarke/BB group model.
 
+    This is a wrapper that logs progress and calls :func:`get_inputs` to
+    build inputs for all quantity decile groups.
 
-    INPUTS
-    df_pis_data:        Pandas Dataframe with columns:
-                        - INSPECTION_NUMBER (Unique consignment/shipment ID)
-                        - RISK_UNIT (Risk Unit/Calculator Entry corresponding to that inspection unit/commodity line)
-                        - action (0/1 per inspection unit/commodity line)
-                        - TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT (How many sampling units corresponding to that risk unit)
-                        - QUANTITY (Amount of 'lowest level unit', e.g. plant unit, corresponding to that inspection unit/commodity line)
-                        - REQUIRED_NUMBER_OF_BOXES (Number of Sampling Units Actually Sampled for the corresponding Risk Unit)
+    The resulting dictionary maps quantity-decile intervals to
+    ClarkeModelInputs instances, where each instance includes:
 
+    * ``ty``: unique counts of groups testing positive,
+    * ``freq``: frequency per ``ty``,
+    * ``b``: groups per consignment (boxes per inspection),
+    * ``B``: number of consignments (inspections),
+    * ``Nbar``: items per group,
+    * ``theta``: clustering hyperparameter,
+    * ``lambda_test``: extra tuning parameter,
+    * ``R``: number of Monte Carlo runs,
+    * ``start_val``: optimizer start values,
+    * ``se``: whether to request standard errors.
 
-    OUTPUTS
-    ClarkeModelInputs data class with the appropriate values listed above.
+    Args:
+        df_pis_data: PIS DataFrame with at least the columns:
+            * ``INSPECTION_NUMBER``
+            * ``RISK_UNIT``
+            * ``action`` (0/1 per inspection unit/commodity line)
+            * ``TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT``
+            * ``QUANTITY``
+            * ``REQUIRED_NUMBER_OF_BOXES``.
+
+    Returns:
+        Dictionary mapping quantity-decile intervals to ClarkeModelInputs
+        instances, as produced by :func:`get_inputs`.
     """
     # Function to generate b, B, and Nbar input parameters
     print(f"Determining All Clarke Model Required Inputs")
