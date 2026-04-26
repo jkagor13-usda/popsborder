@@ -679,7 +679,7 @@ with manual_tab:
     with st.form("inspection_unit_form"):
         c1, c2 = st.columns(2)
         with c1:
-            render_labeled_help("Port of entry", "Port or inspection location assigned to this inspection unit.")
+            render_labeled_help("Plant Inspection Station (PIS)", "PIS assigned to this inspection unit.")
             port = st.selectbox(
                 "Port of entry", # PIS != POE - should we change
                 options=config_ports or ["Miami PIS"],
@@ -697,14 +697,25 @@ with manual_tab:
         render_labeled_help("Propagative material type", "Propagative material type assigned to this inspection unit.")
         material = st.selectbox(
             "Propagative material type",
-            options=config_materials or ["Bulb, Corm, Rhizome, Tuberous Stem; Rooted Plant (including grafted)"], # The UI doesn't show these nor are what shown PM types
+            options=["Budwood/Graftwood (scion)",
+                     "Unrooted Cutting, Bulb, Corm, Rhizome, Tuberous Stem, Tuberous Stem",
+                     "Meristem or Callus Tissue Culture (micropropagated/in vitro culture)",
+                     "Root cutting, crown, or clump, Tuberous Root",
+                     "Rooted Cutting (including air layer)",
+                     "Rooted Plant (including grafted)",
+                     "Unrooted Plant"],
             index=0,
             label_visibility="collapsed",
         )
         render_labeled_help("Pathway", "Transport pathway used for this inspection unit.")
         pathway = st.selectbox(
             "Pathway",
-            ["Air", "Sea", "Land"], # These aren't what we are used to...intentional?
+            ["Airport - Aircraft - Cargo - PIS",
+             "Maritime Port - Vessel - Cargo - PIS",
+             "Airport - Aircraft - Express Carrier - PIS",
+             "Airport - Aircraft - Mail - PIS Mail",
+             "Land Border - Truck - Cargo - PIS"
+             ], # These aren't what we are used to...intentional?
             index=1,
             label_visibility="collapsed",
         )

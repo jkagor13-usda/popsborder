@@ -244,11 +244,10 @@ def _normalize_rows(rows_df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-tabs = st.tabs(["Saved Experiments", "Upload Custom Scenario", "Build Experiments"])
+tabs = st.tabs(["Saved Experiment Packages", "Upload Custom Scenario", "Build Experiments"])
 
 # --- Tab 1: Upload custom scenario -------------------------------------------
 with tabs[0]:
-    st.subheader("Saved experiments")
     st.write("Review saved experiment packages, preview their scenario tables, or remove a package you no longer need.")
     saved_files = list(SCENARIO_ROOT.glob("*/scenario_table.csv"))
 
@@ -256,7 +255,7 @@ with tabs[0]:
         st.info("No experiments saved yet.")
     else:
         render_labeled_help(
-            "Select an experiment set",
+            "Select an experiment package",
             "Choose a saved experiment package to preview its scenario table and optionally delete the entire package directory.",
         )
         sel = st.selectbox(
@@ -269,7 +268,7 @@ with tabs[0]:
             preview = pd.read_csv(sel)
             st.dataframe(preview, use_container_width=True)
             st.caption(f"Path: {sel}")
-            if st.button("Delete this experiment set", type="secondary"):
+            if st.button("Delete this experiment package", type="secondary"):
                 try:
                     shutil.rmtree(sel.parent)
                     st.success(f"Deleted {sel.parent}")
@@ -293,10 +292,10 @@ with tabs[1]:
         label_visibility="collapsed",
     )
     render_labeled_help(
-        "Save as experiment set name",
+        "Save as experiment package name",
         "Name used for the experiment package folder when the uploaded scenario table is saved.",
     )
-    custom_name = st.text_input("Save as experiment set name", value="custom_experiment", label_visibility="collapsed")
+    custom_name = st.text_input("Save as experiment package name", value="custom_experiment", label_visibility="collapsed")
 
     if uploaded:
         try:

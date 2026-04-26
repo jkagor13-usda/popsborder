@@ -16,7 +16,10 @@ GLOSSARY_TERMS = [
     {
         "group": "Consignments",
         "term": "Inspection unit",
-        "definition": "The single lowest, readily-distinguishable taxon, cultivar, or variety that is clearly defined as being from one source and in similar condition on the invoice, packing list, or phytosanitary certificate.",
+        "definition": "The single lowest, readily-distinguishable taxon, cultivar, "
+                      "or variety that is clearly defined as being from one source and "
+                      "in similar condition on the invoice, packing list, or phytosanitary certificate. "
+                      "In PIS inspection data, also known as a commodity line.",
     },
     {
         "group": "Consignments",
@@ -41,12 +44,15 @@ GLOSSARY_TERMS = [
     {
         "group": "Consignments",
         "term": "Producer grouping file",
-        "definition": "An optional CSV file that groups producers; generally this file is used for entity resolition (maps raw names to groups that represent resolved entity names).", # JOE: "before it said so synthetic generation can preserve producer structure"; are groups used in synthetic generation?
+        "definition": "An optional CSV file that groups producers (required if producers are used as feature in model); "
+                      "used for entity resolution (maps raw names to groups that represent resolved entity names). "
+                      "Note: These 'groups' are not used during data-driven consignment generation processes. "
+                      "Raw producers generated, then this mapping is used to resolve them.",
     },
     {
         "group": "Consignments",
         "term": "Port of entry",
-        "definition": "An official location where goods can legally enter the country.", # JOE: before it said "The inspection location assigned to an inspection unit." PIS != POE. Should we change the word on the consignment generation page
+        "definition": "An official location where goods can legally enter the country.",
     },
     {
         "group": "Consignments",
@@ -55,12 +61,12 @@ GLOSSARY_TERMS = [
     },
     {
         "group": "Consignments",
-        "term": "Propagative material type", # Joe - the manual entry page lists PMs that are not the usual PM types. They look like taxa.
+        "term": "Propagative material type",
         "definition": "A class of propogative materials (e.g., unrooted cutting, tissue culture) as defined by PPQ.",
     },
     {
         "group": "Consignments",
-        "term": "Pathway", # Joe - these don't look like the normal pathways. Is this expected?
+        "term": "Pathway",
         "definition": "The transport route used for a consignment (e.g., Airport - Aircraft - Cargo - PIS)",
     },
     {
@@ -90,7 +96,7 @@ GLOSSARY_TERMS = [
     },
     {
         "group": "Consignments",
-        "term": "Gaussian Mixure",
+        "term": "Gaussian Mixture",
         "definition": "An approach to generate synthetic consignments that samples from gaussian distributions", # Joe - Please review
     },
     {
@@ -130,11 +136,6 @@ GLOSSARY_TERMS = [
     },
     {
         "group": "Contamination",
-        "term": "Theta", # Is this needed? I don't see it mentioned anywhere to the user
-        "definition": "A clustering parameter for the contamination model; in manual assignment it is fixed to infinity.",
-    },
-    {
-        "group": "Contamination",
         "term": "Beta-binomial",
         "definition": "The probability distribution used in the app to model uncertain contamination rates.",
     },
@@ -142,11 +143,6 @@ GLOSSARY_TERMS = [
         "group": "Contamination",
         "term": "Beta-binomial Probability Density Function (PDF)",
         "definition": "The chart that visualizes the fitted or saved beta-binomial contamination distribution.",
-    },
-    {
-        "group": "Contamination",
-        "term": "Saved contamination parameter sets", # Is this necessary? I don't see it on the pages & we've already defined a parameter set
-        "definition": "Stored contamination definitions written to the temporary JSON parameter store.", # Is it really temporary? If I relaunch the app, will they be there?
     },
     {
         "group": "Compliance",
@@ -191,17 +187,15 @@ GLOSSARY_TERMS = [
     {
         "group": "Scenarios And Experiments",
         "term": "Experiment package",
-        "definition": "A bundle of scenario rows and associated input files/parameters.",
-    },
-    {
-        "group": "Scenarios And Experiments",
-        "term": "Experiment set", # It is not clear to me if/how this is different than the experiment package
-        "definition": "The named folder that contains one saved experiment package.",
+        "definition": "A bundle of scenarios where a scenario represents a collection"
+                      " of consignments generated (Page 1), "
+                      "contamination parameter sets (Page 2),"
+                      " RBS Compliancy policy (Page 3).",
     },
     {
         "group": "Scenarios And Experiments",
         "term": "Scenario table",
-        "definition": "A table describing the scenario rows for a saved experiment package.",
+        "definition": "A table describing the scenarios of an experiment package.",
     },
     {
         "group": "Scenarios And Experiments",
@@ -249,11 +243,11 @@ GLOSSARY_TERMS = [
     },
     {
         "group": "Simulation",
-        "term": "Shipments per replication", # Why use the term shipments here?
+        "term": "Consignments per replication",
         "definition": "The number of consignments processed in each replication.",
     },
     {
-        "group": "Simulation",
+        "group": "Simulation Results",
         "term": "Simulation summary view",
         "definition": "The control that switches the results to display either mean across replications, median across replications, or a single selected replication.",
     },
@@ -269,18 +263,51 @@ GLOSSARY_TERMS = [
     },
     {
         "group": "Simulation Results",
-        "term": "Action Level Results", # Does it make sense to name this section something else? Like "Interceptions"?
+        "term": "Interceptions",
         "definition": "Results showing intercepted versus slipped outcomes by level.", 
     },
     {
         "group": "Simulation Results",
-        "term": "Contamination Level Results",
-        "definition": "Results showing contaminated versus clean counts and percentages by level.", # Joe - I am going to need some help here. It is not clear to me what I am looking at
+        "term": "Contamination Level Results - Contamination totals by level",
+        "definition": "Results showing number of contaminated units across all consignments averaged across all replications."
+                      " Calculated by summing all of the contaminated units (e.g., plants)"
+                      " within each replication and then dividing by the total number of replications."
+                      " Not contaminated represents the total number of units across all consignments"
+                      " not contaminated averaged across replications (calculated by subtracting the total contaminated from the"
+                      " total number of plants across all consignments for each replication and then divided by the"
+                      " number of replications). 95% intervals represent the 95% confidence intervals using a normal distribution"
+                      " of error.",
     },
     {
         "group": "Simulation Results",
-        "term": "Inspection Workload Level Results",
-        "definition": "Results showing inspection workload and completion metrics.", # Joe - I am going to need some help here. It is not clear to me what I am looking at
+        "term": "Contamination Level Results - Contamination percentages by level",
+        "definition": "Results showing contamination rate across all consignments averaged across all replications."
+                      " Calculated by summing all of the contaminated units across all consignments within a replication (e.g., plants),"
+                      " dividing by the total number of units across all consignments (e.g., total number of plants on all consignments)"
+                      " within each replication to construct the contamination rate for that replication."
+                      " Then those rates are averaged across all replications."
+                      " 95% intervals represent the 95% confidence intervals across replications on this rate using a standard"
+                      " normal distribution of error.",
+    },
+    {
+        "group": "Simulation Results",
+        "term": "Inspection Workload Level Results - Number of units inspected",
+        "definition": "Results showing number of units inspected (e.g., plants) across all consignments averaged across all replications."
+                      " Calculated by summing all of inspected units (e.g., plants)"
+                      " within each replication and then dividing by the total number of replications."
+                      " 95% intervals represent the 95% confidence intervals using a standard normal distribution"
+                      " of error.",
+    },
+    {
+        "group": "Simulation Results",
+        "term": "Contamination Level Results - Percent of units inspected",
+        "definition": "Results showing proportion of units inspected (e.g., plants) across all consignments averaged across all replications."
+                      " Calculated by summing all of inspected units (e.g., plants) across all consignments,"
+                      " dividing by the total number of that unit (e.g., total number of plants across all consignments)"
+                      " within each replication representing the proportion inspected across all consignemtns within that replication."
+                      " Then those proportions are averaged across the replications."
+                      " 95% intervals represent the 95% confidence intervals across the replications using a standard normal distribution"
+                      " of error.",
     },
     {
         "group": "Simulation Results",
@@ -300,12 +327,12 @@ GLOSSARY_TERMS = [
     {
         "group": "Simulation Results",
         "term": "lower",
-        "definition": "The minimum observed value across all replications", # Joe - is this correct?
+        "definition": "The 2.5th percentile of slipped units across all replications",
     },
     {
         "group": "Simulation Results",
         "term": "upper",
-        "definition": "The maximum observed value across all replications", # Joe - is this correct?
+        "definition": "The 97.5th percentile of slipped units across all replications",
     },
     {
         "group": "Simulation Results",
