@@ -876,7 +876,7 @@ if st.session_state.get("_trigger_run_pipeline"):
                     )
                 if shipments_total > 0:
                     progress_parts.append(
-                        f"Shipments {shipments_processed:,}/{shipments_total:,}"
+                        f"Consignments {shipments_processed:,}/{shipments_total:,}"
                     )
                 progress_label = f"{message} | {' | '.join(progress_parts)}"
             overall_progress_bar.progress(safe_percent)
@@ -905,7 +905,7 @@ if st.session_state.get("_trigger_run_pipeline"):
                 if replications_total > 0:
                     progress_parts.append(f"Replications {replications_completed:,}/{replications_total:,}")
                 if shipments_total > 0:
-                    progress_parts.append(f"Shipments {shipments_processed:,}/{shipments_total:,}")
+                    progress_parts.append(f"Consignments {shipments_processed:,}/{shipments_total:,}")
                 if progress_parts:
                     failure_label = f"Simulation failed | {' | '.join(progress_parts)}"
             overall_progress_bar.progress(100)
@@ -1008,7 +1008,7 @@ with kpi_cols[1]:
     )
 with kpi_cols[2]:
     render_metric_card(
-        "Shipments per replication",
+        "Consignments per replication",
         f"{shipments_per_replication:,}",
         "Configured number of consignments processed in each replication.",
     )
@@ -1147,7 +1147,7 @@ with st.expander("Slippage Level", expanded=expand_all_summary_sections):
     if "total_slipped_units" in results_df.columns and "name" in results_df.columns:
         render_labeled_help(
             "Slippage by scenario",
-            f"Bars show the mean number of contaminated plant units missed for each scenario across simulation replications. When at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available, error bars show the 95% interval across replications within that same scenario.",
+            f"Bars show the mean number of contaminated plant units missed for each scenario across simulation replications. When at least {MIN_REPLICATIONS_FOR_INTERVAL} replications are available, error bars show the 2.5%-97.5% quantile range across replications within that same scenario.",
         )
         slip_df = results_df[["name", "total_slipped_units"]]
         slip_chart = (
@@ -1212,7 +1212,7 @@ with st.expander("Slippage Level", expanded=expand_all_summary_sections):
                 .reset_index()
             )
             slip_summary_df = slip_summary_df.merge(slip_table_intervals, left_on="Scenario", right_on="name", how="left")
-            slip_summary_df["95% interval"] = slip_summary_df.apply(
+            slip_summary_df["2.5% Quantile - 97.5% Quantile"] = slip_summary_df.apply(
                 lambda row: _interval_text(row.get("lower"), row.get("upper"), int(row.get("replications", 0))),
                 axis=1,
             )
@@ -1226,7 +1226,7 @@ with st.expander("Slippage Level", expanded=expand_all_summary_sections):
             _styled_summary_table(
                 slip_summary_df,
                 mean_columns=["Mean slipped plant units"],
-                interval_columns=["95% interval"],
+                interval_columns=["2.5% Quantile - 97.5% Quantile"],
             ),
             use_container_width=True,
             height=min(420, 70 + 38 * max(len(slip_summary_df), 1)),
@@ -1434,7 +1434,7 @@ def render_inspection_workload_level():
         )
         _maybe_warning_for_replications(all_runs_df)
 
-with st.expander("Action Level", expanded=expand_all_summary_sections):
+with st.expander("Interceptions", expanded=expand_all_summary_sections):
 
     if all(
         col in results_df.columns
@@ -1537,7 +1537,7 @@ with st.expander("Action Level", expanded=expand_all_summary_sections):
         inspection_level_available = "Inspection" in set(action_counts_base_df["Level"])
 
         render_labeled_help(
-            "Counts by action and level",
+            "Counts of interceptions",
             (
                 "Shows the mean intercepted and slipped counts for contaminated consignments, plant units, "
                 "sample units, and inspection units for each scenario. When available, "
@@ -1622,7 +1622,7 @@ with st.expander("Action Level", expanded=expand_all_summary_sections):
             st.info("Inspection-level action metrics are unavailable in the current output files.")
 
         render_labeled_help(
-            "Percent by action and level",
+            "Interceptions Metrics by Percentage",
             (
                 "Shows the mean share of contaminated consignments, plant units, sample units, and inspection units "
                 "that were intercepted versus slipped for each scenario. Percentages are computed within each replication and then averaged "

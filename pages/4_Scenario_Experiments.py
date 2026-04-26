@@ -379,11 +379,10 @@ def _normalize_rows(rows_df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-tabs = st.tabs(["Saved Experiments", "Upload Custom Scenario", "Build Experiments"])
+tabs = st.tabs(["Saved Experiment Packages", "Upload Custom Scenario", "Build Experiments"])
 
 # --- Tab 1: Upload custom scenario -------------------------------------------
 with tabs[0]:
-    st.subheader("Saved experiments")
     st.write("Review saved experiment packages, preview their scenario tables, or remove a package you no longer need.")
     saved_files = list(SCENARIO_ROOT.glob("*/scenario_table.csv"))
 
@@ -391,7 +390,7 @@ with tabs[0]:
         st.info("No experiments saved yet.")
     else:
         render_labeled_help(
-            "Select an experiment set",
+            "Select an experiment package",
             "Choose a saved experiment package to preview its scenario table and optionally delete the entire package directory.",
         )
         sel = st.selectbox(
@@ -404,7 +403,7 @@ with tabs[0]:
             preview = pd.read_csv(sel)
             st.dataframe(preview, use_container_width=True)
             st.caption(f"Path: {sel}")
-            if st.button("Delete this experiment set", type="secondary"):
+            if st.button("Delete this experiment package", type="secondary"):
                 try:
                     shutil.rmtree(sel.parent)
                     st.success(f"Deleted {sel.parent}")
@@ -428,10 +427,10 @@ with tabs[1]:
         label_visibility="collapsed",
     )
     render_labeled_help(
-        "Save as experiment set name",
+        "Save as experiment package name",
         "Name used for the experiment package folder when the uploaded scenario table is saved.",
     )
-    custom_name = st.text_input("Save as experiment set name", value="custom_experiment", label_visibility="collapsed")
+    custom_name = st.text_input("Save as experiment package name", value="custom_experiment", label_visibility="collapsed")
 
     if uploaded:
         try:
@@ -474,7 +473,7 @@ with tabs[2]:
     with col_left:
         render_labeled_help(
             "Scenario label",
-            "Unique label for the scenario row. Existing rows with the same label are replaced when you add the row.",
+            "Unique label for the experiment (i.e., scenario). Existing scenarios with the same label are replaced when added.",
         )
         scenario_label = st.text_input(
             "Scenario label",
@@ -483,8 +482,8 @@ with tabs[2]:
         )
 
         render_labeled_help(
-            "Consignment (RBS) file",
-            "Choose the RBS consignment CSV that should be used when this scenario runs.",
+            "Consignments",
+            "Choose the .csv file of consignments generated on Page 1.",
         )
         consignment_choice = (
             st.selectbox(
@@ -499,7 +498,7 @@ with tabs[2]:
 
         render_labeled_help(
             "Contamination parameter set",
-            "Choose the contamination parameter snapshot that should be written into the experiment table.",
+            "Choose the contamination parameter set generated on Page 2 that should be used in this experiment.",
         )
         param_choice = (
             st.selectbox("Contamination parameter set", param_keys, label_visibility="collapsed")
@@ -508,8 +507,8 @@ with tabs[2]:
         )
 
         render_labeled_help(
-            "RBS compliance policy",
-            "Choose the compliance lookup file that the simulation will use for this scenario.",
+            "RBS Policy",
+            "Choose the compliance policy saved on Page 3 that the simulation will use for this scenario.",
         )
         compliance_choice = (
             st.selectbox(

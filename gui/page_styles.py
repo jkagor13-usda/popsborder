@@ -210,6 +210,70 @@ _SHARED_PAGE_STYLES = """
 </style>
 """
 
+_GLOSSARY_STYLES = """
+<style>
+.glossary-summary {
+    border: 1px solid rgba(31, 119, 180, 0.18);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(31,119,180,0.06), rgba(31,119,180,0.02));
+    padding: 16px 18px;
+    margin-bottom: 18px;
+}
+
+.glossary-summary-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1f77b4;
+    margin-bottom: 6px;
+}
+
+.glossary-summary-text {
+    font-size: 16px;
+    color: #2c3e50;
+    line-height: 1.55;
+}
+
+.glossary-card {
+    border: 1px solid rgba(31, 119, 180, 0.18);
+    border-radius: 14px;
+    background: #ffffff;
+    padding: 16px 18px;
+    margin-bottom: 16px;
+    box-shadow: 0 6px 16px rgba(31, 119, 180, 0.06);
+    min-height: 176px;
+}
+
+.glossary-badge {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #1f77b4;
+    background: rgba(31, 119, 180, 0.10);
+    border: 1px solid rgba(31, 119, 180, 0.20);
+    border-radius: 999px;
+    padding: 4px 10px;
+    margin-bottom: 12px;
+}
+
+.glossary-term {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1f77b4;
+    margin: 0 0 10px 0;
+    line-height: 1.25;
+}
+
+.glossary-definition {
+    font-size: 16px;
+    color: #2c3e50;
+    line-height: 1.6;
+    margin: 0;
+}
+</style>
+"""
+
 
 def apply_shared_page_styles() -> None:
     """Inject shared CSS styles for all Streamlit pages.
@@ -219,6 +283,9 @@ def apply_shared_page_styles() -> None:
     once at the top of each page script.
     """
     st.markdown(_SHARED_PAGE_STYLES, unsafe_allow_html=True)
+
+def apply_glossary_page_styles() -> None:
+    st.markdown(_GLOSSARY_STYLES, unsafe_allow_html=True)
 
 
 def render_page_intro(description_html: str) -> None:
