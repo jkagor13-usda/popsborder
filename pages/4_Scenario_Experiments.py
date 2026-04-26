@@ -338,7 +338,7 @@ with tabs[2]:
     with col_left:
         render_labeled_help(
             "Scenario label",
-            "Unique label for the scenario row. Existing rows with the same label are replaced when you add the row.",
+            "Unique label for the experiment (i.e., scenario). Existing scenarios with the same label are replaced when added.",
         )
         scenario_label = st.text_input(
             "Scenario label",
@@ -347,8 +347,8 @@ with tabs[2]:
         )
 
         render_labeled_help(
-            "Consignment (RBS) file",
-            "Choose the RBS consignment CSV that should be used when this scenario runs.",
+            "Consignments",
+            "Choose the .csv file of consignments generated on Page 1.",
         )
         consignment_choice = (
             st.selectbox(
@@ -363,7 +363,7 @@ with tabs[2]:
 
         render_labeled_help(
             "Contamination parameter set",
-            "Choose the contamination parameter snapshot that should be written into the experiment table.",
+            "Choose the contamination parameter set generated on Page 2 that should be used in this experiment.",
         )
         param_choice = (
             st.selectbox("Contamination parameter set", param_keys, label_visibility="collapsed")
@@ -372,8 +372,8 @@ with tabs[2]:
         )
 
         render_labeled_help(
-            "RBS compliance policy",
-            "Choose the compliance lookup file that the simulation will use for this scenario.",
+            "RBS Policy",
+            "Choose the compliance policy saved on Page 3 that the simulation will use for this scenario.",
         )
         compliance_choice = (
             st.selectbox(
