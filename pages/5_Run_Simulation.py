@@ -841,11 +841,49 @@ with st.sidebar:
     else:
         st.info("No experiments saved yet on Page 4.")
     st.divider()
-    run_disabled = not experiment_sets  # only disable when no experiments
-    if st.button("Run experiment", use_container_width=True, disabled=run_disabled):
+    run_button_placeholder = st.empty()
+
+    def _render_run_button() -> bool:
+        run_in_progress = bool(st.session_state.get("_run_pipeline_in_progress", False))
+        awaiting_results_display = bool(st.session_state.get("_awaiting_results_display", False))
+        has_completed_run = bool(state.get("run_output_dir") or state.get("run_output_files"))
+        if run_in_progress or awaiting_results_display:
+            run_button_placeholder.markdown(
+                """
+                <div style="
+                    width: 100%;
+                    padding: 0.65rem 1rem;
+                    border-radius: 0.5rem;
+                    background: rgba(151, 166, 195, 0.35);
+                    color: rgba(44, 62, 80, 0.85);
+                    text-align: center;
+                    font-weight: 600;
+                    cursor: not-allowed;
+                    user-select: none;
+                ">
+                    Running experiment...
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            return False
+
+        run_label = "Rerun experiment" if has_completed_run else "Run experiment"
+        with run_button_placeholder.container():
+            return st.button(
+                run_label,
+                use_container_width=True,
+                disabled=not experiment_sets,
+                key="run_experiment_button",
+            )
+
+    if _render_run_button():
         # Defer execution to main pane to show spinner there
         state["run_request_experiment"] = selected_experiment.parent if selected_experiment else None
+        st.session_state["_run_pipeline_in_progress"] = True
+        st.session_state["_awaiting_results_display"] = True
         st.session_state["_trigger_run_pipeline"] = True
+        st.rerun()
 
 # Main-pane run handler with spinner
 run_placeholder = st.empty()
@@ -911,6 +949,9 @@ if st.session_state.get("_trigger_run_pipeline"):
             overall_progress_bar.progress(100)
             progress_status.markdown(f"**{failure_label}**")
             progress_percent.markdown("### **100%**")
+        finally:
+            st.session_state["_run_pipeline_in_progress"] = False
+        _render_run_button()
 
 if run_error:
     msg = state.get("run_error_message") or str(run_error)
@@ -2045,3 +2086,7 @@ with nav_cols[1]:
 with nav_cols[2]:
     if st.button("Next Page", type="primary", key="nav_forward_page6"):
         st.switch_page("pages/6_Glossary.py")
+
+if st.session_state.get("_awaiting_results_display"):
+    st.session_state["_awaiting_results_display"] = False
+    _render_run_button()
