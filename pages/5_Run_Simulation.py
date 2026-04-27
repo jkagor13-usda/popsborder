@@ -2089,4 +2089,3 @@ with nav_cols[2]:
 
 if st.session_state.get("_awaiting_results_display"):
     st.session_state["_awaiting_results_display"] = False
-    _render_run_button()
