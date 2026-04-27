@@ -576,12 +576,12 @@ render_page_intro(
     "Generated outputs are written to <i>tmp/consignments</i>."
 )
 
-# saved_tab, ingest_tab, manual_tab, producer_grouping_tab = st.tabs( # Uncomment to include manual generation tab
+# saved_tab, ingest_tab, manual_tab, producer_grouping_tab = st.tabs( # UNCOMMENT FOR MANUAL CONSIGMENT GENERATION
 saved_tab, ingest_tab, producer_grouping_tab = st.tabs(
     [
         "Saved Consignments",
         "Data-Driven Generation",
-        # "Manual Generation", # Uncomment to include manual generation tab
+        # "Manual Generation", # UNCOMMENT FOR MANUAL CONSIGMENT GENERATION
         "Producer Grouping",
     ]
 )
@@ -804,6 +804,7 @@ with ingest_tab:
 
 ################################################################################
 # Manual Consignment Generation Tab - begin
+# UNCOMMENT BELOW FOR MANUAL CONSIGMENT GENERATION
 ################################################################################
 
 # with manual_tab:
@@ -1026,6 +1027,7 @@ with ingest_tab:
 #             st.warning(msg)
 ################################################################################
 # Manual Consignment Generation Tab - end
+# UNCOMMENT ABOVE FOR MANUAL CONSIGMENT GENERATION
 ################################################################################
 
 # Saved consignments tab
