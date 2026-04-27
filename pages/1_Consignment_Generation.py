@@ -576,11 +576,12 @@ render_page_intro(
     "Generated outputs are written to <i>tmp/consignments</i>."
 )
 
-saved_tab, ingest_tab, manual_tab, producer_grouping_tab = st.tabs(
+# saved_tab, ingest_tab, manual_tab, producer_grouping_tab = st.tabs( # UNCOMMENT FOR MANUAL CONSIGMENT GENERATION
+saved_tab, ingest_tab, producer_grouping_tab = st.tabs(
     [
         "Saved Consignments",
         "Data-Driven Generation",
-        "Manual Generation",
+        # "Manual Generation", # UNCOMMENT FOR MANUAL CONSIGMENT GENERATION
         "Producer Grouping",
     ]
 )
@@ -800,224 +801,234 @@ with ingest_tab:
                 st.success(msg)
             else:
                 st.warning(msg)
-with manual_tab:
-    st.subheader("Define consignments one by one")
-    st.write("Build inspection units manually, combine them into consignments, and export the resulting RBS file.")
-    render_labeled_help(
-        "Manual Generation",
-        "Create consignments manually by adding inspection units one at a time, then combine them into a saved RBS consignment dataset.",
-    )
-    st.info(
-        "Add inspection units first (one port, one origin, one material per unit), then bundle them into a consignment."
-    )
-    render_labeled_help(
-        "Consignment name/ID",
-        "Unique identifier used to group the inspection units below into a single consignment record.",
-    )
-    consignment_name = st.text_input(
-        "Consignment name/ID (unique per consignment)",
-        value=f"CONS-{len(state['manual_consignments'])+1:03d}",
-        label_visibility="collapsed",
-    )
 
-    with st.form("inspection_unit_form"):
-        c1, c2 = st.columns(2)
-        with c1:
-            render_labeled_help("Plant Inspection Station (PIS)", "PIS assigned to this inspection unit.")
-            port = st.selectbox(
-                "Port of entry", # PIS != POE - should we change
-                options=config_ports or ["Miami PIS"],
-                index=0,
-                label_visibility="collapsed",
-            )
-        with c2:
-            render_labeled_help("Country of origin", "Country of origin assigned to this inspection unit.")
-            origin = st.selectbox(
-                "Country of origin",
-                options=config_origins or ["Japan"],
-                index=0,
-                label_visibility="collapsed",
-            )
-        render_labeled_help("Propagative material type", "Propagative material type assigned to this inspection unit.")
-        material = st.selectbox(
-            "Propagative material type",
-            options=["Budwood/Graftwood (scion)",
-                     "Unrooted Cutting, Bulb, Corm, Rhizome, Tuberous Stem, Tuberous Stem",
-                     "Meristem or Callus Tissue Culture (micropropagated/in vitro culture)",
-                     "Root cutting, crown, or clump, Tuberous Root",
-                     "Rooted Cutting (including air layer)",
-                     "Rooted Plant (including grafted)",
-                     "Unrooted Plant"],
-            index=0,
-            label_visibility="collapsed",
-        )
-        render_labeled_help("Pathway", "Transport pathway used for this inspection unit.")
-        pathway = st.selectbox(
-            "Pathway",
-            ["Airport - Aircraft - Cargo - PIS",
-             "Maritime Port - Vessel - Cargo - PIS",
-             "Airport - Aircraft - Express Carrier - PIS",
-             "Airport - Aircraft - Mail - PIS Mail",
-             "Land Border - Truck - Cargo - PIS"
-             ], # These aren't what we are used to...intentional?
-            index=1,
-            label_visibility="collapsed",
-        )
-        c1, c2 = st.columns(2)
-        with c1:
-            render_labeled_help("Sample units (per inspection unit)", "Number of sampling units contained in this inspection unit.")
-            sample_units = st.number_input(
-                "Sample units (per inspection unit)",
-                min_value=1,
-                max_value=5000,
-                value=200,
-                step=10,
-                label_visibility="collapsed",
-            )
-        with c2:
-            render_labeled_help("Plants per sample unit", "Number of plants represented by each sample unit in this inspection unit.")
-            plants_per_sample = st.number_input(
-                "Plants per sample unit",
-                min_value=1,
-                max_value=1000,
-                value=5,
-                step=1,
-                label_visibility="collapsed",
-            )
-        render_labeled_help("Producer name", "Producer name assigned to this inspection unit.")
-        producer = st.text_input(
-            "Producer name",
-            value="User Defined Producer",
-            label_visibility="collapsed",
-        )
-        render_labeled_help(
-            "Add inspection unit",
-            "Add the inspection unit above to the current consignment draft.",
-            compact=True,
-        )
-        add_unit = st.form_submit_button(
-            "Add inspection unit",
-            type="secondary",
-            use_container_width=True,
-        )
+################################################################################
+# Manual Consignment Generation Tab - begin
+# UNCOMMENT BELOW FOR MANUAL CONSIGMENT GENERATION
+################################################################################
 
-    if add_unit:
-        state["manual_units"].append(
-            {
-                "port": port.strip(),
-                "origin": origin.strip(),
-                "material": material.strip(),
-                "pathway": pathway,
-                "sample_units": int(sample_units),
-                "plants_per_sample": int(plants_per_sample),
-                "producer": producer.strip() or "User Defined Producer",
-            }
-        )
-        st.success(f"Added inspection unit: {port} / {origin} / {material}")
+# with manual_tab:
+#     st.subheader("Define consignments one by one")
+#     st.write("Build inspection units manually, combine them into consignments, and export the resulting RBS file.")
+#     render_labeled_help(
+#         "Manual Generation",
+#         "Create consignments manually by adding inspection units one at a time, then combine them into a saved RBS consignment dataset.",
+#     )
+#     st.info(
+#         "Add inspection units first (one port, one origin, one material per unit), then bundle them into a consignment."
+#     )
+#     render_labeled_help(
+#         "Consignment name/ID",
+#         "Unique identifier used to group the inspection units below into a single consignment record.",
+#     )
+#     consignment_name = st.text_input(
+#         "Consignment name/ID (unique per consignment)",
+#         value=f"CONS-{len(state['manual_consignments'])+1:03d}",
+#         label_visibility="collapsed",
+#     )
 
-    if state["manual_units"]:
-        st.subheader(f"Inspection units in {consignment_name or 'current consignment'}")
-        st.dataframe(pd.DataFrame(state["manual_units"]), use_container_width=True)
+#     with st.form("inspection_unit_form"):
+#         c1, c2 = st.columns(2)
+#         with c1:
+#             render_labeled_help("Plant Inspection Station (PIS)", "PIS assigned to this inspection unit.")
+#             port = st.selectbox(
+#                 "Port of entry", # PIS != POE - should we change
+#                 options=config_ports or ["Miami PIS"],
+#                 index=0,
+#                 label_visibility="collapsed",
+#             )
+#         with c2:
+#             render_labeled_help("Country of origin", "Country of origin assigned to this inspection unit.")
+#             origin = st.selectbox(
+#                 "Country of origin",
+#                 options=config_origins or ["Japan"],
+#                 index=0,
+#                 label_visibility="collapsed",
+#             )
+#         render_labeled_help("Propagative material type", "Propagative material type assigned to this inspection unit.")
+#         material = st.selectbox(
+#             "Propagative material type",
+#             options=["Budwood/Graftwood (scion)",
+#                      "Unrooted Cutting, Bulb, Corm, Rhizome, Tuberous Stem, Tuberous Stem",
+#                      "Meristem or Callus Tissue Culture (micropropagated/in vitro culture)",
+#                      "Root cutting, crown, or clump, Tuberous Root",
+#                      "Rooted Cutting (including air layer)",
+#                      "Rooted Plant (including grafted)",
+#                      "Unrooted Plant"],
+#             index=0,
+#             label_visibility="collapsed",
+#         )
+#         render_labeled_help("Pathway", "Transport pathway used for this inspection unit.")
+#         pathway = st.selectbox(
+#             "Pathway",
+#             ["Airport - Aircraft - Cargo - PIS",
+#              "Maritime Port - Vessel - Cargo - PIS",
+#              "Airport - Aircraft - Express Carrier - PIS",
+#              "Airport - Aircraft - Mail - PIS Mail",
+#              "Land Border - Truck - Cargo - PIS"
+#              ], # These aren't what we are used to...intentional?
+#             index=1,
+#             label_visibility="collapsed",
+#         )
+#         c1, c2 = st.columns(2)
+#         with c1:
+#             render_labeled_help("Sample units (per inspection unit)", "Number of sampling units contained in this inspection unit.")
+#             sample_units = st.number_input(
+#                 "Sample units (per inspection unit)",
+#                 min_value=1,
+#                 max_value=5000,
+#                 value=200,
+#                 step=10,
+#                 label_visibility="collapsed",
+#             )
+#         with c2:
+#             render_labeled_help("Plants per sample unit", "Number of plants represented by each sample unit in this inspection unit.")
+#             plants_per_sample = st.number_input(
+#                 "Plants per sample unit",
+#                 min_value=1,
+#                 max_value=1000,
+#                 value=5,
+#                 step=1,
+#                 label_visibility="collapsed",
+#             )
+#         render_labeled_help("Producer name", "Producer name assigned to this inspection unit.")
+#         producer = st.text_input(
+#             "Producer name",
+#             value="User Defined Producer",
+#             label_visibility="collapsed",
+#         )
+#         render_labeled_help(
+#             "Add inspection unit",
+#             "Add the inspection unit above to the current consignment draft.",
+#             compact=True,
+#         )
+#         add_unit = st.form_submit_button(
+#             "Add inspection unit",
+#             type="secondary",
+#             use_container_width=True,
+#         )
 
-    st.markdown("---")
-    detection_level = 0.01
-    confidence_level = 0.8
-    render_labeled_help(
-        "Build consignment from inspection units above",
-        "Combine the current inspection units into one consignment. Required inspection units are auto-computed from the fixed detection and confidence settings.",
-    )
-    if st.button(
-        "Build consignment from inspection units above",
-        type="secondary",
-        use_container_width=True,
-        disabled=not state["manual_units"],
-    ):
-        consignment_uid = consignment_name or f"CONS-{len(state['manual_consignments'])+1:03d}"
-        seed_df = _build_manual_consignment_seed(
-            state["manual_units"],
-            consignment_uid,
-            detection_level=detection_level,
-            confidence_level=confidence_level,
-        )
-        rbs_df = _build_rbs_dataset(seed_df)
+#     if add_unit:
+#         state["manual_units"].append(
+#             {
+#                 "port": port.strip(),
+#                 "origin": origin.strip(),
+#                 "material": material.strip(),
+#                 "pathway": pathway,
+#                 "sample_units": int(sample_units),
+#                 "plants_per_sample": int(plants_per_sample),
+#                 "producer": producer.strip() or "User Defined Producer",
+#             }
+#         )
+#         st.success(f"Added inspection unit: {port} / {origin} / {material}")
 
-        state["manual_consignments"].append(
-            {
-                "name": consignment_uid,
-                "seed": seed_df,
-                "rbs": rbs_df,
-            }
-        )
-        state["manual_units"] = []
+#     if state["manual_units"]:
+#         st.subheader(f"Inspection units in {consignment_name or 'current consignment'}")
+#         st.dataframe(pd.DataFrame(state["manual_units"]), use_container_width=True)
 
-        combined_rbs = pd.concat([c["rbs"] for c in state["manual_consignments"]], ignore_index=True)
+#     st.markdown("---")
+#     detection_level = 0.01
+#     confidence_level = 0.8
+#     render_labeled_help(
+#         "Build consignment from inspection units above",
+#         "Combine the current inspection units into one consignment. Required inspection units are auto-computed from the fixed detection and confidence settings.",
+#     )
+#     if st.button(
+#         "Build consignment from inspection units above",
+#         type="secondary",
+#         use_container_width=True,
+#         disabled=not state["manual_units"],
+#     ):
+#         consignment_uid = consignment_name or f"CONS-{len(state['manual_consignments'])+1:03d}"
+#         seed_df = _build_manual_consignment_seed(
+#             state["manual_units"],
+#             consignment_uid,
+#             detection_level=detection_level,
+#             confidence_level=confidence_level,
+#         )
+#         rbs_df = _build_rbs_dataset(seed_df)
 
-        state["manual_rbs_preview"] = combined_rbs.head(200)
-        state["pending_manual_rbs"] = combined_rbs
-        st.success(
-            f"Saved consignment '{consignment_uid}' with {len(seed_df)} inspection units. "
-            "Use the generation button below to write the RBS file to tmp."
-        )
+#         state["manual_consignments"].append(
+#             {
+#                 "name": consignment_uid,
+#                 "seed": seed_df,
+#                 "rbs": rbs_df,
+#             }
+#         )
+#         state["manual_units"] = []
 
-    if state.get("manual_consignments"):
-        st.subheader("Current consignments")
-        render_labeled_help(
-            "Current consignments",
-            "Review the consignments you have assembled in this session before previewing or saving the combined RBS dataset.",
-        )
-        summary_rows = [
-            {"Consignment": c["name"], "Inspection units": len(c["seed"])}
-            for c in state["manual_consignments"]
-        ]
-        st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
+#         combined_rbs = pd.concat([c["rbs"] for c in state["manual_consignments"]], ignore_index=True)
 
-    render_labeled_help(
-        "Synthetic RBS preview",
-        "Preview the combined RBS records generated from the current manual consignments and download the CSV before saving it to tmp/consignments.",
-    )
-    rbs_preview = state.get("manual_rbs_preview")
-    with st.expander("Synthetic RBS preview", expanded=False):
-        if rbs_preview is not None:
-            st.dataframe(rbs_preview, use_container_width=True)
-            render_labeled_help(
-                "Download RBS dataset",
-                "Download the currently assembled manual RBS dataset as a CSV before saving it to tmp/consignments.",
-                compact=True,
-            )
-            st.download_button(
-                "Download RBS dataset",
-                data=rbs_preview.to_csv(index=False).encode("utf-8"),
-                file_name="user_defined_rbs_data.csv",
-                type="primary",
-                use_container_width=True,
-            )
-        else:
-            st.info("Create a seed dataset to preview and download the generated RBS file.")
+#         state["manual_rbs_preview"] = combined_rbs.head(200)
+#         state["pending_manual_rbs"] = combined_rbs
+#         st.success(
+#             f"Saved consignment '{consignment_uid}' with {len(seed_df)} inspection units. "
+#             "Use the generation button below to write the RBS file to tmp."
+#         )
 
-    render_labeled_help(
-        "Consignment input file base name",
-        "Base name used when saving the manual consignment RBS CSV into tmp/consignments for downstream pages.",
-    )
-    manual_base = st.text_input(
-        "Consignment input file base name (manual)",
-        value=st.session_state.get("consignment_base_name_manual", "Manual"),
-        key="consignment_base_name_manual",
-        label_visibility="collapsed",
-    ) or "Manual"
-    render_labeled_help(
-        "Save manual consignments",
-        "Write the current manual consignment RBS dataset to tmp/consignments so it can be used by downstream pages.",
-    )
-    if st.button(
-        "Save manual consignments",
-        type="primary",
-        key="save_consignment_manual",
-    ):
-        ok, msg = _save_manual_rbs(pending_manual_rbs, base_name=manual_base)
-        if ok:
-            st.success(msg)
-        else:
-            st.warning(msg)
+#     if state.get("manual_consignments"):
+#         st.subheader("Current consignments")
+#         render_labeled_help(
+#             "Current consignments",
+#             "Review the consignments you have assembled in this session before previewing or saving the combined RBS dataset.",
+#         )
+#         summary_rows = [
+#             {"Consignment": c["name"], "Inspection units": len(c["seed"])}
+#             for c in state["manual_consignments"]
+#         ]
+#         st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
+
+#     render_labeled_help(
+#         "Synthetic RBS preview",
+#         "Preview the combined RBS records generated from the current manual consignments and download the CSV before saving it to tmp/consignments.",
+#     )
+#     rbs_preview = state.get("manual_rbs_preview")
+#     with st.expander("Synthetic RBS preview", expanded=False):
+#         if rbs_preview is not None:
+#             st.dataframe(rbs_preview, use_container_width=True)
+#             render_labeled_help(
+#                 "Download RBS dataset",
+#                 "Download the currently assembled manual RBS dataset as a CSV before saving it to tmp/consignments.",
+#                 compact=True,
+#             )
+#             st.download_button(
+#                 "Download RBS dataset",
+#                 data=rbs_preview.to_csv(index=False).encode("utf-8"),
+#                 file_name="user_defined_rbs_data.csv",
+#                 type="primary",
+#                 use_container_width=True,
+#             )
+#         else:
+#             st.info("Create a seed dataset to preview and download the generated RBS file.")
+
+#     render_labeled_help(
+#         "Consignment input file base name",
+#         "Base name used when saving the manual consignment RBS CSV into tmp/consignments for downstream pages.",
+#     )
+#     manual_base = st.text_input(
+#         "Consignment input file base name (manual)",
+#         value=st.session_state.get("consignment_base_name_manual", "Manual"),
+#         key="consignment_base_name_manual",
+#         label_visibility="collapsed",
+#     ) or "Manual"
+#     render_labeled_help(
+#         "Save manual consignments",
+#         "Write the current manual consignment RBS dataset to tmp/consignments so it can be used by downstream pages.",
+#     )
+#     if st.button(
+#         "Save manual consignments",
+#         type="primary",
+#         key="save_consignment_manual",
+#     ):
+#         ok, msg = _save_manual_rbs(pending_manual_rbs, base_name=manual_base)
+#         if ok:
+#             st.success(msg)
+#         else:
+#             st.warning(msg)
+################################################################################
+# Manual Consignment Generation Tab - end
+# UNCOMMENT ABOVE FOR MANUAL CONSIGMENT GENERATION
+################################################################################
 
 # Saved consignments tab
 with saved_tab:
