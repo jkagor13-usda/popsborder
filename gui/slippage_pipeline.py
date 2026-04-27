@@ -21,11 +21,12 @@ from popsborder.inputs import (
     load_configuration,
     load_scenario_table,
 )
+from popsborder.inspections import construct_risk_units
 from popsborder.outputs import save_scenario_result_to_pandas
 from popsborder.scenarios import run_scenarios
 from slippage_model_utils.clarke_model_support_functions import gen_clarke_model_inputs
-from slippage_model_utils.r_script_wrapper import run_clarke_bb_group_model
-
+from slippage_model_utils.r_script_wrapper import run_clarke_bb_group_model, RVariableCreator
+from slippage_model_utils.engineered_feature_creator import  create_engineered_features
 
 # Default config columns to persist into results
 CONFIG_COLUMNS = [
@@ -301,6 +302,8 @@ def generate_synthetic_data(
         if not producer_grouping_path.exists():
             raise FileNotFoundError(f"Producer grouping file not found at {producer_grouping_path}")
         producer_grouping = pd.read_csv(producer_grouping_path)
+    else:
+        raise FileNotFoundError(f"Producer grouping file not found and is needed.  Supply in 'Producer Grouping' tab")
     generator = SyntheticConsignmentDataGenerator(
         config=config,
         producer_group_mapping=producer_grouping,
@@ -310,6 +313,54 @@ def generate_synthetic_data(
         n_consignments=options.n_samples,
         sampling_method=options.sampling_method,
     )
+
+    # Create features from the R script using the R wrapper
+    creator = RVariableCreator()
+
+    print(f'  Cleaning (and grouping where applicable) Categorical Names')
+    print(f'      Cleaning Producer Name')
+    synth_data['PRODUCER_NAME_RAW'] = synth_data['PRODUCER_NAME']
+    synth_data['PRODUCER_NAME1'] = creator.batch_basic_text_preproc(text_fields=synth_data['PRODUCER_NAME_RAW'])
+
+    producer_grouping = producer_grouping.rename(
+        columns={"PRODUCER_NAME": "name", "grouping": "group"}
+    )
+
+    print(f'      Creating producer group mappings')
+    synth_data = creator.entity_resolution(
+        df=synth_data,
+        entity_resolution_lookup_table=producer_grouping,
+        use_parquet=False,  # or True, as you prefer
+    )
+
+    print(f'      Cleaning Importer Name')
+    # Create a raw IMPORTER_NAME column with the original importer name
+    synth_data['IMPORTER_NAME_RAW'] = synth_data['IMPORTER_NAME']
+
+    # Update the IMPORTER_NAME column with the cleaned version.
+    synth_data['IMPORTER_NAME1'] = creator.batch_basic_text_preproc(synth_data['IMPORTER_NAME_RAW'])
+
+    # Read in training data used to create producer and importer top variables
+    dt_train = synth_data.copy()
+
+    # Reconstruct risk units based on configuration specification
+    synth_data['PRODUCER_NAME'] = synth_data['PRODUCER_GROUP_NAME1']
+    synth_data['IMPORTER_NAME'] = synth_data['IMPORTER_NAME1']
+    synth_data = construct_risk_units(config=config, data=synth_data)
+
+
+
+    # Pull in the VariableCreator object to use R code to create engineered columns based on created risk units
+    synth_data = create_engineered_features(
+        synth_data=synth_data,
+        dt_train=dt_train,
+        producer_group_mapping=producer_grouping
+    )
+
+    # Create a producer_group column
+    synth_data['producer_group'] = synth_data['PRODUCER_NAME']
+    synth_data['IMPORTER_NAME'] = synth_data['IMPORTER_NAME_TOP']
+
     save_to_csv(synth_data, filename=output_path)
     return synth_data
 
