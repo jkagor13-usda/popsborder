@@ -28,6 +28,7 @@ from gui.page_styles import (
 )
 from gui.slippage_pipeline import ClarkeFit, create_default_paths, fit_contamination_distribution
 from gui.slippage_ui import get_slippage_state, set_paths
+from popsborder.inputs import load_configuration
 
 TMP_DIR = Path("tmp")
 CONTAM_DIR = TMP_DIR / "contamination"
@@ -35,6 +36,7 @@ PARAM_STORE = CONTAM_DIR / "contamination_parameter_sets.json"
 FALLBACK_ALPHA = 0.194628
 FALLBACK_BETA = 4.7609372
 FALLBACK_THETA = float("inf")
+FALLBACK_P = 0.0
 
 TMP_DIR.mkdir(parents=True, exist_ok=True)
 CONTAM_DIR.mkdir(parents=True, exist_ok=True)
@@ -159,7 +161,40 @@ def _average_contamination_rate_percent(rate: Optional[float]) -> Optional[float
     except Exception:  # pylint: disable=broad-except
         return None
 
-def _save_param_set_fall_back(name: str, alpha: float, beta: float, theta: float, sample_unit_rate: Optional[float] = None) -> str:
+
+def _load_default_cluster_p(config_path: Optional[Path]) -> float:
+    """Read the default beta-binomial clustering parameter ``p`` from config.
+
+    Args:
+        config_path: Path to the active config file.
+
+    Returns:
+        Float ``p`` value from the default beta-binomial config, or
+        ``FALLBACK_P`` when unavailable.
+    """
+    if config_path is None or not Path(config_path).exists():
+        return FALLBACK_P
+    try:
+        config = load_configuration(Path(config_path))
+        value = (
+            config.get("contamination", {})
+            .get("contamination_rate", {})
+            .get("beta_binomial_parameters", {})
+            .get("default", {})
+            .get("p", FALLBACK_P)
+        )
+        return float(value)
+    except Exception:  # pylint: disable=broad-except
+        return FALLBACK_P
+
+def _save_param_set_fall_back(
+    name: str,
+    alpha: float,
+    beta: float,
+    theta: float,
+    sample_unit_rate: Optional[float] = None,
+    p: Optional[float] = None,
+) -> str:
     """Save fallback contamination parameters as a named parameter set.
 
     Args:
@@ -177,6 +212,8 @@ def _save_param_set_fall_back(name: str, alpha: float, beta: float, theta: float
     if not name:
         name = _next_param_name(store)
     entry = {"alpha": alpha, "beta": beta, "theta": theta}
+    if p is not None:
+        entry["p"] = float(p)
     if sample_unit_rate is not None:
         entry["sample_unit_contamination_rate"] = sample_unit_rate
         entry["average_contamination_rate"] = _average_contamination_rate_percent(sample_unit_rate)
@@ -218,7 +255,14 @@ def _save_param_set_fit(name: str, res: Dict[Tuple, Any], inputs_by_quantity: Di
     return name
 
 
-def _save_param_set_assign(name: str, alpha: float, beta: float, theta: float, sample_unit_rate: Optional[float] = None) -> str:
+def _save_param_set_assign(
+    name: str,
+    alpha: float,
+    beta: float,
+    theta: float,
+    sample_unit_rate: Optional[float] = None,
+    p: Optional[float] = None,
+) -> str:
     """Save manually assigned contamination parameters to the store.
 
     Args:
@@ -235,6 +279,8 @@ def _save_param_set_assign(name: str, alpha: float, beta: float, theta: float, s
     if not name:
         name = _next_param_name(store)
     entry = {"alpha": alpha, "beta": beta, "theta": theta}
+    if p is not None:
+        entry["p"] = float(p)
     if sample_unit_rate is not None:
         entry["sample_unit_contamination_rate"] = sample_unit_rate
         entry["average_contamination_rate"] = _average_contamination_rate_percent(sample_unit_rate)
@@ -501,17 +547,21 @@ def _render_saved_parameters(sel: str, params: Dict[str, Any]) -> None:
             alpha = float(pdict.get("alpha", FALLBACK_ALPHA))
             beta = float(pdict.get("beta", FALLBACK_BETA))
             theta = pdict.get("theta", FALLBACK_THETA)
+            p_value = pdict.get("p")
             render_labeled_help(
                 f"Quantity Range: {cleaned_key}",
                 "Beta binomial parameters for a risk unit if the quantity of plants is within this range.",
             )
-            summary_cols = st.columns(3)
+            summary_cols = st.columns(4 if p_value is not None else 3)
             with summary_cols[0]:
                 render_metric_card("Alpha", f"{alpha:.6f}", "Alpha parameter of the beta-binomial distribution.")
             with summary_cols[1]:
                 render_metric_card("Beta", f"{beta:.6f}", "Beta parameter of the beta-binomial distribution.")
             with summary_cols[2]:
                 render_metric_card("Theta", f"{theta}", "Theta clustering parameter of the beta-binomial distribution.")
+            if p_value is not None:
+                with summary_cols[3]:
+                    render_metric_card("p", f"{float(p_value):.2f}", "Clustering parameter for the beta-binomial contamination distribution.")
             if alpha + beta != 0:
                 st.markdown("<div style='height: 1.25rem;'></div>", unsafe_allow_html=True)
                 st.altair_chart(
@@ -526,13 +576,17 @@ def _render_saved_parameters(sel: str, params: Dict[str, Any]) -> None:
         alpha = float(params.get("alpha", FALLBACK_ALPHA))
         beta = float(params.get("beta", FALLBACK_BETA))
         theta = params.get("theta", FALLBACK_THETA)
-        summary_cols = st.columns(3)
+        p_value = params.get("p")
+        summary_cols = st.columns(4 if p_value is not None else 3)
         with summary_cols[0]:
             render_metric_card("Alpha", f"{alpha:.6f}", "Alpha parameter of the beta-binomial distribution.")
         with summary_cols[1]:
             render_metric_card("Beta", f"{beta:.6f}", "Beta parameter of the beta-binomial distribution.")
         with summary_cols[2]:
             render_metric_card("Theta", f"{theta}", "Theta clustering parameter of the beta-binomial distribution.")
+        if p_value is not None:
+            with summary_cols[3]:
+                render_metric_card("p", f"{float(p_value):.2f}", "Clustering parameter for the beta-binomial contamination distribution.")
         if alpha + beta != 0:
             st.markdown("<div style='height: 1.25rem;'></div>", unsafe_allow_html=True)
             st.altair_chart(_beta_chart(alpha, beta, f"Beta-binomial PDF for {sel}"), use_container_width=True)
@@ -583,6 +637,7 @@ def _save_current_fit(
 init_state()
 slippage_state = get_slippage_state()
 paths = slippage_state["paths"]
+default_cluster_p = _load_default_cluster_p(getattr(paths, "config", None))
 render_sidebar_navigation()
 apply_shared_page_styles()
 
@@ -767,13 +822,20 @@ with assign_tab:
 
     assigned_state = st.session_state.get(
         "page2_assigned_fit",
-        {"alpha": FALLBACK_ALPHA, "beta": FALLBACK_BETA, "theta": FALLBACK_THETA, "sample_unit_rate": 0.01},
+        {
+            "alpha": FALLBACK_ALPHA,
+            "beta": FALLBACK_BETA,
+            "theta": FALLBACK_THETA,
+            "p": default_cluster_p,
+            "sample_unit_rate": 0.01,
+        },
     )
 
     if mode == "Specify Contamination Rate (at lowest unit level)":
         stored_mean = st.session_state.get("manual_mean_rate", float(assigned_state.get("sample_unit_rate", 0.01)))
         stored_mean_input = st.session_state.get("manual_mean_input_pct", float(stored_mean) * 100.0)
         pct_default = float(stored_mean_input)
+        stored_manual_p = float(st.session_state.get("manual_cluster_p", assigned_state.get("p", default_cluster_p)))
 
         st.write("")
         render_labeled_help(
@@ -818,6 +880,21 @@ with assign_tab:
             label_visibility="collapsed",
         )
 
+        st.write("")
+        render_labeled_help(
+            "Clustering p",
+            "Controls how concentrated contamination is across sample units. 0 means more spread out; 1 means more clustered.",
+        )
+        manual_cluster_p = st.slider(
+            "manual_cluster_p_slider",
+            min_value=0.0,
+            max_value=1.0,
+            value=stored_manual_p,
+            step=0.01,
+            key="manual_cluster_p_slider",
+            label_visibility="collapsed",
+        )
+
         n_trials = 100
         params = calculate_beta_binomial_params(sample_unit_rate, concentration_input, n_trials=n_trials)
 
@@ -833,15 +910,17 @@ with assign_tab:
             "alpha": adj_alpha,
             "beta": adj_beta,
             "theta": theta_val,
+            "p": manual_cluster_p,
             "sample_unit_rate": sample_unit_rate,
         }
         st.session_state["manual_concentration"] = concentration
         st.session_state["manual_concentration_input"] = concentration_input
+        st.session_state["manual_cluster_p"] = manual_cluster_p
         st.session_state["manual_mean_rate"] = sample_unit_rate
         st.session_state["manual_mean_input_pct"] = pct_input
 
         st.write("Contamination Summary")
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             render_metric_card(
                 "Expected Average",
@@ -858,6 +937,8 @@ with assign_tab:
             render_metric_card("Alpha", f"{adj_alpha:.6f}", "Alpha parameter of the beta-binomial distribution.")
         with col4:
             render_metric_card("Beta", f"{adj_beta:.6f}", "Beta parameter of the beta-binomial distribution.")
+        with col5:
+            render_metric_card("Theta", f"{theta_val}", "Theta clustering parameter of the beta-binomial distribution.")
         st.write("")
         st.write("")
         st.altair_chart(
@@ -890,25 +971,19 @@ with assign_tab:
                 adj_beta,
                 theta_val,
                 sample_unit_rate,
+                p=manual_cluster_p,
             )
             st.success(
-                f"Saved '{saved_name}' with alpha={adj_alpha:.6f}, beta={adj_beta:.6f}, and sample unit rate={sample_unit_rate}"
+                f"Saved '{saved_name}' with alpha={adj_alpha:.6f}, beta={adj_beta:.6f}, p={manual_cluster_p:.2f}, and sample unit rate={sample_unit_rate}"
             )
     else:
         st.caption("Adjust alpha/beta directly. Theta is fixed to infinity by default.")
-        render_labeled_help(
-            "Alpha",
-            "Alpha parameter for the beta-binomial contamination distribution.",
-        )
-        render_labeled_help(
-            "Beta",
-            "Beta parameter for the beta-binomial contamination distribution.",
-        )
-        render_labeled_help(
-            "Theta",
-            "Theta is fixed to infinity here, indicating no clustering for manual assignment.",
-        )
         col_a, col_b, col_t = st.columns(3)
+        with col_a:
+            render_labeled_help(
+                "Alpha",
+                "Alpha parameter for the beta-binomial contamination distribution.",
+            )
         alpha_val = col_a.number_input(
             "Alpha",
             min_value=0.000001,
@@ -917,6 +992,11 @@ with assign_tab:
             format="%.4f",
             label_visibility="collapsed",
         )
+        with col_b:
+            render_labeled_help(
+                "Beta",
+                "Beta parameter for the beta-binomial contamination distribution.",
+            )
         beta_val = col_b.number_input(
             "Beta",
             min_value=0.000001,
@@ -925,6 +1005,11 @@ with assign_tab:
             format="%.4f",
             label_visibility="collapsed",
         )
+        with col_t:
+            render_labeled_help(
+                "Theta",
+                "Theta is fixed to infinity here, indicating no clustering for manual assignment.",
+            )
         theta_str = col_t.text_input("Theta", value="inf", label_visibility="collapsed")
         try:
             theta_val = float("inf") if theta_str.lower() == "inf" else float(theta_str)
@@ -935,6 +1020,7 @@ with assign_tab:
             "alpha": alpha_val,
             "beta": beta_val,
             "theta": theta_val,
+            "p": float(assigned_state.get("p", default_cluster_p)),
             "sample_unit_rate": assigned_state.get("sample_unit_rate", 0.01),
         }
 
@@ -968,9 +1054,10 @@ with assign_tab:
                 beta_val,
                 theta_val,
                 assigned_state.get("sample_unit_rate", None),
+                p=float(assigned_state.get("p", default_cluster_p)),
             )
             st.success(
-                f"Saved '{saved_name}' with alpha={alpha_val:.6f}, beta={beta_val:.6f}, theta={theta_val}"
+                f"Saved '{saved_name}' with alpha={alpha_val:.6f}, beta={beta_val:.6f}, theta={theta_val}, p={float(assigned_state.get('p', default_cluster_p)):.2f}"
             )
 
 with saved_tab:

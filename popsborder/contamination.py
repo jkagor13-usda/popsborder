@@ -263,7 +263,7 @@ def set_beta_binomial_params(
     # Get the appropriate alpha and beta parameters based on the plant quantity of the consignment, otherwise default to the default parameters
     param_dict = contamination_config["contamination_rate"]["beta_binomial_parameters"]
     key = get_range_key(param_dict, num_plants)
-    beta_binomial_params = param_dict[key] if key is not None else param_dict["default"]
+    beta_binomial_params = dict(param_dict[key] if key is not None else param_dict["default"])
 
     # Get J and actual N values per sample unit
     all_sample_unit_objects = []
@@ -284,11 +284,15 @@ def set_beta_binomial_params(
     if beta_binomial_params['theta'] is None:
         beta_binomial_params['theta'] = np.inf
 
-    # Set clustering parameter
-    if param_dict.get('default').get('p') is None:
+    # Set clustering parameter. Prefer the selected parameter block and only
+    # fall back to the default block when the selected one has no explicit p.
+    selected_p = beta_binomial_params.get('p')
+    if selected_p is None:
+        selected_p = param_dict.get('default', {}).get('p')
+    if selected_p is None:
         beta_binomial_params['p'] = 0
     else:
-        beta_binomial_params['p'] = 1 - param_dict.get('default').get('p')
+        beta_binomial_params['p'] = 1 - float(selected_p)
 
     return beta_binomial_params
 
