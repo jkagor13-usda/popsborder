@@ -254,11 +254,11 @@ def load_compliance_policy(path: Path) -> Dict[str, Any]:
             return pickle.load(handle)
     return load_compliance_lookup_csv(policy_path)
 
-def generate_synthetic_data(
+def generate_synthetic_data_old(
     seed_path: Path,
     output_path: Path,
     options: SyntheticOptions,
-    producer_grouping_path: Optional[Path] = None,
+    producer_grouping_path: Optional[Path] = None, # type: ignore
 ) -> pd.DataFrame:
     """Generate synthetic consignment data and save it to CSV.
 
@@ -364,6 +364,94 @@ def generate_synthetic_data(
     save_to_csv(synth_data, filename=output_path)
     return synth_data
 
+
+def generate_synthetic_data(
+    seed_path: Path,
+    output_path: Path,
+    options: SyntheticOptions,
+    producer_grouping_path: Optional[Path] = None,
+    status: Optional["st.delta_generator.DeltaGenerator"] = None,  # type: ignore
+) -> pd.DataFrame:
+    def log(msg: str):
+        if status is not None:
+            status.write(msg)
+        else:
+            print(msg)
+
+    if seed_path is None:
+        raise FileNotFoundError("Seed data path was not provided.")
+    seed_path = Path(seed_path).resolve()
+    output_path = Path(output_path).resolve()
+    if not seed_path.exists():
+        raise FileNotFoundError(f"Seed data not found at {seed_path}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    config = None
+    config_path = Path(DEFAULT_DATA_DIR / CONFIG_FILENAME).resolve()
+    if config_path.exists():
+        config = load_configuration(config_path)
+
+    producer_grouping = None
+    if producer_grouping_path is not None:
+        producer_grouping_path = Path(producer_grouping_path).resolve()
+        if not producer_grouping_path.exists():
+            raise FileNotFoundError(f"Producer grouping file not found at {producer_grouping_path}")
+        producer_grouping = pd.read_csv(producer_grouping_path)
+    else:
+        raise FileNotFoundError(
+            "Producer grouping file not found and is needed. Supply in 'Producer Grouping' tab"
+        )
+
+    # Now use `log` instead of print
+    log("Initialising R variable creator")
+    creator = RVariableCreator()
+
+    log("Cleaning (and grouping where applicable) categorical names")
+    log("---Cleaning Producer Name")
+    synth_data = pd.read_csv(seed_path)  # or however you load it previously
+    synth_data["PRODUCER_NAME_RAW"] = synth_data["PRODUCER_NAME"]
+    synth_data["PRODUCER_NAME1"] = creator.batch_basic_text_preproc(
+        text_fields=synth_data["PRODUCER_NAME_RAW"]
+    )
+
+    producer_grouping = producer_grouping.rename(
+        columns={"PRODUCER_NAME": "name", "grouping": "group"}
+    )
+
+    log("---Creating producer group mappings")
+    synth_data = creator.entity_resolution(
+        df=synth_data,
+        entity_resolution_lookup_table=producer_grouping,
+        use_parquet=False,
+    )
+
+    log("---Cleaning Importer Name")
+    synth_data["IMPORTER_NAME_RAW"] = synth_data["IMPORTER_NAME"]
+    synth_data["IMPORTER_NAME1"] = creator.batch_basic_text_preproc(
+        synth_data["IMPORTER_NAME_RAW"]
+    )
+
+    log("Reconstructing risk units")
+    dt_train = synth_data.copy()
+    synth_data["PRODUCER_NAME"] = synth_data["PRODUCER_GROUP_NAME1"]
+    synth_data["IMPORTER_NAME"] = synth_data["IMPORTER_NAME1"]
+    synth_data = construct_risk_units(config=config, data=synth_data)
+
+    log("Creating engineered features")
+    synth_data = create_engineered_features(
+        synth_data=synth_data,
+        dt_train=dt_train,
+        producer_group_mapping=producer_grouping,
+        status=status
+    )
+
+    log("Finalising producer group column and importer top name")
+    synth_data["producer_group"] = synth_data["PRODUCER_NAME"]
+    synth_data["IMPORTER_NAME"] = synth_data["IMPORTER_NAME_TOP"]
+
+    log(f"Saving synthetic data to {output_path}")
+    save_to_csv(synth_data, filename=output_path)
+    return synth_data
 
 def _infer_num_consignments(consignment_path: Optional[Path]) -> int:
     """Infer number of consignments from a consignment file.
