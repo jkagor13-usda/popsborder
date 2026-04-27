@@ -883,7 +883,7 @@ with assign_tab:
         st.write("")
         render_labeled_help(
             "Clustering p",
-            "Control how clustered contamination is among sample units. 0 means completely random contamination and 1 means fully clustered.",
+            "Controls how concentrated contamination is across sample units. 0 means more spread out; 1 means more clustered.",
         )
         manual_cluster_p = st.slider(
             "manual_cluster_p_slider",
