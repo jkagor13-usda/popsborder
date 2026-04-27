@@ -505,6 +505,7 @@ def config_to_simplified_simulation_params(config):
         contamination_unit="",
         contamination_type="",
         contamination_param="",
+        contamination_beta_binomial_params="",
         contaminant_arrangement="",
         contaminated_units_per_cluster="",
         contaminant_distribution="",
@@ -531,6 +532,10 @@ def config_to_simplified_simulation_params(config):
         sim_params.contamination_param = config["contamination"]["contamination_rate"][
             "parameters"
         ]
+    elif sim_params.contamination_type in ["beta_binomial", "beta-binomial"]:
+        sim_params.contamination_beta_binomial_params = config["contamination"][
+            "contamination_rate"
+        ].get("beta_binomial_parameters", {})
     else:
         sim_params.contamination_param = None
     sim_params.contaminant_arrangement = config["contamination"]["arrangement"]
@@ -612,6 +617,17 @@ def print_totals_as_text(num_consignments, config, totals):
         print(
             "\t\t contamination distribution parameters: "
             f"{sim_params.contamination_param}"
+        )
+    elif sim_params.contamination_type in ["beta_binomial", "beta-binomial"]:
+        bb_params = sim_params.contamination_beta_binomial_params or {}
+        default_params = bb_params.get("default", {})
+        alpha = default_params.get("alpha")
+        beta = default_params.get("beta")
+        theta = default_params.get("theta")
+        p_value = default_params.get("p")
+        print(
+            "\t\t beta-binomial parameters: "
+            f"alpha={alpha}, beta={beta}, theta={theta}, p={p_value}"
         )
     print(f"\t contaminant arrangement: {sim_params.contaminant_arrangement}")
     if sim_params.contaminant_arrangement == "clustered":
