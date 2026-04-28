@@ -1109,9 +1109,9 @@ with nav_cols[0]:
         help="Delete temporary files and restart from the home page",
     ):
         try:
-            if TMP_DIR.exists():
-                shutil.rmtree(TMP_DIR)
-            TMP_DIR.mkdir(parents=True, exist_ok=True)
+            # Import the helper for safe temporary directory reset
+            from .tmp_utils import reset_tmp_directory
+            reset_tmp_directory(TMP_DIR)
             # Initialize a fresh copy of config.yml into tmp for downstream use
             src_cfg = Path("data_input/config.yml")
             if src_cfg.exists():

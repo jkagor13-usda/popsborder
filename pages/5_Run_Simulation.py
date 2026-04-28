@@ -2084,10 +2084,9 @@ nav_cols = st.columns(3)
 with nav_cols[0]:
     if st.button("Reset and Return Home", type="secondary", key="nav_reset_page5"):
         try:
-            if TMP_DIR.exists():
-                import shutil  # pylint: disable=import-outside-toplevel
-                shutil.rmtree(TMP_DIR)
-            TMP_DIR.mkdir(parents=True, exist_ok=True)
+            # Use safe reset utility to clear temporary directory
+            from .tmp_utils import reset_tmp_directory
+            reset_tmp_directory(TMP_DIR)
             st.session_state.clear()
             state["paths"] = create_default_paths()
             st.switch_page("frontend.py")

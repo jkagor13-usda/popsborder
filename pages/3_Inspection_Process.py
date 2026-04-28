@@ -624,9 +624,9 @@ with nav_cols[0]:
         help="Delete temporary files and restart from the home page",
     ):
         try:
-            if TMP_DIR.exists():
-                shutil.rmtree(TMP_DIR)
-            TMP_DIR.mkdir(parents=True, exist_ok=True)
+            # Use safe reset utility to clear temporary directory
+            from .tmp_utils import reset_tmp_directory
+            reset_tmp_directory(TMP_DIR)
             st.session_state.clear()
             state["paths"] = create_default_paths()
             st.switch_page("frontend.py")

@@ -744,13 +744,7 @@ with fit_tab:
                     slippage_state["inputs_by_quantity"] = inputs_by_quantity
                     st.success("\n".join(_fit_summary_lines(fit, warnings)))
 
-                    # Display and additional warnings
-                    # for w in warnings:
-                    #     st.warning(w)
-
-
-
-                except Exception as exc:  # pylint: disable=broad-except
+                except Exception as exc:  
                     st.error(f"Fitting failed: {exc}")
                     fall_back_fit = ClarkeFit(
                         alpha=FALLBACK_ALPHA,
@@ -1107,9 +1101,9 @@ with nav_cols[0]:
             # Remove saved parameter sets and all tmp artifacts
             if PARAM_STORE.exists():
                 PARAM_STORE.unlink()
-            if TMP_DIR.exists():
-                shutil.rmtree(TMP_DIR)
-            TMP_DIR.mkdir(parents=True, exist_ok=True)
+            # Use safe reset utility to clear temporary directory
+            from .tmp_utils import reset_tmp_directory
+            reset_tmp_directory(TMP_DIR)
             # Clear in-memory state
             st.session_state.clear()
             slippage_state["paths"] = create_default_paths()

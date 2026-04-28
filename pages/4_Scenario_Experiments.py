@@ -642,10 +642,10 @@ nav_cols = st.columns(2)
 with nav_cols[0]:
     if st.button("Reset and Return Home", type="secondary"):
         try:
-            shutil.rmtree(TMP_DIR)
+            from .tmp_utils import reset_tmp_directory
+            reset_tmp_directory(TMP_DIR)
         except Exception:
             pass
-        TMP_DIR.mkdir(parents=True, exist_ok=True)
         st.session_state.clear()
         init_state()
         st.switch_page("frontend.py")
