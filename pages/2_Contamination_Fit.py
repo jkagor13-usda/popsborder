@@ -187,6 +187,7 @@ def _load_default_cluster_p(config_path: Optional[Path]) -> float:
     except Exception:  # pylint: disable=broad-except
         return FALLBACK_P
 
+
 def _save_param_set_fall_back(
     name: str,
     alpha: float,
@@ -222,7 +223,13 @@ def _save_param_set_fall_back(
     st.session_state["last_saved_param_set"] = name
     return name
 
-def _save_param_set_fit(name: str, res: Dict[Tuple, Any], inputs_by_quantity: Dict[Any,Any]) -> str:
+
+def _save_param_set_fit(
+        name: str, 
+        res: Dict[Tuple, Any], 
+        inputs_by_quantity: Dict[Any,Any],
+        p_override: Optional[float] = None
+    ) -> str:
     """Save a fitted contamination parameter set to the store.
 
     Args:
@@ -248,6 +255,7 @@ def _save_param_set_fit(name: str, res: Dict[Tuple, Any], inputs_by_quantity: Di
             "D": res[key]['D'],
             "rho": res[key]['rho'],
             "J": inputs_by_quantity[key].B,
+            "p": p_override
         }
     store[name] = entry
     _write_param_store(store)
@@ -599,6 +607,7 @@ def _save_current_fit(
     fall_back_fit_to_show: Optional[ClarkeFit],
     inputs_by_quantity: Optional[Dict[Any, Any]],
     name_input: str,
+    p_override: Optional[float] = None,
 ) -> None:
     """Save the current fitted or fallback contamination parameters.
 
@@ -613,6 +622,7 @@ def _save_current_fit(
             name=name_input or _next_param_name(_read_param_store()),
             res=fit_to_show,
             inputs_by_quantity=inputs_by_quantity,
+            p_override=p_override,                     
         )
         st.success(f"Saved '{saved_name}' with parameters as above.")
         return
@@ -652,8 +662,6 @@ render_page_intro(
     "PIS upload and RBS selection live in the <i>Fit Contamination</i> tab. "
     "All outputs are written to <i>tmp/contamination</i>."
 )
-
-
 
 saved_tab, fit_tab, assign_tab = st.tabs(
     ["Saved Parameter Sets", "Fit Contamination Using Data", "Assign Contamination Manually"]
@@ -772,6 +780,30 @@ with fit_tab:
             use_container_width=True,
         )
 
+    assign_manual_p = st.radio(
+        "Assign Manual P",
+        ["Use default p parameter", "Manual assignmnet of p parameter"],
+        index=0,
+        key="assign_manual_p",
+        label_visibility="collapsed",
+    )
+    if assign_manual_p == "Use default p parameter":
+        cluster_p = FALLBACK_P
+    else:
+        render_labeled_help(
+            "Clustering p",
+            "Controls how concentrated contamination is across sample units. 0 means more spread out; 1 means more clustered.",
+        )
+        cluster_p = st.slider(
+            "fit_cluster_p_slider",
+            min_value=0.0,
+            max_value=1.0,
+            value=FALLBACK_P,
+            step=0.01,
+            key="fit_cluster_p_slider",
+            label_visibility="collapsed",
+        )
+
     render_labeled_help(
         "Parameter set name",
         "Name used when saving the fitted contamination parameter set for later reuse on Page 5.",
@@ -793,8 +825,8 @@ with fit_tab:
             fall_back_fit_to_show=fall_back_fit_to_show,
             inputs_by_quantity=inputs_by_quantity,
             name_input=name_input,
+            p_override = cluster_p,
         )
-
 
 # Manual assignment tab
 with assign_tab:
@@ -820,7 +852,7 @@ with assign_tab:
             "alpha": FALLBACK_ALPHA,
             "beta": FALLBACK_BETA,
             "theta": FALLBACK_THETA,
-            "p": default_cluster_p,
+            "p": FALLBACK_P,
             "sample_unit_rate": 0.01,
         },
     )
@@ -1001,20 +1033,24 @@ with assign_tab:
         )
         with col_t:
             render_labeled_help(
-                "Theta",
-                "Theta is fixed to infinity here, indicating no clustering for manual assignment.",
+                "Clustering p",
+                "Controls how concentrated contamination is across sample units. 0 means more spread out; 1 means more clustered.",
             )
-        theta_str = col_t.text_input("Theta", value="inf", label_visibility="collapsed")
-        try:
-            theta_val = float("inf") if theta_str.lower() == "inf" else float(theta_str)
-        except ValueError:
-            theta_val = float("inf")
+        p_val = col_t.number_input(
+            "p",
+            min_value=0.0,
+            max_value=1.0,
+            value=float(assigned_state["p"]),
+            step=0.0005,
+            format="%.4f",
+            label_visibility="collapsed",
+        )
 
         st.session_state["page2_assigned_fit"] = {
             "alpha": alpha_val,
             "beta": beta_val,
-            "theta": theta_val,
-            "p": float(assigned_state.get("p", default_cluster_p)),
+            "theta": float(assigned_state["theta"]),
+            "p": p_val,
             "sample_unit_rate": assigned_state.get("sample_unit_rate", 0.01),
         }
 
@@ -1046,7 +1082,7 @@ with assign_tab:
                 manual_name or _next_param_name(_read_param_store()),
                 alpha_val,
                 beta_val,
-                theta_val,
+                p_val,
                 assigned_state.get("sample_unit_rate", None),
                 p=float(assigned_state.get("p", default_cluster_p)),
             )
@@ -1054,6 +1090,7 @@ with assign_tab:
                 f"Saved '{saved_name}' with alpha={alpha_val:.6f}, beta={beta_val:.6f}, theta={theta_val}, p={float(assigned_state.get('p', default_cluster_p)):.2f}"
             )
 
+# Render saved parameters
 with saved_tab:
     st.subheader("Saved contamination parameter sets")
     st.write("Review saved contamination parameter sets and load one for reuse.")
@@ -1111,9 +1148,11 @@ with nav_cols[0]:
             st.switch_page("frontend.py")
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Unable to reset temporary files: {exc}")
+
 with nav_cols[1]:
     if st.button("Previous Page", type="primary", key="nav_back_page2"):
         st.switch_page("pages/1_Consignment_Generation.py")
+
 with nav_cols[2]:
     if st.button("Next Page", type="primary", key="nav_forward_page4"):
         st.switch_page("pages/3_Inspection_Process.py")
