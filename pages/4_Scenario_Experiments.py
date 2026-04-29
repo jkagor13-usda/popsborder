@@ -18,11 +18,13 @@ from gui.navigation import render_sidebar_navigation
 from gui.page_styles import apply_shared_page_styles, render_labeled_help, render_page_intro
 from gui.slippage_ui import get_slippage_state
 from slippage_model_utils.references import engineered_features
+from slippage_model_utils.paths import DefaultPaths
 
 # --- Constants / setup --------------------------------------------------------
-TMP_DIR = Path("tmp")
+default_paths = DefaultPaths()
+TMP_DIR = default_paths.tmp_dir()
 SCENARIO_ROOT = TMP_DIR / "experiments"
-TEMPLATE_SCENARIO = Path("data_input") / "pis_contaminate_scenarios.csv"
+TEMPLATE_SCENARIO = default_paths.input_data_dir() / "pis_contaminate_scenarios.csv"
 CONTAM_PARAM_PATH = TMP_DIR / "contamination" / "contamination_parameter_sets.json"
 SCENARIO_FILENAME = "scenario_table.csv"
 CONFIG_FILENAME = "config.yml"
