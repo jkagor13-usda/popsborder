@@ -247,11 +247,15 @@ def _build_scenario_row(scenario_label: str, consignment_choice: Path, complianc
             scenario_row[f"{base}/D"] = pdict.get("D")
             scenario_row[f"{base}/theta"] = pdict.get("theta")
             scenario_row[f"{base}/J"] = pdict.get("J")
+            if "p" in pdict:
+                scenario_row[f"{base}/p"] = pdict.get("p")
     else:
         base = "contamination/contamination_rate/beta_binomial_parameters/default"
         scenario_row[f"{base}/alpha"] = param_snapshot.get("alpha")
         scenario_row[f"{base}/beta"] = param_snapshot.get("beta")
         scenario_row[f"{base}/theta"] = param_snapshot.get("theta")
+        if "p" in param_snapshot:
+            scenario_row[f"{base}/p"] = param_snapshot.get("p")
     return scenario_row
 
 
@@ -692,10 +696,10 @@ nav_cols = st.columns(2)
 with nav_cols[0]:
     if st.button("Reset and Return Home", type="secondary"):
         try:
-            shutil.rmtree(TMP_DIR)
+            from .tmp_utils import reset_tmp_directory
+            reset_tmp_directory(TMP_DIR)
         except Exception:
             pass
-        TMP_DIR.mkdir(parents=True, exist_ok=True)
         st.session_state.clear()
         init_state()
         st.switch_page("frontend.py")

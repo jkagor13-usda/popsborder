@@ -313,7 +313,8 @@ render_page_intro(
     "Ingest the compliance lookup table, configure low/medium/high types, and review RBS parameters."
 )
 
-tabs = st.tabs(["Saved RBS Compliance Policy", "Upload Table", "Create Policy Manually"])
+# tabs = st.tabs(["Saved RBS Compliance Policy", "Upload Table", "Create Policy Manually"]) # UNCOMMENT FOR MANUAL POLICY CREATION
+tabs = st.tabs(["Saved RBS Compliance Policy", "Upload Table"]) # COMMENT OUT FOR MANUAL POLICY CREATION
 
 with tabs[0]:
     st.subheader("Saved RBS compliance policy")
@@ -462,145 +463,156 @@ with tabs[1]:
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Failed to save compliance table: {exc}")
 
-with tabs[2]:
-    st.subheader("Manual Creation of RBS Compliance Policy ")
-    st.write("Build a custom compliance policy by selecting feature values and assigning policy levels.")
 
-    rbs_path = state["paths"].rbs_data
-    rbs_cols = []
-    if rbs_path and Path(rbs_path).exists():
-        try:
-            rbs_df = pd.read_csv(rbs_path, nrows=2000)
-            rbs_cols = [c for c in rbs_df.columns if rbs_df[c].dtype == "object"]
-        except Exception:  # pylint: disable=broad-except
-            rbs_cols = []
-    if not rbs_cols:
-        rbs_cols = ["Origin Location Country Name", "Propagative Material type", "Pathway", "Inspection Location"]
+################################################################################
+# Manual Consignment Generation Tab - begin
+# UNCOMMENT BELOW FOR MANUAL POLICY CREATION
+################################################################################
 
-    render_labeled_help(
-        "Select feature columns to combine",
-        "Choose the compliance feature columns that will be cross-joined into manually created policy rows.",
-    )
-    multi_cols = st.multiselect(
-        "Select feature columns to combine",
-        options=rbs_cols,
-        default=rbs_cols[:2],
-        label_visibility="collapsed",
-    )
-    selections = []
-    for col_name in multi_cols:
-        values = []
-        if rbs_path and Path(rbs_path).exists():
-            try:
-                values = sorted(rbs_df[col_name].dropna().astype(str).unique().tolist())
-            except Exception:  # pylint: disable=broad-except
-                values = []
-        render_labeled_help(
-            f"Values for {col_name}",
-            f"Choose the values for {col_name} that should be included in the manual compliance policy.",
-        )
-        selected_vals = st.multiselect(
-            f"Values for {col_name}",
-            options=values or [],
-            key=f"comb_vals_{col_name}",
-            label_visibility="collapsed",
-        )
-        selections.append({"column": col_name, "values": selected_vals})
+# with tabs[2]:
+#     st.subheader("Manual Creation of RBS Compliance Policy ")
+#     st.write("Build a custom compliance policy by selecting feature values and assigning policy levels.")
 
-    render_labeled_help(
-        "Compliance level for the new rows",
-        "Assign one compliance level to every row generated from the selected feature combinations.",
-    )
-    level_choice = st.selectbox("Compliance level for the new rows", ["Low", "Medium", "High"], label_visibility="collapsed")
+#     rbs_path = state["paths"].rbs_data
+#     rbs_cols = []
+#     if rbs_path and Path(rbs_path).exists():
+#         try:
+#             rbs_df = pd.read_csv(rbs_path, nrows=2000)
+#             rbs_cols = [c for c in rbs_df.columns if rbs_df[c].dtype == "object"]
+#         except Exception:  # pylint: disable=broad-except
+#             rbs_cols = []
+#     if not rbs_cols:
+#         rbs_cols = ["Origin Location Country Name", "Propagative Material type", "Pathway", "Inspection Location"]
 
-    detection_value = st.slider(
-        "Detection Level",
-        min_value=0.0,
-        max_value=1.,
-        step=.01,
-        value=0.1,          
-        help="Detection Level for Hypergeometric Sampling."
-    )
+#     render_labeled_help(
+#         "Select feature columns to combine",
+#         "Choose the compliance feature columns that will be cross-joined into manually created policy rows.",
+#     )
+#     multi_cols = st.multiselect(
+#         "Select feature columns to combine",
+#         options=rbs_cols,
+#         default=rbs_cols[:2],
+#         label_visibility="collapsed",
+#     )
+#     selections = []
+#     for col_name in multi_cols:
+#         values = []
+#         if rbs_path and Path(rbs_path).exists():
+#             try:
+#                 values = sorted(rbs_df[col_name].dropna().astype(str).unique().tolist())
+#             except Exception:  # pylint: disable=broad-except
+#                 values = []
+#         render_labeled_help(
+#             f"Values for {col_name}",
+#             f"Choose the values for {col_name} that should be included in the manual compliance policy.",
+#         )
+#         selected_vals = st.multiselect(
+#             f"Values for {col_name}",
+#             options=values or [],
+#             key=f"comb_vals_{col_name}",
+#             label_visibility="collapsed",
+#         )
+#         selections.append({"column": col_name, "values": selected_vals})
 
-    confidence_value = st.slider(
-        "Confidence Level",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.95,
-        step=0.01,
-        help="Confidence Level for Hypergeometric Sampling."
-    )
+#     render_labeled_help(
+#         "Compliance level for the new rows",
+#         "Assign one compliance level to every row generated from the selected feature combinations.",
+#     )
+#     level_choice = st.selectbox("Compliance level for the new rows", ["Low", "Medium", "High"], label_visibility="collapsed")
 
-    render_labeled_help(
-        "Add rows to compliance table",
-        "Generate manual compliance rows from the selected feature combinations and append them to the working table below.",
-    )
-    if st.button("Add rows to compliance table", type="primary"):
-        rows = []
-        selected_cols = [s["column"] for s in selections]
-        from itertools import product
+#     detection_value = st.slider(
+#         "Detection Level",
+#         min_value=0.0,
+#         max_value=1.,
+#         step=.01,
+#         value=0.1,          
+#         help="Detection Level for Hypergeometric Sampling."
+#     )
 
-        value_lists = []
-        for sel in selections:
-            vals = sel.get("values", [])
-            if not vals:
-                value_lists = []
-                break
-            value_lists.append(vals)
-        if not value_lists:
-            st.warning("Select at least one value for each chosen feature before adding rows.")
-        else:
-            for combo in product(*value_lists):
-                row = {c: "" for c in selected_cols}
-                for col, val in zip(selected_cols, combo):
-                    row[col] = val
-                row["Compliance"] = level_choice
-                row["Detection Level"] = detection_value
-                row["Confidence Levels"] = confidence_value
-                rows.append(row)
-            manual_df = state.get("manual_compliance_df")
-            new_df = pd.DataFrame(rows)
-            if manual_df is None:
-                manual_df = new_df
-            else:
-                # Align columns
-                all_cols = list(set(manual_df.columns).union(set(new_df.columns)))
-                manual_df = manual_df.reindex(columns=all_cols, fill_value="")
-                new_df = new_df.reindex(columns=all_cols, fill_value="")
-                manual_df = pd.concat([manual_df, new_df], ignore_index=True)
-            state["manual_compliance_df"] = manual_df
-            st.success(f"Added {len(rows)} rows at level {level_choice}.")
-            st.dataframe(manual_df, use_container_width=True)
+#     confidence_value = st.slider(
+#         "Confidence Level",
+#         min_value=0.0,
+#         max_value=1.0,
+#         value=0.95,
+#         step=0.01,
+#         help="Confidence Level for Hypergeometric Sampling."
+#     )
+
+#     render_labeled_help(
+#         "Add rows to compliance table",
+#         "Generate manual compliance rows from the selected feature combinations and append them to the working table below.",
+#     )
+#     if st.button("Add rows to compliance table", type="primary"):
+#         rows = []
+#         selected_cols = [s["column"] for s in selections]
+#         from itertools import product
+
+#         value_lists = []
+#         for sel in selections:
+#             vals = sel.get("values", [])
+#             if not vals:
+#                 value_lists = []
+#                 break
+#             value_lists.append(vals)
+#         if not value_lists:
+#             st.warning("Select at least one value for each chosen feature before adding rows.")
+#         else:
+#             for combo in product(*value_lists):
+#                 row = {c: "" for c in selected_cols}
+#                 for col, val in zip(selected_cols, combo):
+#                     row[col] = val
+#                 row["Compliance"] = level_choice
+#                 row["Detection Level"] = detection_value
+#                 row["Confidence Levels"] = confidence_value
+#                 rows.append(row)
+#             manual_df = state.get("manual_compliance_df")
+#             new_df = pd.DataFrame(rows)
+#             if manual_df is None:
+#                 manual_df = new_df
+#             else:
+#                 # Align columns
+#                 all_cols = list(set(manual_df.columns).union(set(new_df.columns)))
+#                 manual_df = manual_df.reindex(columns=all_cols, fill_value="")
+#                 new_df = new_df.reindex(columns=all_cols, fill_value="")
+#                 manual_df = pd.concat([manual_df, new_df], ignore_index=True)
+#             state["manual_compliance_df"] = manual_df
+#             st.success(f"Added {len(rows)} rows at level {level_choice}.")
+#             st.dataframe(manual_df, use_container_width=True)
 
 
-    manual_df = state.get("manual_compliance_df")
-    render_labeled_help(
-        "Save as name (manual)",
-        "File name used when saving the manually built compliance policy.",
-    )
-    manual_name = st.text_input(
-        "Save as name (manual)",
-        value="manual_compliance_policy",
-        label_visibility="collapsed",
-    )
-    can_save_manual_policy = manual_df is not None and not manual_df.empty
-    render_labeled_help(
-        "Save manual policy",
-        "Write the manually assembled compliance policy to disk so it can be reused on downstream pages.",
-    )
-    if st.button("Save manual policy", type="primary", disabled=not can_save_manual_policy):
-        target_path = COMPLIANCE_SOURCE_ROOT / f"{manual_name}.csv"
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        manual_df.to_csv(target_path, index=False)
-        policy_path = _save_policy_artifact(
-            manual_name,
-            target_path,
-            direct_lookup_csv=True,
-            producer_grouping_path=state.get("producer_grouping_path"),
-        )
-        set_paths(compliance_lookup=policy_path)
-        st.success(f"Manual RBS compliance policy saved to {policy_path}")
+#     manual_df = state.get("manual_compliance_df")
+#     render_labeled_help(
+#         "Save as name (manual)",
+#         "File name used when saving the manually built compliance policy.",
+#     )
+#     manual_name = st.text_input(
+#         "Save as name (manual)",
+#         value="manual_compliance_policy",
+#         label_visibility="collapsed",
+#     )
+#     can_save_manual_policy = manual_df is not None and not manual_df.empty
+#     render_labeled_help(
+#         "Save manual policy",
+#         "Write the manually assembled compliance policy to disk so it can be reused on downstream pages.",
+#     )
+#     if st.button("Save manual policy", type="primary", disabled=not can_save_manual_policy):
+#         target_path = COMPLIANCE_SOURCE_ROOT / f"{manual_name}.csv"
+#         target_path.parent.mkdir(parents=True, exist_ok=True)
+#         manual_df.to_csv(target_path, index=False)
+#         policy_path = _save_policy_artifact(
+#             manual_name,
+#             target_path,
+#             direct_lookup_csv=True,
+#             producer_grouping_path=state.get("producer_grouping_path"),
+#         )
+#         set_paths(compliance_lookup=policy_path)
+#         st.success(f"Manual RBS compliance policy saved to {policy_path}")
 
+
+################################################################################
+# Manual Consignment Generation Tab - end
+# UNCOMMENT ABOVE FOR MANUAL POLICY CREATION
+################################################################################
 
 st.divider()
 nav_cols = st.columns(3)
@@ -612,9 +624,9 @@ with nav_cols[0]:
         help="Delete temporary files and restart from the home page",
     ):
         try:
-            if TMP_DIR.exists():
-                shutil.rmtree(TMP_DIR)
-            TMP_DIR.mkdir(parents=True, exist_ok=True)
+            # Use safe reset utility to clear temporary directory
+            from .tmp_utils import reset_tmp_directory
+            reset_tmp_directory(TMP_DIR)
             st.session_state.clear()
             state["paths"] = create_default_paths()
             st.switch_page("frontend.py")

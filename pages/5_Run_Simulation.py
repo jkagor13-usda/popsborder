@@ -406,12 +406,14 @@ def _find_matching_param_set(param_store: dict, scenario_row: pd.Series) -> str:
     alpha_cols = [col for col in scenario_row.index if col.endswith("/alpha")]
     beta_cols = [col for col in scenario_row.index if col.endswith("/beta")]
     theta_cols = [col for col in scenario_row.index if col.endswith("/theta")]
+    p_cols = [col for col in scenario_row.index if col.endswith("/p")]
     if not alpha_cols or not beta_cols:
         return ""
 
     alpha_values = [scenario_row[col] for col in alpha_cols if pd.notna(scenario_row[col])]
     beta_values = [scenario_row[col] for col in beta_cols if pd.notna(scenario_row[col])]
     theta_values = [scenario_row[col] for col in theta_cols if pd.notna(scenario_row[col])]
+    p_values = [scenario_row[col] for col in p_cols if pd.notna(scenario_row[col])]
 
     for param_name, param_value in param_store.items():
         if not isinstance(param_value, dict):
@@ -421,7 +423,10 @@ def _find_matching_param_set(param_store: dict, scenario_row: pd.Series) -> str:
                 _values_match(param_value.get("beta"), value) for value in beta_values
             ):
                 theta_value = param_value.get("theta")
-                if not theta_values or any(_values_match(theta_value, value) for value in theta_values):
+                p_value = param_value.get("p")
+                theta_matches = (not theta_values) or any(_values_match(theta_value, value) for value in theta_values)
+                p_matches = (not p_values) or any(_values_match(p_value, value) for value in p_values)
+                if theta_matches and p_matches:
                     return str(param_name)
         elif param_value:
             nested_values = [entry for entry in param_value.values() if isinstance(entry, dict)]
@@ -430,6 +435,8 @@ def _find_matching_param_set(param_store: dict, scenario_row: pd.Series) -> str:
             if any(
                 any(_values_match(entry.get("alpha"), value) for value in alpha_values)
                 and any(_values_match(entry.get("beta"), value) for value in beta_values)
+                and ((not theta_values) or any(_values_match(entry.get("theta"), value) for value in theta_values))
+                and ((not p_values) or any(_values_match(entry.get("p"), value) for value in p_values))
                 for entry in nested_values
             ):
                 return str(param_name)
@@ -455,6 +462,7 @@ def _format_param_details(param_store: dict, param_name: str) -> str:
 
     if {"alpha", "beta"}.issubset(param_value.keys()):
         theta_value = param_value.get("theta")
+        p_value = param_value.get("p")
         avg_rate = param_value.get("average_contamination_rate")
         if avg_rate in (None, ""):
             raw_rate = param_value.get("sample_unit_contamination_rate")
@@ -468,6 +476,8 @@ def _format_param_details(param_store: dict, param_name: str) -> str:
             f"beta={_format_detail_number(param_value.get('beta'))}",
             f"theta={_format_detail_number(theta_value)}",
         ]
+        if p_value not in (None, ""):
+            details.append(f"p={_format_detail_number(p_value)}")
         if avg_rate not in (None, ""):
             details.append(f"avg contamination rate={float(avg_rate):.2f}%")
         return f"{param_name} ({', '.join(details)})"
@@ -476,6 +486,7 @@ def _format_param_details(param_store: dict, param_name: str) -> str:
     if nested_entries:
         first_entry = nested_entries[0]
         theta_value = first_entry.get("theta")
+        p_value = first_entry.get("p")
         avg_rate = first_entry.get("average_contamination_rate")
         if avg_rate in (None, ""):
             raw_rate = first_entry.get("mu")
@@ -489,6 +500,8 @@ def _format_param_details(param_store: dict, param_name: str) -> str:
             f"beta={_format_detail_number(first_entry.get('beta'))}",
             f"theta={_format_detail_number(theta_value)}",
         ]
+        if p_value not in (None, ""):
+            details.append(f"p={_format_detail_number(p_value)}")
         if avg_rate not in (None, ""):
             details.append(f"avg contamination rate={float(avg_rate):.2f}%")
         if len(nested_entries) > 1:
@@ -841,11 +854,49 @@ with st.sidebar:
     else:
         st.info("No experiments saved yet on Page 4.")
     st.divider()
-    run_disabled = not experiment_sets  # only disable when no experiments
-    if st.button("Run experiment", use_container_width=True, disabled=run_disabled):
+    run_button_placeholder = st.empty()
+
+    def _render_run_button() -> bool:
+        run_in_progress = bool(st.session_state.get("_run_pipeline_in_progress", False))
+        awaiting_results_display = bool(st.session_state.get("_awaiting_results_display", False))
+        has_completed_run = bool(state.get("run_output_dir") or state.get("run_output_files"))
+        if run_in_progress or awaiting_results_display:
+            run_button_placeholder.markdown(
+                """
+                <div style="
+                    width: 100%;
+                    padding: 0.65rem 1rem;
+                    border-radius: 0.5rem;
+                    background: rgba(151, 166, 195, 0.35);
+                    color: rgba(44, 62, 80, 0.85);
+                    text-align: center;
+                    font-weight: 600;
+                    cursor: not-allowed;
+                    user-select: none;
+                ">
+                    Running experiment...
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            return False
+
+        run_label = "Rerun experiment" if has_completed_run else "Run experiment"
+        with run_button_placeholder.container():
+            return st.button(
+                run_label,
+                use_container_width=True,
+                disabled=not experiment_sets,
+                key="run_experiment_button",
+            )
+
+    if _render_run_button():
         # Defer execution to main pane to show spinner there
         state["run_request_experiment"] = selected_experiment.parent if selected_experiment else None
+        st.session_state["_run_pipeline_in_progress"] = True
+        st.session_state["_awaiting_results_display"] = True
         st.session_state["_trigger_run_pipeline"] = True
+        st.rerun()
 
 # Main-pane run handler with spinner
 run_placeholder = st.empty()
@@ -911,6 +962,9 @@ if st.session_state.get("_trigger_run_pipeline"):
             overall_progress_bar.progress(100)
             progress_status.markdown(f"**{failure_label}**")
             progress_percent.markdown("### **100%**")
+        finally:
+            st.session_state["_run_pipeline_in_progress"] = False
+        _render_run_button()
 
 if run_error:
     msg = state.get("run_error_message") or str(run_error)
@@ -2030,10 +2084,9 @@ nav_cols = st.columns(3)
 with nav_cols[0]:
     if st.button("Reset and Return Home", type="secondary", key="nav_reset_page5"):
         try:
-            if TMP_DIR.exists():
-                import shutil  # pylint: disable=import-outside-toplevel
-                shutil.rmtree(TMP_DIR)
-            TMP_DIR.mkdir(parents=True, exist_ok=True)
+            # Use safe reset utility to clear temporary directory
+            from .tmp_utils import reset_tmp_directory
+            reset_tmp_directory(TMP_DIR)
             st.session_state.clear()
             state["paths"] = create_default_paths()
             st.switch_page("frontend.py")
@@ -2045,3 +2098,6 @@ with nav_cols[1]:
 with nav_cols[2]:
     if st.button("Next Page", type="primary", key="nav_forward_page6"):
         st.switch_page("pages/6_Glossary.py")
+
+if st.session_state.get("_awaiting_results_display"):
+    st.session_state["_awaiting_results_display"] = False

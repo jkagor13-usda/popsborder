@@ -664,9 +664,9 @@ def run_slippage_pipeline(
         if _is_missing(rec.get("contamination/contamination_rate/distribution")):
             rec["contamination/contamination_rate/distribution"] = base.get("distribution", "beta_binomial")
 
-        bb_defaults = base.get("beta_binomial_parameters", {})
-        for key in ("alpha", "beta", "theta", "N_bar", "I", "J"):
-            col = f"contamination/contamination_rate/beta_binomial_parameters/{key}"
+        bb_defaults = base.get("beta_binomial_parameters", {}).get("default", {})
+        for key in ("alpha", "beta", "theta", "N_bar", "I", "J", "p"):
+            col = f"contamination/contamination_rate/beta_binomial_parameters/default/{key}"
             if _is_missing(rec.get(col)):
                 rec[col] = bb_defaults.get(key)
         return rec
