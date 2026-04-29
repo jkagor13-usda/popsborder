@@ -27,6 +27,10 @@ from popsborder.scenarios import run_scenarios
 from slippage_model_utils.clarke_model_support_functions import gen_clarke_model_inputs
 from slippage_model_utils.r_script_wrapper import run_clarke_bb_group_model, RVariableCreator
 from slippage_model_utils.engineered_feature_creator import  create_engineered_features
+from slippage_model_utils.paths import DefaultPaths
+
+# Define default paths object
+default_paths = DefaultPaths()
 
 # Default config columns to persist into results
 CONFIG_COLUMNS = [
@@ -89,7 +93,7 @@ class SyntheticOptions:
     sampling_method: str = "sequential"
 
 
-DEFAULT_DATA_DIR = Path("data_input")
+DEFAULT_DATA_DIR = default_paths.input_data_dir()
 COMPLIANCE_FILENAME = "compliance_table.csv"
 CONFIG_FILENAME = "config.yml"
 
@@ -120,8 +124,8 @@ class SlippagePaths:
     pis_data: Optional[Path] = None
     rbs_data: Optional[Path] = None
     synthetic_seed: Optional[Path] = None
-    synthetic_output: Path = Path("tmp") / "synthetic_consignment_data.csv"
-    output_dir: Path = Path("output")
+    synthetic_output: Path = default_paths.tmp_dir() / "synthetic_consignment_data.csv"
+    output_dir: Path = default_paths.output_dir()
 
 
 @dataclass
@@ -253,116 +257,6 @@ def load_compliance_policy(path: Path) -> Dict[str, Any]:
         with open(policy_path, "rb") as handle:
             return pickle.load(handle)
     return load_compliance_lookup_csv(policy_path)
-
-def generate_synthetic_data_old(
-    seed_path: Path,
-    output_path: Path,
-    options: SyntheticOptions,
-    producer_grouping_path: Optional[Path] = None, # type: ignore
-) -> pd.DataFrame:
-    """Generate synthetic consignment data and save it to CSV.
-
-    This function:
-
-    * Loads a seed PIS/RBS dataset from ``seed_path``.
-    * Optionally loads a producer grouping file.
-    * Builds a :class:`SyntheticConsignmentDataGenerator` from these inputs.
-    * Generates synthetic consignment records using the specified sampling
-      method and sample size.
-    * Persists the synthetic data to ``output_path``.
-
-    Args:
-        seed_path: Path to seed input data used to train the generator.
-        output_path: Destination CSV file for synthetic consignments.
-        options: SyntheticOptions controlling sample size and method.
-        producer_grouping_path: Optional CSV containing producer grouping
-            fields (used for group-based features).
-
-    Returns:
-        A DataFrame containing the generated synthetic consignment data.
-
-    Raises:
-        FileNotFoundError: If the seed or producer grouping paths are
-            specified but do not exist.
-    """
-    if seed_path is None:
-        raise FileNotFoundError("Seed data path was not provided.")
-    seed_path = Path(seed_path).resolve()
-    output_path = Path(output_path).resolve()
-    if not seed_path.exists():
-        raise FileNotFoundError(f"Seed data not found at {seed_path}")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    config = None
-    config_path = Path(DEFAULT_DATA_DIR / CONFIG_FILENAME).resolve()
-    if config_path.exists():
-        config = load_configuration(config_path)
-    producer_grouping = None
-    if producer_grouping_path is not None:
-        producer_grouping_path = Path(producer_grouping_path).resolve()
-        if not producer_grouping_path.exists():
-            raise FileNotFoundError(f"Producer grouping file not found at {producer_grouping_path}")
-        producer_grouping = pd.read_csv(producer_grouping_path)
-    else:
-        raise FileNotFoundError(f"Producer grouping file not found and is needed.  Supply in 'Producer Grouping' tab")
-    generator = SyntheticConsignmentDataGenerator(
-        config=config,
-        producer_group_mapping=producer_grouping,
-        input_data_file=seed_path,
-    )
-    synth_data = generator.generate_from_input_data(
-        n_consignments=options.n_samples,
-        sampling_method=options.sampling_method,
-    )
-
-    # Create features from the R script using the R wrapper
-    creator = RVariableCreator()
-
-    print(f'  Cleaning (and grouping where applicable) Categorical Names')
-    print(f'      Cleaning Producer Name')
-    synth_data['PRODUCER_NAME_RAW'] = synth_data['PRODUCER_NAME']
-    synth_data['PRODUCER_NAME1'] = creator.batch_basic_text_preproc(text_fields=synth_data['PRODUCER_NAME_RAW'])
-
-    producer_grouping = producer_grouping.rename(
-        columns={"PRODUCER_NAME": "name", "grouping": "group"}
-    )
-
-    print(f'      Creating producer group mappings')
-    synth_data = creator.entity_resolution(
-        df=synth_data,
-        entity_resolution_lookup_table=producer_grouping,
-        use_parquet=False,  # or True, as you prefer
-    )
-
-    print(f'      Cleaning Importer Name')
-    # Create a raw IMPORTER_NAME column with the original importer name
-    synth_data['IMPORTER_NAME_RAW'] = synth_data['IMPORTER_NAME']
-
-    # Update the IMPORTER_NAME column with the cleaned version.
-    synth_data['IMPORTER_NAME1'] = creator.batch_basic_text_preproc(synth_data['IMPORTER_NAME_RAW'])
-
-    # Read in training data used to create producer and importer top variables
-    dt_train = synth_data.copy()
-
-    # Reconstruct risk units based on configuration specification
-    synth_data['PRODUCER_NAME'] = synth_data['PRODUCER_GROUP_NAME1']
-    synth_data['IMPORTER_NAME'] = synth_data['IMPORTER_NAME1']
-    synth_data = construct_risk_units(config=config, data=synth_data)
-
-
-
-    # Pull in the VariableCreator object to use R code to create engineered columns based on created risk units
-    synth_data = create_engineered_features(
-        synth_data=synth_data,
-        dt_train=dt_train,
-        producer_group_mapping=producer_grouping
-    )
-
-    # Create a producer_group column
-    synth_data['producer_group'] = synth_data['PRODUCER_NAME']
-    synth_data['IMPORTER_NAME'] = synth_data['IMPORTER_NAME_TOP']
-
-    save_to_csv(synth_data, filename=output_path)
-    return synth_data
 
 
 def generate_synthetic_data(

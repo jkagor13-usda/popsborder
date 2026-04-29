@@ -22,6 +22,8 @@ Features and Functionality Added:
 - RBS strategies captured via uploaded compliance tables
 
 
+© 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
 ---
 ## Things to know before You Start
 
@@ -129,6 +131,9 @@ High-level, this is a three step process to install and run the model with the u
 ```
     cd plant-inspection-station-simulation
 ```
+
+Note: The top level of the repository should have the exact name `plant-inspection-station-simulation` to avoid any conflicts.
+
   3. If you already have a ```venv``` virtual environment, remove it.
 
 ```
@@ -218,7 +223,7 @@ of the GUI will be placed in a sub-directory called "tmp".
 
 **Maintainers and POCs:** Joseph Agor (joseph.agor@jhuapl.edu) and Gary Lin (Gary.Lin@jhuapl.edu)
 
-**Last updated:** January 2026
+**Last updated:** April, 29 2026
 
 ---
 ---
