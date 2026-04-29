@@ -22,6 +22,8 @@ Features and Functionality Added:
 - RBS strategies captured via uploaded compliance tables
 
 
+© 2026 The Johns Hopkins University Applied Physics Laboratory LLC
+
 ---
 ## Things to know before You Start
 
