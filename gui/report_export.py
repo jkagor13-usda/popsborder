@@ -626,7 +626,7 @@ def _run_summary_rows(results_df: Optional[pd.DataFrame], all_runs_df: Optional[
     if "num_inspections" in results_df.columns:
         rows.append(("Inspected consignments", int(results_df["num_inspections"].sum())))
     if "total_slipped_units" in results_df.columns:
-        rows.append(("Mean slipped plant units", float(results_df["total_slipped_units"].sum())))
+        rows.append(("Total slipped plant units", float(results_df["total_slipped_units"].sum())))
     return rows
 
 
@@ -1140,11 +1140,11 @@ def _slippage_level_report_table(
             "total_intercepted_inspection_units",
         ],
     )
-    sample_summary = _mean_by_name(all_runs_df, ["total_slipped_sample_units", "num_sample_units"])
+    sample_summary = _mean_by_name(all_runs_df, ["total_slipped_sample_units", "total_contaminated_sample_units"])
     rows = []
     for _, row in results_df.iterrows():
         scenario = row["name"]
-        plant_total = row.get("num_plants")
+        plant_total = row.get("total_contaminated_units")
         rows.append(
             {
                 "Scenario": scenario,
@@ -1160,19 +1160,13 @@ def _slippage_level_report_table(
                     "Scenario": row["name"],
                     "Level": "Sample",
                     "Slipped": row.get("total_slipped_sample_units"),
-                    "Slipped %": (row.get("total_slipped_sample_units") / row.get("num_sample_units") * 100.0) if row.get("num_sample_units") not in (None, 0) else np.nan,
+                    "Slipped %": (row.get("total_slipped_sample_units") / row.get("total_contaminated_sample_units") * 100.0) if row.get("total_contaminated_sample_units") not in (None, 0) else np.nan,
                 }
             )
     if inspection_summary is not None:
         for _, row in inspection_summary.iterrows():
-            consignment_total = sum(
-                float(row.get(col) or 0.0)
-                for col in ["consignment_slipped", "consignment_intercepted", "consignment_clean_inspected", "consignment_clean_not_inspected"]
-            )
-            inspection_total = sum(
-                float(row.get(col) or 0.0)
-                for col in ["total_slipped_inspection_units", "total_intercepted_inspection_units", "inspection_clean_inspected", "inspection_clean_not_inspected"]
-            )
+            consignment_total = float(row.get("consignment_slipped") or 0.0) + float(row.get("consignment_intercepted") or 0.0)
+            inspection_total = float(row.get("total_slipped_inspection_units") or 0.0) + float(row.get("total_intercepted_inspection_units") or 0.0)
             rows.extend(
                 [
                     {
@@ -1199,7 +1193,7 @@ def _slippage_level_report_table(
                     "Scenario": row["name"],
                     "Level": "Plant",
                     "Slipped": row.get("total_slipped_units"),
-                    "Slipped %": (row.get("total_slipped_units") / row.get("num_plants") * 100.0) if row.get("num_plants") not in (None, 0) else np.nan,
+                    "Slipped %": (row.get("total_slipped_units") / row.get("total_contaminated_units") * 100.0) if row.get("total_contaminated_units") not in (None, 0) else np.nan,
                 }
             )
             if "total_slipped_sample_units" in row.index:
@@ -1208,21 +1202,15 @@ def _slippage_level_report_table(
                         "Scenario": row["name"],
                         "Level": "Sample",
                         "Slipped": row.get("total_slipped_sample_units"),
-                        "Slipped %": (row.get("total_slipped_sample_units") / row.get("num_sample_units") * 100.0) if row.get("num_sample_units") not in (None, 0) else np.nan,
+                        "Slipped %": (row.get("total_slipped_sample_units") / row.get("total_contaminated_sample_units") * 100.0) if row.get("total_contaminated_sample_units") not in (None, 0) else np.nan,
                     }
                 )
         run_rows = pd.DataFrame(run_rows)
     if inspection_action_runs_df is not None and not inspection_action_runs_df.empty:
         action_run_rows = []
         for _, row in inspection_action_runs_df.iterrows():
-            consignment_total = sum(
-                float(row.get(col) or 0.0)
-                for col in ["consignment_slipped", "consignment_intercepted", "consignment_clean_inspected", "consignment_clean_not_inspected"]
-            )
-            inspection_total = sum(
-                float(row.get(col) or 0.0)
-                for col in ["total_slipped_inspection_units", "total_intercepted_inspection_units", "inspection_clean_inspected", "inspection_clean_not_inspected"]
-            )
+            consignment_total = float(row.get("consignment_slipped") or 0.0) + float(row.get("consignment_intercepted") or 0.0)
+            inspection_total = float(row.get("total_slipped_inspection_units") or 0.0) + float(row.get("total_intercepted_inspection_units") or 0.0)
             action_run_rows.extend(
                 [
                     {
@@ -1435,7 +1423,13 @@ def _contamination_level_report_table(
                 },
             ]
         )
-    return _ensure_report_levels(pd.DataFrame(rows), ["Contaminated", "Contamination %"]) if rows else None
+    if not rows:
+        return None
+    table = _ensure_report_levels(pd.DataFrame(rows), ["Contaminated", "Contamination %"])
+    if table is None or table.empty:
+        return table
+    table["Contamination %"] = table["Contamination %"].map(lambda value: _format_interval_value(value, suffix="%"))
+    return table
 
 
 def _inspection_workload_report_table(
