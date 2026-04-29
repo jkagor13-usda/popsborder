@@ -131,6 +131,9 @@ High-level, this is a three step process to install and run the model with the u
 ```
     cd plant-inspection-station-simulation
 ```
+
+Note: The top level of the repository should have the exact name `plant-inspection-station-simulation` to avoid any conflicts.
+
   3. If you already have a ```venv``` virtual environment, remove it.
 
 ```
