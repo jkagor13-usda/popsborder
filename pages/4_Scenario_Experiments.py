@@ -304,7 +304,7 @@ def _copy_inputs(rows_df: pd.DataFrame, scenario_dir: Path) -> None:
                 _copy_first_existing_file(
                     name,
                     scenario_dir,
-                    [Path(str(val)), Path("tmp") / "consignments" / name, Path(name)],
+                    [Path(str(val)), default_paths.tmp_dir() / "consignments" / name, Path(name)],
                     copied_files,
                     missing,
                 )
@@ -322,7 +322,7 @@ def _copy_inputs(rows_df: pd.DataFrame, scenario_dir: Path) -> None:
                 _copy_first_existing_file(
                     name,
                     scenario_dir,
-                    [Path(str(val)), Path("tmp") / "compliance" / name, Path(name)],
+                    [Path(str(val)), default_paths.tmp_dir() / "compliance" / name, Path(name)],
                     copied_files,
                     missing,
                 )
@@ -341,8 +341,8 @@ def _copy_inputs(rows_df: pd.DataFrame, scenario_dir: Path) -> None:
     config_candidates = []
     if state.get("paths") and getattr(state["paths"], "config", None):
         config_candidates.append(Path(state["paths"].config))
-    config_candidates.append(Path("tmp") / "config.yml")
-    config_candidates.append(Path("data_input") / "config.yml")
+    config_candidates.append(default_paths.tmp_dir() / "config.yml")
+    config_candidates.append(default_paths.input_data_dir() / "config.yml")
     config_src = next((p for p in config_candidates if p.exists()), None)
     if config_src:
         (scenario_dir / CONFIG_FILENAME).write_bytes(config_src.read_bytes())

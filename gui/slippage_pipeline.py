@@ -27,6 +27,10 @@ from popsborder.scenarios import run_scenarios
 from slippage_model_utils.clarke_model_support_functions import gen_clarke_model_inputs
 from slippage_model_utils.r_script_wrapper import run_clarke_bb_group_model, RVariableCreator
 from slippage_model_utils.engineered_feature_creator import  create_engineered_features
+from slippage_model_utils.paths import DefaultPaths
+
+# Define default paths object
+default_paths = DefaultPaths()
 
 # Default config columns to persist into results
 CONFIG_COLUMNS = [
@@ -89,7 +93,7 @@ class SyntheticOptions:
     sampling_method: str = "sequential"
 
 
-DEFAULT_DATA_DIR = Path("data_input")
+DEFAULT_DATA_DIR = default_paths.input_data_dir()
 COMPLIANCE_FILENAME = "compliance_table.csv"
 CONFIG_FILENAME = "config.yml"
 
@@ -120,8 +124,8 @@ class SlippagePaths:
     pis_data: Optional[Path] = None
     rbs_data: Optional[Path] = None
     synthetic_seed: Optional[Path] = None
-    synthetic_output: Path = Path("tmp") / "synthetic_consignment_data.csv"
-    output_dir: Path = Path("output")
+    synthetic_output: Path = default_paths.tmp_dir() / "synthetic_consignment_data.csv"
+    output_dir: Path = default_paths.output_dir()
 
 
 @dataclass
