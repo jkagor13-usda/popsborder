@@ -23,9 +23,14 @@ from .slippage_pipeline import (
     run_slippage_pipeline,
 )
 
-TMP_CONFIG_PATH = Path("tmp/config.yml")
-TMP_PIS_PATH = Path("tmp/contamination/fit_pis_data.csv")
-TMP_RBS_PATH = Path("tmp/consignments/consignment_uploaded_rbs_data.csv")
+from slippage_model_utils.paths import DefaultPaths
+
+# Define default paths object
+default_paths = DefaultPaths()
+
+TMP_CONFIG_PATH = default_paths.tmp_dir() / "config.yml"
+TMP_PIS_PATH = default_paths.tmp_dir() / "contamination" / "fit_pis_data.csv"
+TMP_RBS_PATH = default_paths.tmp_dir() / "consignments" / "consignment_uploaded_rbs_data.csv"
 CONFIG_FILENAME = "config.yml"
 SCENARIO_FILENAME = "scenario_table.csv"
 
