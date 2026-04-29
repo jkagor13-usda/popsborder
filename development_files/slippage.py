@@ -29,7 +29,7 @@ from popsborder.inspections import normalize_rbs_variables_against_consignment, 
 # Import utility functions for contamination module
 from slippage_model_utils.r_script_wrapper import *
 from slippage_model_utils.clarke_model_support_functions import *
-from slippage_model_utils.engineered_feature_creator import  create_engineered_features, map_group_to_shortest_name
+from slippage_model_utils.engineered_feature_creator import  create_engineered_features
 from slippage_model_utils.paths import BoxPaths, DefaultPaths
 from pathlib import Path
 import pickle
