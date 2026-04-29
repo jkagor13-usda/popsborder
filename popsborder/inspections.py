@@ -604,7 +604,7 @@ def sample_rbs(
             compliance_table_dict[key] = (float(str1), float(str2))
 
     detection_confidence_levels = get_detection_and_confidence(
-        consignment, compliance_table_dict, print_compliance_levels=debug_print
+        consignment, compliance_table_dict, print_compliance_levels=False
     )
     n_units_to_inspect = {}
     if unit in ["sample_unit", "sample_units", "item", "items"]:
