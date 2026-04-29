@@ -100,6 +100,14 @@ possible_pis_stations = {
     'Seattle PIS'
 }
 
+engineered_features = {
+    "producer_group": "Resolved Cleaned Producer Name",
+    "median_qty_lt200": "Median Quantity of Inspection Units in the Risk Unit is Less Than 200 Units",
+    "frac_small_gt07": "More than 7% of Inspection Units in the risk unit less than 200 units",
+    "any_small": "Any single Inspection unit in the risk unit less than 200 units",
+    "importer": "Cleaned Importer Name",
+}
+
 def get_domain_specific_aliases() -> Dict[str, Set[str]]:
     """Return hardcoded domain-specific aliases for RiskUnit attributes.
 

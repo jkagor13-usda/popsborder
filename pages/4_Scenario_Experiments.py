@@ -17,6 +17,7 @@ from gui.models import init_state
 from gui.navigation import render_sidebar_navigation
 from gui.page_styles import apply_shared_page_styles, render_labeled_help, render_page_intro
 from gui.slippage_ui import get_slippage_state
+from slippage_model_utils.references import engineered_features
 
 # --- Constants / setup --------------------------------------------------------
 TMP_DIR = Path("tmp")
@@ -383,6 +384,58 @@ def _normalize_rows(rows_df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+
+import pandas as pd
+import streamlit as st
+
+def _load_policy_df(pkl_path):
+    """Load the RBS Policy pickle into a DataFrame, handling several common dict shapes."""
+    try:
+        obj = pd.read_pickle(pkl_path)
+    except Exception as exc:  # pylint: disable=broad-except
+        st.error(f"Unable to read RBS policy file: {exc}")
+        return None
+
+    # Case 1: already a DataFrame
+    if isinstance(obj, pd.DataFrame):
+        return obj
+
+    # Case 2: list of dicts -> DataFrame
+    if isinstance(obj, list) and obj and isinstance(obj[0], dict):
+        try:
+            return pd.DataFrame(obj)
+        except Exception as exc:  # pylint: disable=broad-except
+            st.error(f"Could not convert list-of-dicts policy to DataFrame: {exc}")
+            return None
+
+    # Case 3: dict; try a few patterns
+    if isinstance(obj, dict):
+        # a) dict-of-dicts: treat values as row dicts
+        if all(isinstance(v, dict) for v in obj.values()):
+            try:
+                return pd.DataFrame.from_dict(obj, orient="index")
+            except Exception as exc:  # pylint: disable=broad-except
+                st.error(f"Could not convert dict-of-dicts policy to DataFrame: {exc}")
+                return None
+
+        # b) dict-of-lists/scalars: try DataFrame() directly
+        try:
+            return pd.DataFrame(obj)
+        except Exception:
+            # c) as a last resort, treat the whole dict as one row
+            try:
+                return pd.DataFrame([obj])
+            except Exception as exc:  # pylint: disable=broad-except
+                st.error(f"Could not convert dict policy to DataFrame: {exc}")
+                return None
+
+    st.error(f"Unsupported RBS policy object type: {type(obj)}")
+    return None
+
+
+
+
+
 tabs = st.tabs(["Saved Experiment Packages", "Upload Custom Scenario", "Build Experiments"])
 
 # --- Tab 1: Upload custom scenario -------------------------------------------
@@ -634,6 +687,7 @@ with tabs[2]:
             st.rerun()
         except Exception as exc:  # pylint: disable=broad-except
             st.error(f"Failed to save experiment: {exc}")
+
 
 # --- Bottom navigation --------------------------------------------------------
 st.divider()

@@ -110,6 +110,7 @@ def _save_rbs_to_tmp(
     *,
     base_name: Optional[str] = None,
     producer_grouping_path: Optional[Path] = None,
+    status=None,
 ) -> tuple[bool, str]:
     """Save or generate RBS data into tmp/consignments.
 
@@ -163,6 +164,7 @@ def _save_rbs_to_tmp(
                 dest_rbs,
                 options,
                 producer_grouping_path=producer_grouping_path,
+                status=status,  # pass through
             )
             state["rbs_preview"] = synth_df.head(10)
             set_paths(rbs_data=dest_rbs, synthetic_seed=seed_path)
@@ -762,18 +764,40 @@ with ingest_tab:
             producer_grouping_path = None
             if state.get("use_custom_producer_grouping"):
                 producer_grouping_path = state.get("producer_grouping_path")
-            ok, msg = _save_rbs_to_tmp(
-                current_rbs,
-                pending_manual_rbs,
-                state.get("pending_rbs_upload"),
-                producer_grouping_path=producer_grouping_path,
-            )
-            if ok:
-                if state["paths"].rbs_data:
-                    current_rbs = Path(state["paths"].rbs_data)
-                st.success(f"Generated and saved synthetic consignments: {msg}")
-            else:
-                st.warning(msg)
+
+            # Use st.status to show step-by-step updates
+            with st.status("Generating synthetic consignments...", expanded=True) as status:
+                try:
+                    ok, msg = _save_rbs_to_tmp(
+                        current_rbs,
+                        pending_manual_rbs,
+                        state.get("pending_rbs_upload"),
+                        producer_grouping_path=producer_grouping_path,
+                        status=status,
+                    )
+                    if ok:
+                        status.update(label="Generation complete", state="complete")
+                        if state["paths"].rbs_data:
+                            current_rbs = Path(state["paths"].rbs_data)
+                        st.success(f"Generated and saved synthetic consignments: {msg}")
+                    else:
+                        status.update(label="Generation failed", state="error")
+                        st.warning(msg)
+                except Exception as e:
+                    status.update(label="Generation failed", state="error")
+                    st.error(f"Error during generation: {e}")
+            # ok, msg = _save_rbs_to_tmp(
+            #     current_rbs,
+            #     pending_manual_rbs,
+            #     state.get("pending_rbs_upload"),
+            #     producer_grouping_path=producer_grouping_path,
+            # )
+            # if ok:
+            #     if state["paths"].rbs_data:
+            #         current_rbs = Path(state["paths"].rbs_data)
+            #     st.success(f"Generated and saved synthetic consignments: {msg}")
+            # else:
+            #     st.warning(msg)
     else:
         if state["consignment_source"] == "historical" and (
             (pis_df is None or pis_df.empty) or (rbs_df is None or rbs_df.empty)
