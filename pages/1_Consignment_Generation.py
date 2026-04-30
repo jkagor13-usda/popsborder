@@ -399,8 +399,9 @@ def _render_quantity_sampling_heatmap(df: pd.DataFrame) -> None:
         st.info("Need both quantity and sampling units for inspection unit to render the heat map.")
         return
 
-    quantities = df[quantity_col].dropna().to_numpy()
-    sampling_units = df[sampling_units_col].dropna().to_numpy()
+    heatmap_source = df[[quantity_col, sampling_units_col]].dropna()
+    quantities = heatmap_source[quantity_col].to_numpy()
+    sampling_units = heatmap_source[sampling_units_col].to_numpy()
     if quantities.size == 0 or sampling_units.size != quantities.size:
         st.info("Need both quantity and sampling units for inspection unit to render the heat map.")
         return
@@ -414,7 +415,7 @@ def _render_quantity_sampling_heatmap(df: pd.DataFrame) -> None:
         {
             "plant_bin_start": np.repeat(q_edges[:-1], len(s_edges) - 1),
             "plant_bin_end": np.repeat(q_edges[1:], len(s_edges) - 1),
-            "sample_bin_start": np.tile(s_edges[:-1], len(s_edges) - 1),
+            "sample_bin_start": np.tile(s_edges[:-1], len(q_edges) - 1),
             "sample_bin_end": np.tile(s_edges[1:], len(q_edges) - 1),
             "frequency": heat.flatten(),
         }
