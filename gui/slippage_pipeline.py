@@ -295,55 +295,65 @@ def generate_synthetic_data(
         raise FileNotFoundError(
             "Producer grouping file not found and is needed. Supply in 'Producer Grouping' tab"
         )
+    try:
+        # Now use `log` instead of print
+        log("Initialising R variable creator")
+        creator = RVariableCreator()
 
-    # Now use `log` instead of print
-    log("Initialising R variable creator")
-    creator = RVariableCreator()
+        log("Cleaning (and grouping where applicable) categorical names")
+        log("---Cleaning Producer Name")
+        synth_data = pd.read_csv(seed_path)  # or however you load it previously
+        synth_data["PRODUCER_NAME_RAW"] = synth_data["PRODUCER_NAME"]
+        synth_data["PRODUCER_NAME1"] = creator.batch_basic_text_preproc(
+            text_fields=synth_data["PRODUCER_NAME_RAW"]
+        )
 
-    log("Cleaning (and grouping where applicable) categorical names")
-    log("---Cleaning Producer Name")
-    synth_data = pd.read_csv(seed_path)  # or however you load it previously
-    synth_data["PRODUCER_NAME_RAW"] = synth_data["PRODUCER_NAME"]
-    synth_data["PRODUCER_NAME1"] = creator.batch_basic_text_preproc(
-        text_fields=synth_data["PRODUCER_NAME_RAW"]
-    )
+        producer_grouping = producer_grouping.rename(
+            columns={"PRODUCER_NAME": "name", "grouping": "group"}
+        )
 
-    producer_grouping = producer_grouping.rename(
-        columns={"PRODUCER_NAME": "name", "grouping": "group"}
-    )
+        log("---Creating producer group mappings")
+        synth_data = creator.entity_resolution(
+            df=synth_data,
+            entity_resolution_lookup_table=producer_grouping,
+            use_parquet=False,
+        )
 
-    log("---Creating producer group mappings")
-    synth_data = creator.entity_resolution(
-        df=synth_data,
-        entity_resolution_lookup_table=producer_grouping,
-        use_parquet=False,
-    )
+        log("---Cleaning Importer Name")
+        synth_data["IMPORTER_NAME_RAW"] = synth_data["IMPORTER_NAME"]
+        synth_data["IMPORTER_NAME1"] = creator.batch_basic_text_preproc(
+            synth_data["IMPORTER_NAME_RAW"]
+        )
 
-    log("---Cleaning Importer Name")
-    synth_data["IMPORTER_NAME_RAW"] = synth_data["IMPORTER_NAME"]
-    synth_data["IMPORTER_NAME1"] = creator.batch_basic_text_preproc(
-        synth_data["IMPORTER_NAME_RAW"]
-    )
+        log("Reconstructing risk units")
+        dt_train = synth_data.copy()
+        synth_data["PRODUCER_NAME"] = synth_data["PRODUCER_GROUP_NAME1"]
+        synth_data["IMPORTER_NAME"] = synth_data["IMPORTER_NAME1"]
+        synth_data = construct_risk_units(config=config, data=synth_data)
 
-    log("Reconstructing risk units")
-    dt_train = synth_data.copy()
-    synth_data["PRODUCER_NAME"] = synth_data["PRODUCER_GROUP_NAME1"]
-    synth_data["IMPORTER_NAME"] = synth_data["IMPORTER_NAME1"]
-    synth_data = construct_risk_units(config=config, data=synth_data)
+        log("Creating engineered features")
+        synth_data = create_engineered_features(
+            synth_data=synth_data,
+            dt_train=dt_train,
+            producer_group_mapping=producer_grouping,
+            status=status
+        )
 
-    log("Creating engineered features")
-    synth_data = create_engineered_features(
-        synth_data=synth_data,
-        dt_train=dt_train,
-        producer_group_mapping=producer_grouping,
-        status=status
-    )
+        log("Finalising producer group column and importer top name")
+        synth_data["producer_group"] = synth_data["PRODUCER_NAME"]
+        synth_data["IMPORTER_NAME"] = synth_data["IMPORTER_NAME_TOP"]
 
-    log("Finalising producer group column and importer top name")
-    synth_data["producer_group"] = synth_data["PRODUCER_NAME"]
-    synth_data["IMPORTER_NAME"] = synth_data["IMPORTER_NAME_TOP"]
-
-    log(f"Saving synthetic data to {output_path}")
+        log(f"Saving synthetic data to {output_path}")
+    except:
+        generator = SyntheticConsignmentDataGenerator(
+            config=config,
+            producer_group_mapping=producer_grouping,
+            input_data_file=seed_path,
+        )
+        synth_data = generator.generate_from_input_data(
+            n_consignments=options.n_samples,
+            sampling_method=options.sampling_method,
+        )
     save_to_csv(synth_data, filename=output_path)
     return synth_data
 
