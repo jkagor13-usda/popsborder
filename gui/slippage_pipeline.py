@@ -296,6 +296,10 @@ def generate_synthetic_data(
             "Producer grouping file not found and is needed. Supply in 'Producer Grouping' tab"
         )
     try:
+        if producer_grouping_path is None:
+            raise FileNotFoundError(
+                "Producer grouping file not found and is needed. Supply in 'Producer Grouping' tab"
+            )
         # Now use `log` instead of print
         log("Initialising R variable creator")
         creator = RVariableCreator()
@@ -342,9 +346,10 @@ def generate_synthetic_data(
         log("Finalising producer group column and importer top name")
         synth_data["producer_group"] = synth_data["PRODUCER_NAME"]
         synth_data["IMPORTER_NAME"] = synth_data["IMPORTER_NAME_TOP"]
-
-        log(f"Saving synthetic data to {output_path}")
     except:
+        log(f"Generation of engineered features failed (most likely issue is the R wrapper, contact admin for fix).  "
+            f"Synthetic consignments will not have following features: "
+            f"Resolved Producer/Importer Names, Quantity Binaries, Top Producer/Importer Names")
         generator = SyntheticConsignmentDataGenerator(
             config=config,
             producer_group_mapping=producer_grouping,
@@ -354,6 +359,7 @@ def generate_synthetic_data(
             n_consignments=options.n_samples,
             sampling_method=options.sampling_method,
         )
+    log(f"Saving synthetic data to {output_path}")
     save_to_csv(synth_data, filename=output_path)
     return synth_data
 
