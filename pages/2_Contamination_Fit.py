@@ -753,7 +753,7 @@ with fit_tab:
                     st.success("\n".join(_fit_summary_lines(fit, warnings)))
 
                 except Exception as exc:  
-                    st.error(f"Fitting failed: {exc}")
+                    st.error(f"FITTING FAILED: {exc}")
                     fall_back_fit = ClarkeFit(
                         alpha=FALLBACK_ALPHA,
                         beta=FALLBACK_BETA,
@@ -761,7 +761,8 @@ with fit_tab:
                         raw_result={"fallback": True, "error": str(exc)},
                     )
                     slippage_state["fall_back_fit"] = fall_back_fit
-                    st.info("Applied fallback parameters.")
+                    st.info("Applied fallback parameters.  "
+                            "If wanting different parameters, set manual contamination parameters in 'Assign Contamination Manually' tab.")
 
     fit_to_show: Dict[Tuple,Any] = slippage_state.get("fit")
     fall_back_fit_to_show: Optional[ClarkeFit] = slippage_state.get("fall_back_fit")
