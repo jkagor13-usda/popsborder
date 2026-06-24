@@ -87,6 +87,7 @@ from .skipping import get_inspection_needed_function
 def simulation(
     config,
     num_consignments,
+    seed,
     rng=None,
     rng_inspection=None,
     output_f280_file=None,
@@ -508,6 +509,7 @@ def run_simulation(
     config,
     num_simulations,
     num_consignments,
+    seed=None,
     rngs=None,
     rngs_inspections=None,
     output_f280_file=None,
@@ -623,9 +625,12 @@ def run_simulation(
         print(f'======= RUNNING REPLICATION {i + 1} OUT OF {num_simulations} =========')
         print(f'======================================================================')
 
-        # Define output replication directory for the simulated data
-        output_dir_rep = output_dir / f"rep_{i}"
-        output_dir_rep.mkdir(parents=True, exist_ok=True)
+        if output_dir is not None:
+            # Define output replication directory for the simulated data
+            output_dir_rep = output_dir / f"rep_{i}"
+            output_dir_rep.mkdir(parents=True, exist_ok=True)
+        else:
+            output_dir_rep = None
 
         rng = rngs[i]
         rng_inspection = rngs_inspections[i]
@@ -638,6 +643,7 @@ def run_simulation(
         result = simulation(
             config=config,
             num_consignments=num_consignments,
+            seed=seed,
             rng=rng,
             rng_inspection=rng_inspection,
             output_f280_file=output_f280_file,
