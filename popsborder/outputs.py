@@ -505,7 +505,6 @@ def config_to_simplified_simulation_params(config):
         contamination_unit="",
         contamination_type="",
         contamination_param="",
-        contamination_beta_binomial_params="",
         contaminant_arrangement="",
         contaminated_units_per_cluster="",
         contaminant_distribution="",
@@ -532,10 +531,6 @@ def config_to_simplified_simulation_params(config):
         sim_params.contamination_param = config["contamination"]["contamination_rate"][
             "parameters"
         ]
-    elif sim_params.contamination_type in ["beta_binomial", "beta-binomial"]:
-        sim_params.contamination_beta_binomial_params = config["contamination"][
-            "contamination_rate"
-        ].get("beta_binomial_parameters", {})
     else:
         sim_params.contamination_param = None
     sim_params.contaminant_arrangement = config["contamination"]["arrangement"]
@@ -546,12 +541,12 @@ def config_to_simplified_simulation_params(config):
         sim_params.contaminant_distribution = config["contamination"]["clustered"][
             "distribution"
         ]
-        sim_params.cluster_sample_unit_width = config["contamination"]["clustered"]["random"][
-            "cluster_sample_unit_width"
+        sim_params.cluster_item_width = config["contamination"]["clustered"]["random"][
+            "cluster_item_width"
         ]
     else:
         sim_params.contaminated_units_per_cluster = None
-        sim_params.cluster_sample_unit_width = None
+        sim_params.cluster_item_width = None
         sim_params.contaminant_distribution = None
     sim_params.inspection_unit = config["inspection"]["unit"]
     sim_params.within_box_proportion = config["inspection"]["within_box_proportion"]
@@ -580,13 +575,7 @@ def config_to_simplified_simulation_params(config):
 
 
 def print_totals_as_text(num_consignments, config, totals):
-    """Print simulation results and parameters as formatted text.
-
-    Args:
-        num_consignments: Number of simulated consignments.
-        config: Full configuration dictionary.
-        totals: Namespace or object with aggregated simulation metrics.
-    """
+    """Prints simulation result as text"""
     # This is straightforward printing with simpler branches. Only few variables.
     # pylint: disable=too-many-branches,too-many-statements
 
@@ -599,12 +588,12 @@ def print_totals_as_text(num_consignments, config, totals):
     print("----------------------------------------------------------")
     print(f"consignments:\n\t Number consignments simulated: {num_consignments:,.0f}")
     print(
-        "\t Avg. number of inspection_units per consignment: "
-        f"{round(totals.num_inspection_units / num_consignments):,d}"
+        "\t Avg. number of boxes per consignment: "
+        f"{round(totals.num_boxes / num_consignments):,d}"
     )
     print(
-        "\t Avg. number of sample_units per consignment: "
-        f"{round(totals.num_sample_units / num_consignments):,d}"
+        "\t Avg. number of items per consignment: "
+        f"{round(totals.num_items / num_consignments):,d}"
     )
 
     print(
@@ -618,32 +607,21 @@ def print_totals_as_text(num_consignments, config, totals):
             "\t\t contamination distribution parameters: "
             f"{sim_params.contamination_param}"
         )
-    elif sim_params.contamination_type in ["beta_binomial", "beta-binomial"]:
-        bb_params = sim_params.contamination_beta_binomial_params or {}
-        default_params = bb_params.get("default", {})
-        alpha = default_params.get("alpha")
-        beta = default_params.get("beta")
-        theta = default_params.get("theta")
-        p_value = default_params.get("p")
-        print(
-            "\t\t beta-binomial parameters: "
-            f"alpha={alpha}, beta={beta}, theta={theta}, p={p_value}"
-        )
     print(f"\t contaminant arrangement: {sim_params.contaminant_arrangement}")
     if sim_params.contaminant_arrangement == "clustered":
-        if sim_params.contamination_unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
+        if sim_params.contamination_unit in ["box", "boxes"]:
             print(
-                "\t\t maximum contaminated inspection_units per cluster: "
-                f"{sim_params.contaminated_units_per_cluster:,} inspection_units"
+                "\t\t maximum contaminated boxes per cluster: "
+                f"{sim_params.contaminated_units_per_cluster:,} boxes"
             )
-        if sim_params.contamination_unit in ["sample_unit", "sample_units", "item", "items"]:
+        if sim_params.contamination_unit in ["item", "items"]:
             print(
-                "\t\t maximum contaminated sample_units per cluster: "
-                f"{sim_params.contaminated_units_per_cluster:,} sample_units"
+                "\t\t maximum contaminated items per cluster: "
+                f"{sim_params.contaminated_units_per_cluster:,} items"
             )
             print(f"\t\t cluster distribution: {sim_params.contaminant_distribution}")
             if sim_params.contaminant_distribution == "random":
-                print(f"\t\t cluster width: {sim_params.cluster_sample_unit_width:,} sample_units")
+                print(f"\t\t cluster width: {sim_params.cluster_item_width:,} items")
 
     print(
         f"inspection:\n\t unit: {sim_params.inspection_unit}\n\t sample strategy: "
@@ -661,12 +639,12 @@ def print_totals_as_text(num_consignments, config, totals):
         if sim_params.selection_param_1 == "interval":
             print(f"\t\t box selection interval: {sim_params.selection_param_2}")
     if (
-        sim_params.inspection_unit in ["inspection_unit", "inspection_units", "box", "boxes"]
+        sim_params.inspection_unit in ["box", "boxes"]
         or sim_params.selection_strategy == "cluster"
     ):
         print(
-            "\t minimum proportion of sample_units inspected within inspection_unit: "
-            f"{sim_params.within_inspection_unit_proportion}"
+            "\t minimum proportion of items inspected within box: "
+            f"{sim_params.within_box_proportion}"
         )
     print(f"\t tolerance level: {sim_params.tolerance_level}")
     print("\n")
@@ -719,20 +697,19 @@ def print_totals_as_text(num_consignments, config, totals):
             f"{totals.max_intercepted_contamination_rate:.3f}"
         )
     print(
-        "Avg. number of inspection_units opened per consignment:\n\t to completion: "
-        f"{totals.avg_inspection_units_opened_completion:,.0f}\n"
-        f"\t to detection: {totals.avg_inspection_units_opened_detection:,.0f}"
+        "Avg. number of boxes opened per consignment:\n\t to completion: "
+        f"{totals.avg_boxes_opened_completion:,.0f}\n"
+        f"\t to detection: {totals.avg_boxes_opened_detection:,.0f}"
     )
     print(
-        "Avg. number of sample_units inspected per consignment:\n\t to completion: "
-        f"{totals.avg_sample_units_inspected_completion:,.0f}\n"
-        f"\t to detection: {totals.avg_sample_units_inspected_detection:,.0f}"
+        "Avg. number of items inspected per consignment:\n\t to completion: "
+        f"{totals.avg_items_inspected_completion:,.0f}\n"
+        f"\t to detection: {totals.avg_items_inspected_detection:,.0f}"
     )
     print(
         "Avg. % contaminated items unreported if sample ends at detection: "
         f"{totals.pct_contaminant_unreported_if_detection:.2f}%"
     )
-
 
 def get_item_from_nested_dict(dictionary, keys):
     """Get a value from a nested dictionary using a sequence of keys."""
