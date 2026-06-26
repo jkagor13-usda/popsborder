@@ -1344,6 +1344,12 @@ def get_consignment_generator(config):
     ):
         filename = Path(config["input_file"]["file_name"])
         consignment_generator = PISConsignmentGenerator(filename=filename)
+    elif generation_method == "RBS":
+        if "input_file" in config and "rbs_file_name" in config["input_file"]:
+            rbs_file = Path(config["input_file"]["rbs_file_name"])
+            return PISConsignmentGenerator(filename=rbs_file)
+        _log("No consignment data available")
+        return None
     else:
         raise RuntimeError(
             f"Unknown consignment generation method: {generation_method}"
