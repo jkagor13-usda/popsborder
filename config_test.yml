@@ -1,3 +1,4 @@
+inspection_process: RBS
 consignment:
   generation_method: input_file
   sample_units_per_inspection_unit:
