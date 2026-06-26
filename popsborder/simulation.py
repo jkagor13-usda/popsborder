@@ -430,6 +430,20 @@ def simulation_pis(
     missed_contamination_rate = []
     total_intercepted_contaminants = 0
     total_missed_contaminants = 0
+    seed = 0
+    total_num_boxes = 0
+    total_num_items = 0
+    avg_boxes_opened_completion = 0
+    avg_boxes_opened_detection = 0
+    pct_boxes_opened_completion = 0
+    pct_boxes_opened_detection = 0
+    avg_items_inspected_completion = 0
+    avg_items_inspected_detection = 0
+    pct_items_inspected_completion = 0
+    pct_items_inspected_detection = 0
+    relative_missed_contaminants = 0
+    relative_intercepted_contaminants = 0
+    total_contaminants = 0
     if detailed:
         sample_unit_details = []
         inspected_sample_unit_details = []
@@ -744,7 +758,21 @@ def simulation_pis(
         total_slipped_units=total_slipped_units,
         total_slipped_sample_units = total_slipped_sample_units,
         avg_slipped_units_per_consignment = avg_slipped_units_per_consignment,
-        avg_slipped_sample_units_per_consignment = avg_slipped_sample_units_per_consignment
+        avg_slipped_sample_units_per_consignment = avg_slipped_sample_units_per_consignment,
+        seed=seed,
+        total_num_boxes=total_num_boxes,
+        total_num_items=total_num_items,
+        avg_boxes_opened_completion=avg_boxes_opened_completion,
+        avg_boxes_opened_detection=avg_boxes_opened_detection,
+        pct_boxes_opened_completion=pct_boxes_opened_completion,
+        pct_boxes_opened_detection=pct_boxes_opened_detection,
+        avg_items_inspected_completion=avg_items_inspected_completion,
+        avg_items_inspected_detection=avg_items_inspected_detection,
+        pct_items_inspected_completion=pct_items_inspected_completion,
+        pct_items_inspected_detection=pct_items_inspected_detection,
+        relative_missed_contaminants=relative_missed_contaminants,
+        relative_intercepted_contaminants=relative_intercepted_contaminants,
+        total_contaminants=total_contaminants,
     )
     if detailed:
         simulation_results.details = [
