@@ -23,9 +23,9 @@
 
 import argparse
 
-from inputs import load_configuration
-from outputs import print_totals_as_text
-from simulation import run_simulation
+from .inputs import load_configuration
+from .outputs import print_totals_as_text
+from .simulation import run_simulation
 
 USAGE = """Usage:
   {} <number of simulations> <number of consignments> <config file>
@@ -151,7 +151,10 @@ def main():
             pretty=args.pretty,
             detailed=args.detailed,
         )
-    #print_totals_as_text(args.num_consignments, config, totals)
+    if (config.get("inspection_process", None) is not None) and (config['inspection_process'] == "RBS-PIS"):
+        pass
+    else:
+        print_totals_as_text(args.num_consignments, config, totals)
     if detailed:
         print(f"Items by box: {details[0]}")
         print(f"Indexes inspected: {details[1]}")

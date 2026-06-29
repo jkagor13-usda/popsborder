@@ -490,14 +490,14 @@ def get_contamination_rate(config, rng: Generator = None):
     distribution = config["distribution"]
     if distribution == "fixed_value":
         return config["value"]
-    elif distribution == "beta":
+    if distribution == "beta":
         parameters = config["parameters"]
         if isinstance(parameters, Mapping):
             param1 = parameters["a"]
             param2 = parameters["b"]
         else:
             param1, param2 = parameters
-        return float(rng.beta(param1, param2, size=1))
+        return float(stats.beta.rvs(param1, param2, size=1)[0])
     elif distribution in ["beta_binomial", "beta-binomial"]:
         params = config.get("beta_binomial_parameters", {})
         alpha = float(params['default'].get("alpha", 0))
@@ -737,26 +737,20 @@ def _contaminated_boxes_to_cluster_sizes(
     return cluster_sizes
 
 
-def choose_strata_for_clusters(num_units, cluster_width, num_clusters, rng: Generator = None):
-    """Divide units into strata and choose strata for placing contamination clusters.
+def choose_strata_for_clusters(num_units, cluster_width, num_clusters):
+    """Divide array of items or boxes into strata wide enough for clusters
+    so that they do not overlap. If array is not equally divisible by cluster_width,
+    create one smaller strata that can be used for a smaller cluster if needed.
+    This is important for very high contamination rates that require nearly all units
+    to be contaminated.
+    Randomly select strata to place contaminant clusters. If contamination rate is
+    low enough that not all strata are needed, omit smaller strata created from
+    remainder and only select from strata wide enough to contain full sized cluster.
+    Return strata selected to contaminate with clusters.
 
-    The function divides an array of items or boxes into non-overlapping strata
-    wide enough to hold clusters of width ``cluster_width``. If the array is
-    not equally divisible, a smaller remainder stratum is created. Strata are
-    then randomly selected as locations for contamination clusters.
-
-    Args:
-        num_units: Total number of units (boxes or items) in the consignment.
-        cluster_width: Width of each cluster in terms of units.
-        num_clusters: Number of clusters to place.
-        rng: Random number generator.
-
-    Returns:
-        Array of selected stratum indices for clusters.
-
-    Raises:
-        ValueError: If there are not enough strata to accommodate the desired
-            number of clusters without overlap.
+    num_units: number of boxes or items in consignment
+    cluster_width: size of cluster in terms of boxes or units
+    num_clusters: number of clusters to contaminate
     """
     # Round up so that one smaller remainder stratum is included
     num_strata = max(1, math.ceil(num_units / cluster_width))
@@ -775,14 +769,15 @@ def choose_strata_for_clusters(num_units, cluster_width, num_clusters, rng: Gene
     else:
         # if no remainder (all strata are equal length), select any strata for clusters
         if num_units % cluster_width == 0:
-            cluster_strata = rng.choice(num_strata, num_clusters, replace=False)
+            cluster_strata = np.random.choice(num_strata, num_clusters, replace=False)
         # if last strata is smaller and not all strata are needed,
         # do not include last strata as option for placing clusters
         else:
-            cluster_strata = rng.choice(
+            cluster_strata = np.random.choice(
                 num_strata - 1, num_clusters, replace=False
             )
     return cluster_strata
+
 
 
 def add_contaminant_clusters_to_boxes(config, consignment, rng: Generator = None):
