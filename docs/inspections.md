@@ -323,20 +323,71 @@ chance of being selected, but it provides a sort of compromise to spread
 the sample out across the consignment while still limiting the number of
 boxes opened and items inspected.
 
+## Inspection unit
+
+The inspection unit determines the level at which sampling decisions are made. The
+configuration now supports the newer terminology:
+
+```yaml
+inspection:
+  unit: sample_units   # Use ``sample_units`` (formerly ``items``) for sample‑unit based inspection
+  # or
+  unit: inspection_units   # Use ``inspection_units`` (formerly ``boxes``) for box‑level inspection
+```
+
+Both the historic keys (``items``/``boxes``) and the new aliases (``sample_units``/``inspection_units``) are accepted for backward compatibility.
+
+## Sample strategy
+
+The ``sample_strategy`` field defines how the number of units to inspect is
+computed. In addition to the existing strategies, a new **risk‑based sampling**
+(RBS) strategy is available:
+
+```yaml
+inspection:
+  sample_strategy: rbs   # Risk‑based sampling using a compliance lookup table
+  compliance_table:
+    file_name: compliance_lookup_final.pkl   # Pickle file with detection/confidence levels per risk group
+  rbs_calculator_grouping_variables:
+    default: # Default risk unit grouping variables; will be used if not set of parameters are specified for the PIS station
+      - origin
+      - material_type
+    Miami: # Example of PIS specific risk unit grouping variables
+      - origin
+      - material_type
+      - producer
+```
+
+When ``sample_strategy`` is set to ``rbs`` the simulation reads the ``compliance_table``
+(pickle file) and, for each risk unit, obtains the detection level and confidence
+level via ``get_detection_and_confidence``. These levels are then passed to the
+hypergeometric sample‑size calculator (``compute_hypergeometric``) defined in
+``inspections.py``. The resulting per‑risk‑unit sample sizes are stored in a
+mapping and later used by the inspection routine to select the appropriate number
+of sample units per risk unit.
+
+The RBS workflow consists of two stages:
+1. **Determine sample sizes per risk unit** – ``sample_rbs`` reads the compliance
+   lookup, extracts detection/confidence pairs, and computes the required number
+   of sample units for each risk unit using the hypergeometric formula.
+2. **Select and inspect units** – ``select_units_to_inspect`` (with ``sample_strategy``
+   ``rbs``) delegates to ``select_random_indexes_rbs`` which returns both the
+   sample‑unit indexes to inspect and a mapping of which inspection units they
+   belong to. The main inspection loop then iterates over these indexes, tracking
+   effort to completion and to detection as described below.
+
 ## End strategy
 
-Each simulation automatically runs two options for determining when to
-end an inspection (end strategies). The two possible end strategies are
-`to detection` and `to completion`.
+Each simulation runs two end‑strategy options determining when the inspection
+stops:
 
-For the `to detection` end strategy, the inspection ends as soon as a
-contaminant is detected. For the `to completion` strategy, the
-inspection continues until the full sample has been inspected,
-regardless of contaminant detection.
+* ``to detection`` – inspection stops immediately after the first contaminated
+  unit is detected (still records what would have happened under full inspection).
+* ``to completion`` – inspection continues until the full allocated sample is
+  inspected, regardless of detections.
 
-The number of contaminated units detected for each end strategy is
-compared to quantify the proportion of contaminants reported when the
-inspection is ended at detection.
+The resulting counts of contaminated units for each end strategy are compared to
+quantify the proportion of contaminants reported when stopping at detection.
 
 ---
 
