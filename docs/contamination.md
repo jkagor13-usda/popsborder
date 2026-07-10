@@ -57,7 +57,7 @@ In tabular configuration, the above looks like:
 | contamination/contamination_rate/parameters/a | 4     |
 | contamination/contamination_rate/parameters/b | 60    |
 
-The possible values for `distribution` include `beta` and `fixed_value`.
+The possible values for `distribution` include `beta`, `fixed_value` and `beta_binomial`.
 
 If `distribution` = `beta`, a beta probability distribution of contamination rates
 is used to draw a random contamination rate for every consignment. If using the beta
@@ -65,6 +65,48 @@ distribution, two shape parameter values are required to define the desired beta
 distribution of contamination rates. An contamination rate mean and standard
 deviation can be used to determine the beta distribution shape parameters if
 desired using this calculator: <https://www.desmos.com/calculator/kx83qio7yl>.
+
+If `distribution` = `beta_binomial`, the contamination rate is modeled using a beta‑binomial framework with an optional clustering control parameter `p`. The parameter `p` (range 0‑1) governs how concentrated contamination is among the sample units: `p = 0` corresponds to effectively random distribution, while `p = 1` represents a fully clustered case where contamination is packed into as few units as capacity allows.
+
+Example configuration:
+
+```yaml
+contamination:
+  contamination_rate:
+    distribution: beta_binomial
+    beta_binomial_parameters:
+      default:
+        alpha: 4
+        beta: 60
+        theta: 10
+        p: 0.5
+```
+
+The `beta_binomial_parameters` block may contain range‑specific entries keyed by plant quantity (e.g., `0-1000`, `1001-5000`) or a `default` entry. Each entry can specify `alpha`, `beta`, `theta`, and optionally `p`. If `p` is omitted, it defaults to `0` (no clustering).
+
+Example with range‑specific entries:
+
+```yaml
+contamination:
+  contamination_rate:
+    distribution: beta_binomial
+    beta_binomial_parameters:
+      0-1000:
+        alpha: 3
+        beta: 40
+        theta: 5
+        p: 0.2
+      1001-5000:
+        alpha: 5
+        beta: 70
+        theta: 12
+        p: 0.6
+      default:
+        alpha: 4
+        beta: 60
+        theta: 10
+        p: 0.5
+```
 
 If `distribution` = `fixed_value`, a constant contamination rate is used for every
 consignment (rather than a random value based on a beta distribution). When using a
