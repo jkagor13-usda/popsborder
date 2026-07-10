@@ -49,6 +49,45 @@ DEFAULT_COLS = [
 ]
 
 
+# ----------------------------------------------------------------------
+# Example – run post‑processing automatically after the script is executed
+# ----------------------------------------------------------------------
+# The folder layout produced by `run_scenarios` is:
+#   <repo_root>/output/
+#       ├─ Directory1/
+#       │    ├─ Baseline/
+#       │    └─ Model_1/
+#       └─ Directory2/
+#            ├─ Baseline/
+#            └─ Model_1/
+#
+# `base_path` must be the folder that contains the experiment sub‑folders.
+# `output_dir` is where we want the plots / CSV files to be written.
+# ----------------------------------------------------------------------
+
+# 1️⃣  Root of the repository (two levels up from this file)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# 2️⃣  Where `run_scenarios` wrote its results
+SCENARIO_OUTPUT_ROOT = REPO_ROOT / "output"
+
+# 3️⃣  Choose the *directory* that holds the experiments you want to analyse.
+#     In the example above we pick the first directory (you can change this
+#     to whichever you need, or discover it programmatically).
+EXPERIMENT_ROOT = SCENARIO_OUTPUT_ROOT / "Directory1"
+
+# 4️⃣  Experiments that exist under that directory.
+#     These must match the folder names exactly (case‑sensitive).
+EXPERIMENTS = ["Baseline", "Model_1"]
+
+# 5️⃣  Where post‑processing artefacts (plots, CSV) will be stored.
+#     Here we create a sub‑folder called `post_processing` inside the same
+#     directory that holds the experiment data.
+POST_PROC_OUTPUT = EXPERIMENT_ROOT / "post_processing"
+
+
+
+
 def _ensure_dir(path: Path) -> None:
     """Create ``path`` if it does not exist (including parents)."""
     path.mkdir(parents=True, exist_ok=True)
@@ -387,13 +426,12 @@ def _parse_cli() -> argparse.Namespace:
 def main() -> None:
     args = _parse_cli()
     run_post_processing(
-        base_path=args.base_path,
-        experiments=args.experiments,
-        cols_of_interest=args.cols,
-        output_dir=args.output_dir,
-        steps=args.steps,
+        base_path=EXPERIMENT_ROOT,  # e.g.  <repo>/output/Directory1
+        experiments=EXPERIMENTS,  # ['Baseline', 'Model_1']
+        cols_of_interest=None,  # defaults to the built‑in list
+        output_dir=POST_PROC_OUTPUT,  # plots & CSV end up here
+        steps=None,  # run *all* steps (or supply a list)
     )
-
 
 if __name__ == "__main__":
     main()
