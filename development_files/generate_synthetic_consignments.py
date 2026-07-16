@@ -41,7 +41,7 @@ def main():
     parser.add_argument("--num-consignments",
                         type=int,
                         help="Number of consignments to generate",
-                        default=100,
+                        default=10,
                         )
     parser.add_argument("--synthetic-data-file-name",
                         type=str,
