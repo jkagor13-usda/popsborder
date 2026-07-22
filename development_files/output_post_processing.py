@@ -24,12 +24,15 @@ import argparse
 import os
 from pathlib import Path
 from typing import List
+import json
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
 from scipy.stats import f_oneway, ttest_ind, ttest_rel
+
+from slippage_model_utils.paths import BoxPaths, DefaultPaths
 
 # ---------------------------------------------------------------------------
 # Configuration & helper utilities
@@ -48,22 +51,9 @@ DEFAULT_COLS = [
     "inspected_sample_units",
 ]
 
-
-# ----------------------------------------------------------------------
-# Example – run post‑processing automatically after the script is executed
-# ----------------------------------------------------------------------
-# The folder layout produced by `run_scenarios` is:
-#   <repo_root>/output/
-#       ├─ Directory1/
-#       │    ├─ Baseline/
-#       │    └─ Model_1/
-#       └─ Directory2/
-#            ├─ Baseline/
-#            └─ Model_1/
-#
-# `base_path` must be the folder that contains the experiment sub‑folders.
-# `output_dir` is where we want the plots / CSV files to be written.
-# ----------------------------------------------------------------------
+### Initialize default paths
+default_paths = DefaultPaths()
+box_paths = BoxPaths()
 
 # Root of the repository (two levels up from this file)
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -74,11 +64,11 @@ SCENARIO_OUTPUT_ROOT = REPO_ROOT / "output"
 # Choose the *directory* that holds the experiments you want to analyse.
 # In the example above we pick the first directory (you can change this
 # to whichever you need, or discover it programmatically).
-EXPERIMENT_ROOT = SCENARIO_OUTPUT_ROOT / "Directory1"
+EXPERIMENT_ROOT = box_paths.model_testing_data_folder() / "Official_Results"
 
 # Experiments that exist under that directory.
 # These must match the folder names exactly (case‑sensitive).
-EXPERIMENTS = ["Baseline", "Model_1"]
+EXPERIMENTS = ["Baseline", "Model 1", "Model 2", "Model 3"]
 
 # Where post‑processing artefacts (plots, CSV) will be stored.
 # Here we create a sub‑folder called `post_processing` inside the same
@@ -122,11 +112,62 @@ def gather_experiment_data(
     for exp in experiments:
         exp_path = base_path / exp / "Replications"
         for rep in os.listdir(exp_path):
+            print(f"Loading experiment {exp} replication {rep}...")
             csv_path = exp_path / rep / "synthetic_commodity_line_results_data.csv"
-            df_rep = pd.read_csv(csv_path, usecols=cols_of_interest)
+            try:
+                df_rep = pd.read_csv(str(csv_path), usecols=cols_of_interest)
+            except OSError as e:
+                raise(ValueError(f"Warning: could not read experiment {exp} replication {rep}...\n"
+                                 f"Error: {e}"))
             df_rep["replication"] = rep
             df_rep["experiment"] = exp
             stack.append(df_rep)
+    return pd.concat(stack, ignore_index=True)
+
+
+
+def gather_experiment_data_new(
+    base_path: str | Path,
+    experiments: List[str],
+    cols_of_interest: List[str] = DEFAULT_COLS,
+) -> pd.DataFrame:
+    base_path = Path(base_path)
+    stack: List[pd.DataFrame] = []
+
+    for exp in experiments:
+        exp_path = base_path / exp / "Replications"
+        for rep in os.listdir(exp_path):
+            print(f"Loading experiment {exp} replication {rep}...")
+            csv_path = exp_path / rep / "synthetic_commodity_line_results_data.csv"
+
+            # Try pandas first (text‑mode file object to avoid the C‑engine issue)
+            try:
+                with open(csv_path, mode="r", encoding="utf-8", newline="") as f:
+                    df_rep = pd.read_csv(
+                        f,
+                        usecols=cols_of_interest,
+                        engine="python",
+                    )
+            except OSError as e:
+                # Some CSVs trigger an OSError inside pandas (e.g., extremely long lines).
+                # Fall back to the stdlib csv reader which is more tolerant.
+                import csv
+                with open(csv_path, mode="r", encoding="utf-8", newline="") as f:
+                    reader = csv.DictReader(f)
+                    rows = [row for row in reader]
+                # Build a DataFrame from the rows and then keep only the columns we need.
+                df_rep = pd.DataFrame(rows)
+                # Ensure the column order / types match the expectations.
+                try:
+                    df_rep = df_rep[cols_of_interest]
+                except:
+                    print('')
+            # -----------------------------------------------------
+
+            df_rep["replication"] = rep
+            df_rep["experiment"] = exp
+            stack.append(df_rep)
+
     return pd.concat(stack, ignore_index=True)
 
 
@@ -238,6 +279,22 @@ def plot_mean_scatter(mean_df: pd.DataFrame, std_df: pd.DataFrame | None, output
     return _save_fig(fig, output_dir, "scatter_average")
 
 
+def plot_mean_scatter_custom(mean_df: pd.DataFrame, output_dir: Path) -> Path:
+    """Scatter of mean inspected units vs slipped plants per experiment.
+    Mirrors the code from *SlippageAnalysis.ipynb*.
+    """
+    fig, ax = plt.subplots()
+    # seaborn scatter with larger markers (s=50) and hue per experiment
+    sns.scatterplot(data=mean_df, x="inspected_sample_units", y="num_plants_slipped", hue="experiment", s=50, ax=ax)
+    # optional: uncomment to use log scale on Y axis
+    # ax.set_yscale('log')
+    ax.set_title("Plant Slippage vs Inspected Sample Units, Average")
+    ax.set_xlabel("Sample Units Inspected per Consignment")
+    ax.set_ylabel("Average # Plants Slipped")
+    ax.legend(title="Experiment")
+    return _save_fig(fig, output_dir, "scatter_average_custom")
+
+
 # ---------------------------------------------------------------------------
 # Statistical tests
 # ---------------------------------------------------------------------------
@@ -272,9 +329,12 @@ def run_paired_ttests(total_slippage: pd.DataFrame, experiment_labels: List[str]
                 .values
             )
             t, p = ttest_rel(s1, s2)
+            # Compute the mean difference in slippage between the two experiments
+            mean_diff = float(s1.mean() - s2.mean())
             results.append({
                 "Experiment 1": exp1,
                 "Experiment 2": exp2,
+                "Mean difference in slippage": mean_diff,
                 "t-statistic": t,
                 "p-value": p,
             })
@@ -324,6 +384,7 @@ def run_post_processing(
             "boxplot_log",
             "scatter_replication",
             "scatter_average",
+            "scatter_average_custom",
             "anova",
             "ttests",
             "csv",
@@ -377,6 +438,18 @@ def run_post_processing(
         )
         results["scatter_average_path"] = plot_mean_scatter(mean_combined, std_combined, output_path)
 
+    # Custom scatter plot (mirrors SlippageAnalysis.ipynb)
+    if "scatter_average_custom" in steps_set:
+        # Re‑use the mean_combined DataFrame computed above if it exists;
+        # otherwise compute it on‑the‑fly.
+        if "mean_combined" not in locals():
+            mean_combined = (
+                combined.groupby("experiment")[["inspected_sample_units", "num_plants_slipped"]]
+                .mean()
+                .reset_index()
+            )
+        results["scatter_average_custom_path"] = plot_mean_scatter_custom(mean_combined, output_path)
+
     # 4. Statistics ------------------------------------------------------
     if "anova" in steps_set:
         results["anova_p"] = run_one_way_anova(total_slippage)
@@ -424,14 +497,48 @@ def _parse_cli() -> argparse.Namespace:
 
 
 def main() -> None:
-    args = _parse_cli()
-    run_post_processing(
+    #args = _parse_cli()
+    res = run_post_processing(
         base_path=EXPERIMENT_ROOT,  # e.g.  <repo>/output/Directory1
         experiments=EXPERIMENTS,  # ['Baseline', 'Model_1']
-        cols_of_interest=None,  # defaults to the built‑in list
+        cols_of_interest=DEFAULT_COLS,  # defaults to the built‑in list
         output_dir=POST_PROC_OUTPUT,  # plots & CSV end up here
         steps=None,  # run *all* steps (or supply a list)
     )
+
+    # ---------------------------------------------------------------
+    # Persist all results returned by ``run_post_processing``.
+    #   * DataFrames are written as CSV files.
+    #   * Path objects (plots, exported CSV) are already on disk – we just record their location.
+    #   * Scalars (e.g., p‑values) are saved in a simple JSON summary.
+    # ---------------------------------------------------------------
+
+    # Create a sub‑folder to hold the exported artefacts.
+    export_dir = POST_PROC_OUTPUT / "exported_results"
+    export_dir.mkdir(parents=True, exist_ok=True)
+
+    # Containers for the JSON summary.
+    json_summary = {}
+
+    for key, value in res.items():
+        # DataFrames → CSV
+        if isinstance(value, pd.DataFrame):
+            csv_path = export_dir / f"{key}.csv"
+            value.to_csv(csv_path, index=False)
+            json_summary[key] = str(csv_path)
+        # Path objects (plots, CSV already written) → record path
+        elif isinstance(value, Path):
+            json_summary[key] = str(value)
+        # Anything else (float, int, list, dict) → store directly
+        else:
+            json_summary[key] = value
+
+    # Write the JSON summary file.
+    summary_path = export_dir / "summary.json"
+    with open(summary_path, "w", encoding="utf-8") as f:
+        json.dump(json_summary, f, indent=2, default=str)
+
+    print(f"All post‑processing artefacts written to {export_dir}")
 
 if __name__ == "__main__":
     main()
