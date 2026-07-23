@@ -176,18 +176,36 @@ def gather_experiment_data_new(
 # ---------------------------------------------------------------------------
 
 def add_slippage_metrics(df: pd.DataFrame) -> pd.DataFrame:
-    """Add ``num_plants_slipped`` and ``prop_inspected`` columns to *df*.
+    """Add slippage‑related and efficiency metrics to *df*.
 
-    The calculations are unchanged from the original script.
+    New columns added:
+    - ``num_plants_slipped`` – total slipped plants per row.
+    - ``prop_inspected`` – proportion of the batch inspected.
+    - ``slip_per_inspected`` – slipped plants per inspected sample unit.
+    - ``inspected_per_slip`` – inspected sample units required per slipped plant.
+    - ``efficiency_score`` – weighted balance of coverage vs slippage (α,β can be tuned).
+    - ``slip_to_coverage`` – slipped plants normalized by inspection proportion.
     """
+    print(f'\nAdding slippage metrics')
     df = df.copy()
     df["num_plants_slipped"] = df["missed"].astype(int) * df["infected_plants"]
-    df["prop_inspected"] = df["inspected_sample_units"] / df["num_plants"]
+    df["prop_inspected"] = df["inspected_sample_units"] / df["num_sample_units"].replace(0, np.nan)
+
+    # New efficiency metrics
+    df["slip_per_inspected"] = df["num_plants_slipped"] / df["inspected_sample_units"].replace(0, np.nan)
+    df["inspected_per_slip"] = df["inspected_sample_units"] / df["num_plants_slipped"].replace(0, np.nan)
+
+    # Weighted efficiency score – α and β are tunable constants (adjust per business needs)
+    alpha, beta = 0.6, 0.4
+    df["efficiency_score"] = alpha * df["prop_inspected"] - beta * (df["num_plants_slipped"] / df["num_plants"])
+
+    df["slip_to_coverage"] = df["num_plants_slipped"] / df["prop_inspected"]
     return df
 
 
 def compute_total_slippage(df: pd.DataFrame) -> pd.DataFrame:
     """Aggregate slipped plants per ``experiment``/``replication``."""
+    print(f'\nComputing total slippage per experiment/replication')
     return (
         df.groupby(["experiment", "replication"])['num_plants_slipped']
         .sum()
@@ -199,6 +217,7 @@ def compute_inspected_units(df: pd.DataFrame) -> pd.DataFrame:
     """Sum inspected sample units per ``experiment``/``replication``/``inspection_number``.
     Also returns the mean inspected units per replication.
     """
+    print(f'\nComupting inspected units per experiment/replication/inspection_number')
     sum_units = (
         df.groupby(["experiment", "replication", "inspection_number"])['inspected_sample_units']
         .sum()
@@ -212,6 +231,26 @@ def compute_inspected_units(df: pd.DataFrame) -> pd.DataFrame:
     )
     return sum_units, mean_units
 
+
+def compute_efficiency_totals(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute total slipped plants and inspected units per experiment‑replication,
+    then calculate the efficiency ratio ``slip_per_inspected_total``.
+
+    Returns a DataFrame with columns:
+    - ``experiment``
+    - ``replication``
+    - ``total_slipped`` (sum of ``num_plants_slipped``)
+    - ``total_inspected`` (sum of ``inspected_sample_units``)
+    - ``slip_per_inspected_total`` (ratio, NaN where ``total_inspected`` is zero).
+    """
+    # Aggregate totals per experiment/replication
+    totals = (
+        df.groupby(["experiment", "replication"], as_index=False)
+        .agg(total_slipped=("num_plants_slipped", "sum"), total_inspected=("inspected_sample_units", "sum"))
+    )
+    # Compute ratio safely
+    totals["slip_per_inspected_total"] = totals["total_slipped"] / totals["total_inspected"].replace(0, np.nan)
+    return totals
 
 # ---------------------------------------------------------------------------
 # Plotting utilities (each returns the figure for optional further handling)
@@ -258,6 +297,46 @@ def plot_scatter_combined(combined: pd.DataFrame, output_dir: Path, log_y: bool 
     ax.set_title("Plant Slippage vs Inspected Sample Units, Replication‑Level")
     return _save_fig(fig, output_dir, "scatter_replication" + ("_log" if log_y else ""))
 
+
+def plot_efficiency_totals_ci(eff_totals: pd.DataFrame, output_dir: Path, log_scale: bool = False) -> Path:
+    """Plot the mean ``slip_per_inspected_total`` per experiment with 95% confidence intervals.
+
+    Parameters
+    ----------
+    eff_totals: DataFrame returned by :func:`compute_efficiency_totals` containing
+        ``experiment`` and ``slip_per_inspected_total`` columns.
+    output_dir: Destination folder for the PNG.
+    log_scale: If ``True`` use a logarithmic y‑axis.
+    """
+    # Aggregate per‑experiment statistics
+    stats = (
+        eff_totals.groupby("experiment", as_index=False)
+        .agg(
+            mean_ratio=("slip_per_inspected_total", "mean"),
+            std_ratio=("slip_per_inspected_total", "std"),
+            n=("slip_per_inspected_total", "count"),
+        )
+    )
+    # 95 % CI = mean ± 1.96 * std / sqrt(n)
+    stats["ci_lower"] = stats["mean_ratio"] - 1.96 * stats["std_ratio"] / np.sqrt(stats["n"])
+    stats["ci_upper"] = stats["mean_ratio"] + 1.96 * stats["std_ratio"] / np.sqrt(stats["n"])
+
+    fig, ax = plt.subplots()
+    ax.errorbar(
+        stats["experiment"],
+        stats["mean_ratio"],
+        yerr=1.96 * stats["std_ratio"] / np.sqrt(stats["n"]),
+        fmt="o",
+        capsize=5,
+        ecolor="black",
+        color="steelblue",
+    )
+    if log_scale:
+        ax.set_yscale("log")
+    ax.set_xlabel("Experiment")
+    ax.set_ylabel("Slip per Inspected (total)")
+    ax.set_title("Average slip_per_inspected_total with 95% CI per Experiment")
+    return _save_fig(fig, output_dir, "efficiency_totals_ci" + ("_log" if log_scale else ""))
 
 def plot_mean_scatter(mean_df: pd.DataFrame, std_df: pd.DataFrame | None, output_dir: Path) -> Path:
     """Average inspected units vs slipped plants per experiment with optional error bars.
@@ -310,10 +389,11 @@ def run_one_way_anova(total_slippage: pd.DataFrame) -> float:
 
 
 def run_paired_ttests(total_slippage: pd.DataFrame, experiment_labels: List[str]) -> pd.DataFrame:
-    """Perform paired t‑tests for every combination of ``experiment_labels``.
+    """Perform paired t‑tests for every combination of ``experiment_labels`` on the
+    ``num_plants_slipped`` metric.
 
     Returns a DataFrame with columns ``Experiment 1``, ``Experiment 2``,
-    ``t-statistic`` and ``p-value``.
+    ``Mean difference in slippage``, ``t-statistic`` and ``p-value``.
     """
     results = []
     for i, exp1 in enumerate(experiment_labels):
@@ -329,7 +409,6 @@ def run_paired_ttests(total_slippage: pd.DataFrame, experiment_labels: List[str]
                 .values
             )
             t, p = ttest_rel(s1, s2)
-            # Compute the mean difference in slippage between the two experiments
             mean_diff = float(s1.mean() - s2.mean())
             results.append({
                 "Experiment 1": exp1,
@@ -339,6 +418,66 @@ def run_paired_ttests(total_slippage: pd.DataFrame, experiment_labels: List[str]
                 "p-value": p,
             })
     return pd.DataFrame(results)
+
+
+def run_paired_ttests_metric(total_metrics: pd.DataFrame, metric: str, experiment_labels: List[str]) -> pd.DataFrame:
+    """Perform paired t‑tests for *metric* across experiments.
+
+    Parameters
+    ----------
+    total_metrics: DataFrame containing one row per ``experiment``/``replication``
+        and a column named *metric* (e.g., ``"slip_per_inspected"``).
+    metric: Column name on which to run the paired tests.
+    experiment_labels: List of experiment identifiers.
+
+    Returns a DataFrame with the same shape as :func:`run_paired_ttests` but
+    reporting the mean difference for the selected *metric*.
+    """
+    results = []
+    for i, exp1 in enumerate(experiment_labels):
+        for exp2 in experiment_labels[i + 1 :]:
+            s1 = (
+                total_metrics[total_metrics["experiment"] == exp1]
+                .sort_values("replication")[metric]
+                .values
+            )
+            s2 = (
+                total_metrics[total_metrics["experiment"] == exp2]
+                .sort_values("replication")[metric]
+                .values
+            )
+            t, p = ttest_rel(s1, s2)
+            mean_diff = float(s1.mean() - s2.mean())
+            results.append({
+                "Experiment 1": exp1,
+                "Experiment 2": exp2,
+                f"Mean difference in {metric}": mean_diff,
+                "t-statistic": t,
+                "p-value": p,
+            })
+    return pd.DataFrame(results)
+
+
+def plot_box_metric(df: pd.DataFrame, metric: str, output_dir: Path, log_scale: bool = False) -> Path:
+    """Box‑plot for an arbitrary *metric* per experiment.
+
+    Parameters
+    ----------
+    df: DataFrame produced by ``compute_total_slippage`` **or** any aggregation
+        that contains ``experiment`` and the *metric* column.
+    metric: Column name to visualise.
+    output_dir: Destination folder for the PNG.
+    log_scale: If ``True`` use a logarithmic y‑axis.
+    """
+    fig, ax = plt.subplots()
+    sns.boxplot(data=df, x="experiment", y=metric, ax=ax)
+    if log_scale:
+        ax.set_yscale("log")
+    ax.set_ylabel(metric.replace('_', ' ').title())
+    ax.set_xlabel("Experiment")
+    ax.set_title(f"{metric.replace('_', ' ').title()} by Experiment" + (" (log)" if log_scale else ""))
+    stem = f"box_{metric}" + ("_log" if log_scale else "")
+    return _save_fig(fig, output_dir, stem)
 
 
 # ---------------------------------------------------------------------------
@@ -380,13 +519,17 @@ def run_post_processing(
         steps_set = {
             "load",
             "metrics",
-            "boxplot",
-            "boxplot_log",
-            "scatter_replication",
-            "scatter_average",
-            "scatter_average_custom",
-            "anova",
-            "ttests",
+            #"boxplot",
+            # "boxplot_log",
+            # "scatter_replication",
+            # "scatter_average",
+            # "scatter_average_custom",
+            # "anova",
+            # "ttests",
+            #"ttests_efficiency",
+            "ttests_efficiency_totals",
+            "boxplot_efficiency",
+            "efficiency_ci_plot",
             "csv",
         }
 
@@ -404,27 +547,48 @@ def run_post_processing(
     if "metrics" in steps_set:
         df = add_slippage_metrics(df_raw)
         total_slippage = compute_total_slippage(df)
-        sum_units, _ = compute_inspected_units(df)
+        sum_units, mean_units = compute_inspected_units(df)
+        efficiency_totals = compute_efficiency_totals(df)
         results.update({
             "data_with_metrics": df,
             "total_slippage": total_slippage,
             "inspected_units": sum_units,
+            "mean_inspected_units": mean_units,
+            "efficiency_totals": efficiency_totals,
         })
+
+        # Build the combined DataFrame once, available for plots and CSV export
+        combined = sum_units.merge(total_slippage,
+                                   on=["experiment", "replication"]).rename(
+            columns={"inspected_sample_units": "inspected_sample_units"})
+        results.update({
+            "data_with_metrics": df,
+            "total_slippage": total_slippage,
+            "inspected_units": sum_units,
+            "mean_inspected_units": mean_units,
+            "efficiency_totals": efficiency_totals,
+            "combined": combined,  # optional – expose for downstream use
+        })
+
     else:
         df = add_slippage_metrics(df_raw)
         total_slippage = compute_total_slippage(df)
-        sum_units, _ = compute_inspected_units(df)
+        sum_units, mean_units = compute_inspected_units(df)
 
     # 3. Plots -----------------------------------------------------------
     if "boxplot" in steps_set:
+        print(f'\nPlotting boxplot of slippage...')
         results["boxplot_path"] = plot_box_slippage(total_slippage, output_path, log_scale=False)
     if "boxplot_log" in steps_set:
+        print(f'\nPlotting boxplot log of slippage...')
         results["boxplot_log_path"] = plot_box_slippage(total_slippage, output_path, log_scale=True)
     if "scatter_replication" in steps_set:
+        print(f'\nPlotting scatterplot of slippage...')
         # combine inspected units per replication with slippage for plotting
         combined = sum_units.merge(total_slippage, on=["experiment", "replication"]).rename(columns={"inspected_sample_units": "inspected_sample_units"})
         results["scatter_replication_path"] = plot_scatter_combined(combined, output_path, log_y=True)
     if "scatter_average" in steps_set:
+        print(f'\nPlotting average scatter of slippage...')
         mean_combined = (
             combined.groupby("experiment")[["inspected_sample_units", "num_plants_slipped"]]
             .mean()
@@ -440,6 +604,7 @@ def run_post_processing(
 
     # Custom scatter plot (mirrors SlippageAnalysis.ipynb)
     if "scatter_average_custom" in steps_set:
+        print(f'\nPlotting mean slippage vs workload...')
         # Re‑use the mean_combined DataFrame computed above if it exists;
         # otherwise compute it on‑the‑fly.
         if "mean_combined" not in locals():
@@ -450,14 +615,49 @@ def run_post_processing(
             )
         results["scatter_average_custom_path"] = plot_mean_scatter_custom(mean_combined, output_path)
 
+    # Plot efficiency metrics using box plots
+    if "boxplot_efficiency" in steps_set:
+        print(f'\nPlotting boxplot of efficiency metrics...')
+        efficiency_metrics = ["slip_per_inspected", "inspected_per_slip", "efficiency_score", "slip_to_coverage"]
+        for metric in efficiency_metrics:
+            key = f"boxplot_{metric}_path"
+            results[key] = plot_box_metric(df, metric, output_path, log_scale=False)
+
+    # Plot average slip_per_inspected_total with 95% CI
+    if "efficiency_ci_plot" in steps_set:
+        # Ensure the per‑replication totals are available
+        if "efficiency_totals" not in locals():
+            efficiency_totals = compute_efficiency_totals(df)
+        print("\nPlotting average slip_per_inspected_total with 95% confidence intervals per experiment")
+        results["efficiency_ci_plot_path"] = plot_efficiency_totals_ci(efficiency_totals, output_path, log_scale=False)
+
     # 4. Statistics ------------------------------------------------------
     if "anova" in steps_set:
+        print(f'\nRunning one-way ANOVA...')
         results["anova_p"] = run_one_way_anova(total_slippage)
     if "ttests" in steps_set:
-        results["paired_ttests"] = run_paired_ttests(total_slippage, experiments)
+        print(f'\nRunning ttests on mean slippage...')
+        # Use the generic metric version for mean slippage
+        results["paired_ttests"] = run_paired_ttests_metric(total_slippage, "num_plants_slipped", experiments)
+    if "ttests_efficiency" in steps_set:
+        efficiency_metrics = ["slip_per_inspected", "inspected_per_slip", "efficiency_score", "slip_to_coverage"]
+        print(f'\nRunning ttests on efficiency metrics...'
+             f'   Metrics: {", ".join(efficiency_metrics)}')
+        for metric in efficiency_metrics:
+            key = f"paired_ttests_{metric}"
+            results[key] = run_paired_ttests_metric(df, metric, experiments)
 
+    if "ttests_efficiency_totals" in steps_set:
+        # Ensure we have the per‑replication efficiency totals DataFrame
+        if "efficiency_totals" not in locals():
+            efficiency_totals = compute_efficiency_totals(df)
+        print("\nRunning paired t‑tests on aggregated slip_per_inspected_total ratio across experiments")
+        results["paired_ttests_slip_per_inspected_total"] = run_paired_ttests_metric(
+            efficiency_totals, "slip_per_inspected_total", experiments
+        )
     # 5. CSV export ------------------------------------------------------
     if "csv" in steps_set:
+        print(f'\nExporting data to CSV...')
         csv_path = output_path / "replication_level_slippage.csv"
         combined.to_csv(csv_path, index=False)
         results["csv_path"] = csv_path
