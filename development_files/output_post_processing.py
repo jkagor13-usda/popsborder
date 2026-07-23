@@ -64,11 +64,11 @@ SCENARIO_OUTPUT_ROOT = REPO_ROOT / "output"
 # Choose the *directory* that holds the experiments you want to analyse.
 # In the example above we pick the first directory (you can change this
 # to whichever you need, or discover it programmatically).
-EXPERIMENT_ROOT = box_paths.model_testing_data_folder() / "Official_Results"
+EXPERIMENT_ROOT = box_paths.model_testing_data_folder() / "Sub_Results"
 
 # Experiments that exist under that directory.
 # These must match the folder names exactly (case‑sensitive).
-EXPERIMENTS = ["Baseline", "Model 1", "Model 2", "Model 3"]
+EXPERIMENTS = ["Baseline", "Model_1", "Model_2", "Model_3", "Model_4"]
 
 # Where post‑processing artefacts (plots, CSV) will be stored.
 # Here we create a sub‑folder called `post_processing` inside the same
