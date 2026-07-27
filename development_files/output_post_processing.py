@@ -552,7 +552,7 @@ def run_post_processing(
     # 1. Load data -------------------------------------------------------
     if "load" in steps_set:
         df_raw = gather_experiment_data(base_path, experiments, cols_of_interest)
-        results["raw_data"] = df_raw
+        #results["raw_data"] = df_raw
     else:
         # If the caller omits "load" we still need the data for later steps.
         df_raw = gather_experiment_data(base_path, experiments, cols_of_interest)
@@ -564,7 +564,7 @@ def run_post_processing(
         sum_units, mean_units = compute_inspected_units(df)
         efficiency_totals = compute_efficiency_totals(df)
         results.update({
-            "data_with_metrics": df,
+            #"data_with_metrics": df,
             "total_slippage": total_slippage,
             "inspected_units": sum_units,
             "mean_inspected_units": mean_units,
@@ -576,7 +576,7 @@ def run_post_processing(
                                    on=["experiment", "replication"]).rename(
             columns={"inspected_sample_units": "inspected_sample_units"})
         results.update({
-            "data_with_metrics": df,
+            #"data_with_metrics": df,
             "total_slippage": total_slippage,
             "inspected_units": sum_units,
             "mean_inspected_units": mean_units,
