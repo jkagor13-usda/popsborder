@@ -64,11 +64,11 @@ SCENARIO_OUTPUT_ROOT = REPO_ROOT / "output"
 # Choose the *directory* that holds the experiments you want to analyse.
 # In the example above we pick the first directory (you can change this
 # to whichever you need, or discover it programmatically).
-EXPERIMENT_ROOT = box_paths.model_testing_data_folder() / "Sub_Results"
+EXPERIMENT_ROOT = box_paths.model_testing_data_folder() / "Official_Results_2"
 
 # Experiments that exist under that directory.
 # These must match the folder names exactly (case‑sensitive).
-EXPERIMENTS = ["Baseline", "Model_1", "Model_2", "Model_3", "Model_4"]
+EXPERIMENTS = ["Baseline", "Model_1", "Model_2", "Model_3", "Model_4", "M1_P1", "M1_P2", "M1_P3"]
 
 # Where post‑processing artefacts (plots, CSV) will be stored.
 # Here we create a sub‑folder called `post_processing` inside the same
@@ -110,9 +110,16 @@ def gather_experiment_data(
     base_path = Path(base_path)
     stack: List[pd.DataFrame] = []
     for exp in experiments:
+        print(f"Loading Experiment {exp}")
         exp_path = base_path / exp / "Replications"
+        update_count = 0
+        prop = 0
+        prop_incrementer = 0.25
         for rep in os.listdir(exp_path):
-            print(f"Loading experiment {exp} replication {rep}...")
+            if update_count == int(prop * len(os.listdir(exp_path))):
+                print(f"   {prop * 100}% Complete")
+                prop += prop_incrementer
+            update_count += 1
             csv_path = exp_path / rep / "synthetic_commodity_line_results_data.csv"
             try:
                 df_rep = pd.read_csv(str(csv_path), usecols=cols_of_interest)
@@ -135,9 +142,16 @@ def gather_experiment_data_new(
     stack: List[pd.DataFrame] = []
 
     for exp in experiments:
+        print(f"Loading Experiment {exp}")
         exp_path = base_path / exp / "Replications"
+        update_count = 0
+        prop = 0
+        prop_incrementer = 0.25
         for rep in os.listdir(exp_path):
-            print(f"Loading experiment {exp} replication {rep}...")
+            if update_count == int(prop * len(os.listdir(exp_path))):
+                print(f"{prop*100}% Complete")
+                prop += prop_incrementer
+            update_count += 1
             csv_path = exp_path / rep / "synthetic_commodity_line_results_data.csv"
 
             # Try pandas first (text‑mode file object to avoid the C‑engine issue)
@@ -526,7 +540,7 @@ def run_post_processing(
             "scatter_average_custom",
             "anova",
             "ttests",
-            "ttests_efficiency",
+            #"ttests_efficiency",
             "ttests_efficiency_totals",
             "boxplot_efficiency",
             "efficiency_ci_plot",
