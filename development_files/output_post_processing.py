@@ -68,7 +68,7 @@ EXPERIMENT_ROOT = box_paths.model_testing_data_folder() / "Official_Results_2"
 
 # Experiments that exist under that directory.
 # These must match the folder names exactly (case‑sensitive).
-EXPERIMENTS = ["Baseline", "Model_1", "Model_2", "Model_3", "Model_4", "M1_P1", "M1_P2", "M1_P3"]
+EXPERIMENTS = ["Baseline", "Model_1", "Model_2", "Model_3"] #"M3_P1", "M3_P2", "M3_P3"]
 
 # Where post‑processing artefacts (plots, CSV) will be stored.
 # Here we create a sub‑folder called `post_processing` inside the same
@@ -203,6 +203,7 @@ def add_slippage_metrics(df: pd.DataFrame) -> pd.DataFrame:
     print(f'\nAdding slippage metrics')
     df = df.copy()
     df["num_plants_slipped"] = df["missed"].astype(int) * df["infected_plants"]
+    df["num_sample_units_slipped"] = df["missed"].astype(int) * df["num_sample_units"]
     df["prop_inspected"] = df["inspected_sample_units"] / df["num_sample_units"].replace(0, np.nan)
 
     # New efficiency metrics
@@ -260,10 +261,10 @@ def compute_efficiency_totals(df: pd.DataFrame) -> pd.DataFrame:
     # Aggregate totals per experiment/replication
     totals = (
         df.groupby(["experiment", "replication"], as_index=False)
-        .agg(total_slipped=("num_plants_slipped", "sum"), total_inspected=("inspected_sample_units", "sum"))
+        .agg(total_slipped=("num_sample_units_slipped", "sum"), total_inspected=("inspected_sample_units", "sum"))
     )
     # Compute ratio safely
-    totals["slip_per_inspected_total"] = totals["total_slipped"] / totals["total_inspected"].replace(0, np.nan)
+    totals["slip_per_inspected_total"] = totals["total_inspected"] / totals["total_slipped"].replace(0, np.nan)
     return totals
 
 # ---------------------------------------------------------------------------
