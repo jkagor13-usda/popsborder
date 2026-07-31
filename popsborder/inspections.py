@@ -1573,7 +1573,7 @@ def consignment_contamination_rate(consignment):
 def get_detection_and_confidence(
         consignment,
         compliance_table_dict,
-        default_detection=0.01,
+        default_detection=0.15,
         default_confidence=0.95,
         print_compliance_levels: bool = False,
 ):
