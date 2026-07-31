@@ -68,7 +68,7 @@ EXPERIMENT_ROOT = box_paths.model_testing_data_folder() / "Official_Results_2"
 
 # Experiments that exist under that directory.
 # These must match the folder names exactly (case‑sensitive).
-EXPERIMENTS = ["Baseline", "Model_1", "Model_2", "Model_3"] #"M3_P1", "M3_P2", "M3_P3"]
+EXPERIMENTS = ["Baseline", "Model_1", "Model_2", "Model_3", "Model_4"] #"M3_P1", "M3_P2", "M3_P3"]
 
 # Where post‑processing artefacts (plots, CSV) will be stored.
 # Here we create a sub‑folder called `post_processing` inside the same
