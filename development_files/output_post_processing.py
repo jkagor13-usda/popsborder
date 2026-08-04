@@ -64,7 +64,7 @@ SCENARIO_OUTPUT_ROOT = REPO_ROOT / "output"
 # Choose the *directory* that holds the experiments you want to analyse.
 # In the example above we pick the first directory (you can change this
 # to whichever you need, or discover it programmatically).
-EXPERIMENT_ROOT = box_paths.model_testing_data_folder() / "Official_Results_2"
+EXPERIMENT_ROOT = box_paths.model_testing_data_folder() / "Official_Results_3"
 
 # Experiments that exist under that directory.
 # These must match the folder names exactly (case‑sensitive).
