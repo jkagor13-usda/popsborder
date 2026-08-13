@@ -206,22 +206,12 @@ Additional columns may be used depending on your `RiskUnitConfig` settings from 
 
 The CSV file should be comma-separated (`,`) using double quote for text fields (`"`). The path is absolute or relative to the place where the Python program is running.
 
-
-
-### Creating a PIS-style input file (`pis_inspections.csv`) with synthetic data
-
-For RBS/PIS workflows, the simulation expects a PIS-style CSV with columns such as
-`INSPECTION_NUMBER`, `COUNTRY_OF_ORIGIN_NAME`, `PROPAGATIVE_MATERIAL_TYPE`,
-`SAMPLING_UNITS_FOR_INSPECTION_UNIT`, `QUANTITY`, `RISK_UNIT`, etc.
-You can generate such a file synthetically using the
-`SyntheticConsignmentDataGenerator` class in `popsborder.generator`.
-
 #### Required inputs
 
 To generate synthetic PIS-style consignments, you typically need:
 
 - A **base PIS dataset** with real records to train from  
-  (e.g., `train.csv` in your validation data directory).
+  (e.g., `train.csv` in directory).
 - An optional **producer group mapping** table (e.g., `producer_group_mapping.csv`)
   containing columns such as:
   - `PRODUCER_NAME`
