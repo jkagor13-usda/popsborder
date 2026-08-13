@@ -325,23 +325,19 @@ boxes opened and items inspected.
 
 ## Inspection unit
 
-The inspection unit determines the level at which sampling decisions are made. The
-configuration now supports the newer terminology:
+The unit within the inspection configuration determines the level at which sampling decisions are made. The
+configuration now supports additional RBS/PIS specific terminology:
 
 ```yaml
 inspection:
-  unit: sample_units   # Use ``sample_units`` (formerly ``items``) for sample‑unit based inspection
-  # or
-  unit: inspection_units   # Use ``inspection_units`` (formerly ``boxes``) for box‑level inspection
+  unit: sample_units   # Use ``sample_units`` (alternatively ``boxes``) for sample‑unit based inspection
 ```
-
-Both the historic keys (``items``/``boxes``) and the new aliases (``sample_units``/``inspection_units``) are accepted for backward compatibility.
 
 ## Sample strategy
 
 The ``sample_strategy`` field defines how the number of units to inspect is
-computed. In addition to the existing strategies, a new **risk‑based sampling**
-(RBS) strategy is available:
+computed. In addition to the existing strategies (e.g., `hypergeometric`), a new **risk‑based sampling**
+(`rbs`) strategy is available:
 
 ```yaml
 inspection:
@@ -360,7 +356,7 @@ inspection:
 
 When ``sample_strategy`` is set to ``rbs`` the simulation reads the ``compliance_table``
 (pickle file) and, for each risk unit, obtains the detection level and confidence
-level via ``get_detection_and_confidence``. These levels are then passed to the
+levels. These levels are then passed to the
 hypergeometric sample‑size calculator (``compute_hypergeometric``) defined in
 ``inspections.py``. The resulting per‑risk‑unit sample sizes are stored in a
 mapping and later used by the inspection routine to select the appropriate number
@@ -376,11 +372,53 @@ The RBS workflow consists of two stages:
    belong to. The main inspection loop then iterates over these indexes, tracking
    effort to completion and to detection as described below.
 
+The `rbs_calculator_grouping_variables` configuration represents a 
+mapping which informs the **risk‑based sampling (`rbs`)** 
+routine how to build *risk units* from the raw inspection data.  
+
+- The **key** is the PIS station name (e.g., `Miami`). If a consignment’s `INSPECTION_LOCATION_NAME` does not match any key, the entry under `default` is used.  
+- The **value** is an ordered list of data fields that should be 
+combined to define a unique risk unit (see description below for a *risk unit* represents). 
+Typical columns are `origin`, `material_type`, and optionally `producer`.
+
+How the code uses the `rbs_calculator_grouping_variables` configuration:
+
+1. **Lookup** – In `popsborder/inspections.py` the function `construct_risk_units`
+reads `config["inspection"]["rbs_calculator_grouping_variables"]` and selects 
+the appropriate list for the PIS station in question (or falls back to the `default` list).
+
+2. **Risk‑unit construction** – For each consignment  (`INSPECTION_NUMBER`) 
+the helper function `relabel_risk_units` (called from `construct_risk_units`)
+builds a composite key by concatenating the values of the chosen grouping columns.  
+
+3. **Unique identifier** – assigns a sequential integer to every 
+distinct composite key within the consignment.
+The final `RISK_UNIT` label is assembled as
+`<INSPECTION_NUMBER>_risk_unit_<sequential_id>`
+
+4. **Result** – The DataFrame returned by `construct_risk_units` contains 
+a `RISK_UNIT` column where each row belongs to the same risk unit if
+and only if it shares the same values for all variables listed in the
+configuration for that station.  
+
+**What a *risk unit* represents**  
+A *risk unit* groups together all commodity lines that are considered to
+have the same risk profile for the purpose of sampling. 
+By default, all rows that share the same origin and 
+material type become one risk unit. This configuration allows a user to
+set specific discriminators by station 
+(e.g., adding `producer` to the defaults) to create distinct station-specific grouping
+strategies. The hypergeometric calculator then treats each risk unit independently, 
+applying the detection and confidence levels from the compliance lookup table 
+to compute the number of samples required for that risk unit group.  
+
 ## End strategy
 
 Each simulation runs two end‑strategy options determining when the inspection
-stops:
-
+stops (*i.e., detection‑related counters contributing to output statistics 
+are no longer incremented after the first contaminated sample/unit is found; 
+the simulation still processes the remaining units to compute the ‘to completion’ 
+metrics*):
 * ``to detection`` – inspection stops immediately after the first contaminated
   unit is detected (still records what would have happened under full inspection).
 * ``to completion`` – inspection continues until the full allocated sample is
