@@ -170,9 +170,9 @@ running.
 
 ### PIS-based consignments (`file_type: PIS`)
 
-`PISConsignmentGenerator` handles **Plant Inspection System (PIS)** data, which supports a hierarchical structure:
+`PISConsignmentGenerator` handles **Plant Inspection Station (PIS)** data, which supports a hierarchical structure:
 
-- Consignment → **inspection units** → **sample units** → **plants**.
+- Consignment → **sample units** → **inspection units** → **plants**.
 
 Configure it using `generation_method: input_file` and `file_type: PIS`:
 
@@ -186,15 +186,15 @@ consignment:
 
 The CSV is expected to have the following columns (minimum set):
 
-- `INSPECTION_NUMBER` which is used as the unique consignment/inspection ID.
-- `PROPAGATIVE_MATERIAL_TYPE` which is used as the material/commodity type for this inspection unit.
-- `SAMPLING_UNITS_FOR_INSPECTION_UNIT` which is used as the actual number of sample units in the inspection unit.
-- `QUANTITY` which is used as the total number of plants in the inspection unit.
-- `COUNTRY_OF_ORIGIN_NAME` which is used as the origin country.
-- `INSPECTION_LOCATION_NAME` which is used as the port/location (where the inspection was conducted).
-- `PATHWAY` which is used as the transport pathway.
-- `CREATED_DATETIME` which is used as a timestamp in `MM:SS.S` format (minutes:seconds.tenths) representing a time offset within a base date.
-- `producer_group` or `PRODUCER_NAME` which is used as the producer name; `producer_group` is used when present and not equal to `"NO_GROUP_MATCH"`.
+- `INSPECTION_NUMBER` - unique consignment/inspection ID.
+- `PROPAGATIVE_MATERIAL_TYPE` - material type for this inspection unit.
+- `SAMPLING_UNITS_FOR_INSPECTION_UNIT` - actual number of sample units associated the inspection unit (i.e., commodity line represented by a single row in the inspection data).
+- `QUANTITY` - total number of plants in the inspection unit.
+- `COUNTRY_OF_ORIGIN_NAME` - the origin country.
+- `INSPECTION_LOCATION_NAME` - port/location (where the inspection was conducted).
+- `PATHWAY` - transport pathway.
+- `CREATED_DATETIME` - timestamp stored as a string in the format `YYYY-MM-DD HH:MM:SS.f` (`year-month-day, hour:minute:second.fraction`), where the fractional part represents sub‑second precision (e.g. `2020-12-04 22:25:26.4230000`).
+- `producer_group` or `PRODUCER_NAME` - producer name; `producer_group` is used when present and not equal to `"Reference"`.
 - A risk-unit label column, which must be **one** of the following (the first matching column name is used):
   - `RISK UNIT`
   - `RISK_UNIT`
