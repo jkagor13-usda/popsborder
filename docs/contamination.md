@@ -66,12 +66,25 @@ distribution of contamination rates. An contamination rate mean and standard
 deviation can be used to determine the beta distribution shape parameters if
 desired using this calculator: <https://www.desmos.com/calculator/kx83qio7yl>.
 
+
+If `distribution` = `fixed_value`, a constant contamination rate is used for every
+consignment (rather than a random value based on a beta distribution). When using a
+fixed value, the desired value must specified as follows:
+
+```yaml
+contamination:
+  contamination_rate:
+    distribution: fixed_value
+    value: 0.05
+```
+
 If `distribution` = `beta_binomial`, the contamination rate is modeled using a beta‑binomial framework with an optional clustering control parameter `p`. The parameter `p` (range 0‑1) governs how concentrated contamination is among the sample units: `p = 0` corresponds to effectively random distribution, while `p = 1` represents a fully clustered case where contamination is packed into as few units as capacity allows.
 
 Example configuration:
 
 ```yaml
 contamination:
+  contamination_unit: sample_unit
   contamination_rate:
     distribution: beta_binomial
     beta_binomial_parameters:
@@ -106,17 +119,6 @@ contamination:
         beta: 60
         theta: 10
         p: 0.5
-```
-
-If `distribution` = `fixed_value`, a constant contamination rate is used for every
-consignment (rather than a random value based on a beta distribution). When using a
-fixed value, the desired value must specified as follows:
-
-```yaml
-contamination:
-  contamination_rate:
-    distribution: fixed_value
-    value: 0.05
 ```
 
 ## Contaminant arrangement
