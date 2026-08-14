@@ -36,7 +36,7 @@ def main():
     parser.add_argument("--config",
                         type=str,
                         help="Configuration file name (top level of repository)",
-                        default="config_test.yml"
+                        default="config_rbs.yml"
                         )
     parser.add_argument("--num-consignments",
                         type=int,
