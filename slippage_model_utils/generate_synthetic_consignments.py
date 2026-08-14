@@ -100,7 +100,8 @@ def main():
     # Load training data
     if args.training_data_path is None:
         # raise ValueError("No training data provided. Please provide a valid path (as a string)"
-        #                  " using the CLI flag --training-data-path <INSERT PATH>.")
+        #                  " using the CLI flag --training-data-path <INSERT PATH>."
+        #                  " See consignments.md for more information.")
         args.training_data_path = str(val_data_path / 'train.csv')
 
 
@@ -118,19 +119,10 @@ def main():
 
     if args.create_engineered_features:
         if args.producer_importer_training_path is None:
-            print("  WARNING...")
-            print("     --producer-importer-training-path CLI flag was not submitted. "
-                  "This should be a path to a result of the creation of the Producer Grouping requiring, for each commodity line"
-                  " columns called: PRODUCER_GROUP_NAME1 (representing the 'best producer grouping') and "
-                  "IMPORTER_NAME1 (representing the 'best importer grouping for corresponding').")
-            print("     A default has been initiated from data corresponding to October 2024 - September 2025 "
-                  "but this may be out-dated.  See admin for how to update this data.")
+            # raise ValueError("No producer/importer training data provided. Please provide a valid path (as a string)"
+            #                  " using the CLI flag --producer-importer-training-path <INSERT PATH>."
+            #                  " See consignments.md for more information.")
             args.producer_importer_training_path = str(data_dir / "training_data_for_test_set.csv")
-            if Path(args.producer_importer_training_path).exists():
-                pass
-            else:
-                path = str(data_dir / "training_data_for_test_set.csv")
-                raise ValueError(f"The file is trying to be imported but does not exist: {path}")
         try:
             ### Creating of Engineered Features ###
             # Create features from the R script using the R wrapper

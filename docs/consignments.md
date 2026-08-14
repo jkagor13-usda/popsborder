@@ -204,34 +204,136 @@ The CSV is expected to have the following columns (minimum set):
 
 Additional columns may be used depending on your `RiskUnitConfig` settings from `slippage_model_utils.UnitAttributes`.
 
-The CSV file should be comma-separated (`,`) using double quote for text fields (`"`). The path is absolute or relative to the place where the Python program is running.
+- **Allowed/recognized columns** – the current `RiskUnitConfig` maps the following canonical 
+attributes to CSV column names (see `slippage_model_utils/UnitAttributes.py`):
+  - `material_type` → `PROPAGATIVE_MATERIAL_TYPE`
+  - `producer_group` → `producer_group`
+  - `origin` → `COUNTRY_OF_ORIGIN_NAME`
+  - `port` → `INSPECTION_LOCATION_NAME`
+  - `pathway` → `PATHWAY`
+  - `median_qty_lt200` → `MEDIAN_QTY_LT200`
+  - `frac_small` → `FRAC_SMALL`
+  - `frac_small_gt07` → `FRAC_SMALL_GT07`
+  - `any_small` → `ANY_SMALL`
+  - `importer` → `IMPORTER_NAME`
 
-#### Required inputs
+- **Required columns** – the generator needs at minimum the core PIS columns 
+listed above in the PIS file type description (e.g., `INSPECTION_NUMBER`, `QUANTITY`, `RISK_UNIT`, etc.).
 
-To generate synthetic PIS-style consignments, you typically need:
+- **How to discover which columns are usable** – open `slippage_model_utils/UnitAttributes.py` and 
+inspect the `RiskUnitConfig.attribute_mapping` dictionary. Any key/value pair
+in that dictionary represents a column that the generator will look for. 
+Adding new entries to `attribute_mapping` (and optionally to `defaults` and `enabled_attributes`) is the 
+way to support additional columns.
 
-- A **base PIS dataset** with real records to train from  
-  (e.g., `train.csv` in directory).
-- An optional **producer group mapping** table (e.g., `producer_group_mapping.csv`)
-  containing columns such as:
-  - `PRODUCER_NAME`
-  - `grouping`
-- A PoPS Border **configuration file** (e.g., `config_test.yml`) that will later
-  be used by the simulation.
+  **Example – adding a new boolean column `SAFE_ZONE_FLAG`**  
 
-The base PIS dataset should already contain the core PIS columns documented above
-(e.g., `INSPECTION_NUMBER`, `COUNTRY_OF_ORIGIN_NAME`,
-`PROPAGATIVE_MATERIAL_TYPE`, `QUANTITY`,
-`SAMPLING_UNITS_FOR_INSPECTION_UNIT`, `INSPECTION_LOCATION_NAME`, `PATHWAY`,
-`RISK_UNIT`/`RISK UNIT`/`risk_unit`/`RISK_UNIT_NUMBER`, etc.).
+  ```python
+  # In slippage_model_utils/UnitAttributes.py
+  class RiskUnitConfig:
+      attribute_mapping = {
+          # existing mappings …
+          "material_type": "PROPAGATIVE_MATERIAL_TYPE",
+          # new column
+          "safe_zone": "SAFE_ZONE_FLAG",
+      }
 
-#### Basic workflow
+      defaults = {
+          # existing defaults …
+          "material_type": None,
+          # default for the new column
+          "safe_zone": False,
+      }
 
-1. Execute the `generate_sythetic_consignments.py` script. (ADD DESCRIPTION)
-6. **Point the simulation config** to that file via `consignment.input_file.file_name`.
+      enabled_attributes = [
+          # existing attributes …
+          "material_type",
+          # enable the new attribute
+          "safe_zone",
+      ]
+  ```
+
+  After adding the three entries above, the generator will read the column
+  `SAFE_ZONE_FLAG` from the input CSV (treating missing values as `False`) and
+  expose it as the `safe_zone` attribute on each `RiskUnit` instance.
 
 
+- **Behaviour when a column is absent** – the code uses the `defaults` 
+mapping to supply a fallback value (e.g., `None` for strings, `False` for booleans).
+No error is raised, so users can safely omit columns they do not have.
 
+#### Generating Synthetic Consignments
 
+To generate synthetic PIS‑style consignments you need the following inputs. 
+Items marked **required** must be supplied 
+(or the script will fall back to built‑in defaults); items marked **optional** can be omitted.
+
+- **Configuration file** (*required*) – path to a PoPS Border configuration YAML 
+(e.g., `config_rbs.yml`).
+- **Training data** (*required*) – a CSV file containing the real PIS inspection 
+records that the generator will model (e.g., `train.csv`) with the required columns specified above.
+This is the *base PIS dataset* from which synthetic consignments are derived.
+- **Compliance table** (*required*) – CSV file used for risk‑unit calculations
+(e.g., `compliance_table.csv`). If omitted the script defaults 
+to `development_files/slippage_data/compliance_table.csv`.
+- **Producer‑group mapping** (*required*) – CSV that maps raw producer
+names to a grouping identifier indicated by columns
+`PRODUCER_NAME` (string) and `grouping` (float), respectively.
+- **Output file name** (*optional*) – name (or path) for the generated synthetic 
+CSV (e.g., `Synthetic_Data.csv`). Defaults to `Synthetic_Data_TEST.csv`.
+- **Engineered‑features flag** (*optional*) – `--create-engineered-features` to invoke additional
+R‑based feature creation.
+- **Producer‑importer training data** (*required*)  – CSV required only when
+`--create-engineered-features` is used (e.g., `producer_importer_training.csv`). This should correspond
+to a file similar to the PIS input data described above where each row represents a *commodity*. 
+This file should contain the columns `action` (binary representing if action was taken on the ),
+`PRODUCER_GROUP_NAME1` (representing a raw producer name.  Note that in the RBS modeling approach, this was
+the first observed producer name found among the inspection units after being grouped by
+`INSPECTION_NUMBER`, `COUNTRY_OF_ORIGIN_NAME`, and `PROPAGATIVE_MATERIAL_TYPE`), and 
+`IMPORTER_NAME1` (representing a raw importer name.  Note that in the RBS modeling approach, this was
+the first observed importer name found among the inspection units after being grouped by
+`INSPECTION_NUMBER`, `COUNTRY_OF_ORIGIN_NAME`, and `PROPAGATIVE_MATERIAL_TYPE`).
+
+##### Synthetic Consignments Generation Workflow
+
+1. Run the synthetic consignment generation script: `python -m slippage_model_utils.generate_synthetic_consignments`.
+Additional command line flags can be added as below (see table for more descriptions of these flags).
+
+   ```bash
+   python -m slippage_model_utils.generate_synthetic_consignments \
+       --config config_rbs.yml \
+       --num-consignments 100 \
+       --synthetic-data-file-name Synthetic_Data.csv \
+       --producer-group-mapping-path path/to/producer_group_mapping.csv \
+       --compliance-table-path path/to/compliance_table.csv \
+       --training-data-path path/to/train.csv \
+       [--create-engineered-features] \
+       [--producer-importer-training-path path/to/producer_importer.csv]
+   ```
+
+   The script loads the PoPS Border configuration, reads the training data, generates the requested number of synthetic consignments using the *sequential* sampling method, optionally creates engineered features, and writes the result to the specified CSV file.
+
+2. Use the generated file as the input for the simulation by setting:
+
+   ```yaml
+   consignment:
+     generation_method: input_file
+     input_file:
+       file_type: PIS
+       file_name: <path-to-generated-file>
+   ```
+
+#### Command‑line arguments
+
+| Flag | Description | Example |
+|------|-------------|---------|
+| `--config` | Configuration file (top‑level repo) | `config_rbs.yml` |
+| `--num‑consignments` | Number of consignments to generate | `100` |
+| `--synthetic‑data‑file‑name` | Name of the CSV file to write | `Synthetic_Data.csv` |
+| `--producer‑group‑mapping‑path` | Path to producer‑group mapping CSV | `data/producer_group_mapping.csv` |
+| `--compliance‑table‑path` | Path to the compliance table CSV | `data/compliance_table.csv` |
+| `--training‑data‑path` | Path to training data CSV (base PIS data) | `data/train.csv` |
+| `--create‑engineered‑features` | If present, engineered features are added via R code | *(flag only, no value)* |
+| `--producer‑importer‑training‑path` | Path to additional training data for engineered features | `data/producer_importer_training.csv` |
 
 Next: [Contamination](contamination.md)
