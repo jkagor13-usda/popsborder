@@ -88,3 +88,10 @@ If using a command line interface to run the simulation, the flags `--detailed`
 or `-d` can be used to print the details object in the terminal. However, using
 the details object in the terminal is not recommended as it includes the items
 and indexes inspected for the entire simulation and may be very large.
+
+
+## Replication level output tracking
+Outputs specific to the PIS station are managed by the `PISSimData` class
+found in `popsborder/outputs.py`. The following are shared constants across
+all instances of this class:
+  - `PIS_COLUMNS`: This represents the set of columns
