@@ -85,13 +85,6 @@ EXPERIMENTS = ["Baseline", "Model_1", "Model_2", "Model_3", "Model_4"] #"M3_P1",
 POST_PROC_OUTPUT = EXPERIMENT_ROOT / "post_processing"
 
 
-
-
-def _ensure_dir(path: Path) -> None:
-    """Create ``path`` if it does not exist (including parents)."""
-    path.mkdir(parents=True, exist_ok=True)
-
-
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
@@ -282,7 +275,7 @@ def compute_efficiency_totals(df: pd.DataFrame) -> pd.DataFrame:
 
 def _save_fig(fig: plt.Figure, output_dir: Path, stem: str) -> Path:
     """Save *fig* as ``stem.png`` inside *output_dir* and close it."""
-    _ensure_dir(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     out_path = output_dir / f"{stem}.png"
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -534,8 +527,7 @@ def run_post_processing(
     -------
     dict mapping step names to result objects (e.g., DataFrames, file paths).
     """
-    output_path = Path(output_dir)
-    _ensure_dir(output_path)
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     if steps:
         steps_set = set(steps)
