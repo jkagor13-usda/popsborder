@@ -27,6 +27,29 @@ from slippage_model_utils.paths import BoxPaths, DefaultPaths
 # Configuration & helper utilities
 # ---------------------------------------------------------------------------
 
+'''
+These are configurations that are able to be changed by the user. 
+However, some may be changed more frequently than others.
+
+Would not recommend to be changed by user:
+ - DEFAULT_COLS: These are the columns that will be included in the final CSV.
+ - REPO_ROOT:  This the path to this repository root directory and should remain as is.
+
+Recommend changing for first use but will generally be kept constant:
+- default_paths: These are pre-defined paths used by PoPS Border to differnt folders in this repo.
+- box_paths: These are pre-defined paths to an online folder system (e.g., Microsoft Box).
+             This can be changed to the online file sharing system that your organization uses (e.g., SharePoint).
+- POST_PROC_OUTPUT:  This is where the outputs of this script will be stored.  Recommend changing this at the first use
+                     of this script but probably can be kept constant after that and should only be changed if wanting
+                     to send outputs to a different location.
+
+Configurations changing more frequently (between runs of this script):
+- EXPERIMENT_ROOT: This is the directory that you will be storing replication level output.
+                   This could change more frequently as a user produces outputs while wanting to preserve past output.
+- EXPERIMENTS: This will most likely be the configuration a user would change the most specifying which experiments
+               that is desired to be plotted and analyzed together.
+'''
+
 DEFAULT_COLS = [
     "inspection_number",
     "risk_unit_id",
@@ -46,9 +69,6 @@ box_paths = BoxPaths()
 
 # Root of the repository (two levels up from this file)
 REPO_ROOT = Path(__file__).resolve().parents[2]
-
-# Where `run_scenarios` wrote its results
-SCENARIO_OUTPUT_ROOT = REPO_ROOT / "output"
 
 # Choose the *directory* that holds the experiments you want to analyse.
 # In the example above we pick the first directory (you can change this
