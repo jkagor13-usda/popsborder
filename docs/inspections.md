@@ -375,6 +375,8 @@ The RBS workflow consists of two stages:
 The `rbs_calculator_grouping_variables` configuration represents a 
 mapping which informs the **risk‑based sampling (`rbs`)** 
 routine how to build *risk units* from the raw inspection data.  
+For more information on risk units see the `What a risk unit represents` section
+in `docs/consignments.md`.
 
 - The **key** is the PIS station name (e.g., `Miami`). If a consignment’s `INSPECTION_LOCATION_NAME` does not match any key, the entry under `default` is used.  
 - The **value** is an ordered list of data fields that should be 
@@ -399,18 +401,7 @@ The final `RISK_UNIT` label is assembled as
 4. **Result** – The DataFrame returned by `construct_risk_units` contains 
 a `RISK_UNIT` column where each row belongs to the same risk unit if
 and only if it shares the same values for all variables listed in the
-configuration for that station.  
-
-**What a *risk unit* represents**  
-A *risk unit* groups together all commodity lines that are considered to
-have the same risk profile for the purpose of sampling. 
-By default, all rows that share the same origin and 
-material type become one risk unit. This configuration allows a user to
-set specific discriminators by station 
-(e.g., adding `producer` to the defaults) to create distinct station-specific grouping
-strategies. The hypergeometric calculator then treats each risk unit independently, 
-applying the detection and confidence levels from the compliance lookup table 
-to compute the number of samples required for that risk unit group.  
+configuration for that station.
 
 ## End strategy
 

@@ -262,6 +262,17 @@ way to support additional columns.
 mapping to supply a fallback value (e.g., `None` for strings, `False` for booleans).
 No error is raised, so users can safely omit columns they do not have.
 
+**What a *risk unit* represents**  
+A *risk unit* groups together all commodity lines that are considered to
+have the same risk profile for the purpose of sampling. 
+By default, all rows that share the same origin and 
+material type become one risk unit. This configuration allows a user to
+set specific discriminators by station 
+(e.g., adding `producer` to the defaults) to create distinct station-specific grouping
+strategies. The hypergeometric calculator then treats each risk unit independently, 
+applying the detection and confidence levels from the compliance lookup table 
+to compute the number of samples required for that risk unit group.  
+
 #### Generating Synthetic Consignments
 
 To generate synthetic PIS‑style consignments you need the following inputs. 
