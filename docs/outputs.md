@@ -91,7 +91,56 @@ and indexes inspected for the entire simulation and may be very large.
 
 
 ## Replication level output tracking
-Outputs specific to the PIS station are managed by the `PISSimData` class
-found in `popsborder/outputs.py`. The following are shared constants across
-all instances of this class:
-  - `PIS_COLUMNS`: This represents the set of columns
+Outputs specific to the Plant Inspection Station (PIS) case study are managed by the `PISSimData` class
+found in `popsborder/outputs.py`. The class centralises all replication‑level
+data collection and provides utilities for persisting synthetic datasets.
+
+### Purpose
+`PISSimData` gathers the synthetic PIS records,
+Risk‑Based Sampling (RBS) calculator data, consignment‑level summaries, and
+commodity‑line inspection results generated during a simulation run. It
+supports multiple replications by keeping an independent output directory for
+each replication.
+
+### Required inputs
+* **`output_dir_rep`** – Path to a directory where CSV files for the current
+  replication will be written. The directory is created automatically if it does
+  not exist.
+* **`config`** – Full simulation configuration dictionary. Only the
+  `config["consignment"]["generation_method"]` block is consulted; when the
+  generation method is `"input_file"` and the input file type is `"PIS"`,
+  the class loads the provided PIS CSV into `self.pis_synthetic_data`.
+
+### Core attributes & constants
+* **`PIS_COLUMNS`**, **`RBS_COLUMNS`**, **`CONSIGNMENT_COLUMNS`** – Column
+  specifications for the CSV outputs.
+* **`OUTPUT_FILENAMES`** – Mapping of dataset keys (`consignments`,
+  `pis`, `rbs`, `commodity_line_results`) to default filenames.
+
+### Interpreting the outputs
+| CSV file | Description                                                                                                                                       |
+|----------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| **synthetic_consignment_data.csv** | One row per consignment with aggregated infestation metrics (total plants, number of infested risk/inspection units, etc.).                       |
+| **synthetic_pis_data.csv** | Raw PIS detection records for each inspection unit (inspection number, risk unit, sample counts, infection flags, action taken).                  |
+| **synthetic_rbs_calc_data.csv** | RBS calculation inputs per risk unit (for more information on risk units see the `What a risk unit represents` section in `docs/consignments.md`) |
+| **synthetic_commodity_line_results_data.csv** | Commodity‑line level inspection results.                                                                                                          |
+
+The `get_summary_stats()` helper provides quick insight into how many
+records were produced in a given  replication, which is useful for sanity‑checking of larger
+simulation runs.
+
+### Example usage
+```python
+from popsborder.outputs import PISSimData
+
+sim_data = PISSimData(output_dir_rep="outputs/rep1", config=config)
+# ... run simulation, adding consignments and inspection results ...
+sim_data.finalize_dataframes()
+sim_data.write_synthetic_data_to_csv()
+stats = sim_data.get_summary_stats()
+print("Records written:", stats)
+```
+
+This snippet demonstrates the typical workflow: instantiate the class,
+populate it during the simulation, finalize the DataFrames, write CSVs, and
+inspect the summary statistics.
