@@ -2,11 +2,6 @@
 
 **_Development Notice: This software is under active development with limited functionality.  Features may be incomplete and subject to change. Results have not been validated._**
 
-_This software is controlled under the Export Administration Regulations (EAR) (15 CFR 730-744). It has an ECCN EAR99 and may require an export authorization to transfer to foreign persons._
-
-
-_All new files added without license headers pending OSS approval; intended to be GPL-compatible._
-
 Johns Hopkins University Applied Physics Laboratory (APL) has extended
 the simulation framework, PoPS Border, co-developed by North Carolina
 State University and the USDA Animal Plant Health and Inspection
