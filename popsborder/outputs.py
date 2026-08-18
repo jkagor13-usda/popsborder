@@ -3,8 +3,6 @@
 # © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
 """
-
-
 =====================================
 JHU/APL Extensions and Modifications:
 =====================================
