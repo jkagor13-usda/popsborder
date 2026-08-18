@@ -15,7 +15,7 @@ suppress_optional_dependency_warnings()
 
 # Specify the directory
 APP_DIR = Path(__file__).parent
-
+TOP_LEVEL_DIR = APP_DIR.parent
 # Specify logos
 APHIS_LOGO = APP_DIR / "APHIS.svg"
 APL_LOGO = APP_DIR / "JHU_APL_logo.png"
@@ -76,7 +76,7 @@ st.markdown(
 )
 
 st.divider()
-requirements_path = Path("../requirements.txt")
+requirements_path = TOP_LEVEL_DIR / "requirements.txt"
 if requirements_path.exists():
     mismatches = get_package_mismatches(requirements_path)
     if mismatches:
