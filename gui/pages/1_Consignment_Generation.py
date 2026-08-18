@@ -31,8 +31,11 @@ from gui.slippage_ui import (
 )
 from slippage_model_utils.references import GENERATOR_TARGET_COLUMNS
 
-
-TMP_DIR = Path("tmp")
+# Specify directory structure
+APP_DIR = Path(__file__).parent.parent
+TOP_LEVEL_DIR = APP_DIR.parent
+TMP_DIR = Path(TOP_LEVEL_DIR / "tmp")
+print(TMP_DIR)
 TMP_DIR.mkdir(parents=True, exist_ok=True)
 CONSIGNMENT_ROOT = TMP_DIR / "consignments"
 CONSIGNMENT_ROOT.mkdir(parents=True, exist_ok=True)
@@ -554,7 +557,7 @@ render_sidebar_navigation()
 apply_shared_page_styles()
 paths = state["paths"]
 _init_page_state(state)
-default_producer_grouping = Path("data_input/producer_grouping.csv")
+default_producer_grouping = Path("gui/data_input/producer_grouping.csv")
 if "producer_grouping_path" not in state:
     state["producer_grouping_path"] = default_producer_grouping if default_producer_grouping.exists() else None
 # Normalize current RBS references for later save buttons
@@ -1138,7 +1141,7 @@ with nav_cols[0]:
             from .tmp_utils import reset_tmp_directory
             reset_tmp_directory(TMP_DIR)
             # Initialize a fresh copy of config.yml into tmp for downstream use
-            src_cfg = Path("data_input/config.yml")
+            src_cfg = Path("gui/data_input/config.yml")
             if src_cfg.exists():
                 dst_cfg = TMP_DIR / "config.yml"
                 shutil.copy(src_cfg, dst_cfg)
