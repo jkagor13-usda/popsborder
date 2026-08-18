@@ -1,4 +1,4 @@
-# RBS PIS Slippage Model GUI Install Instructions
+# RBS PIS Slippage Model GUI Install and Use Instructions
 
 Johns Hopkins University Applied Physics Laboratory (APL) has extended
 the simulation framework, PoPS Border, co-developed by North Carolina
@@ -10,12 +10,26 @@ USDA plant inspection stations (PIS).
 
 Features and Functionality Added:
 - Data driven options for generating and contaminating consignments
-- Additional metrics
+- Additional metrics added to the PoPS border framework
 - Graphic user interface for building scenarios, running the model, and visualizing results
 - RBS strategies captured via uploaded compliance tables
 
 ### Limitations
+The additional features mentioned above have been implemented have tested by the technical team and some user engagement sessions
+have been conducted to gather feedback and identify bugs in the source code.  Although default code guards have been put in place
+to prevent crashes during use, there are some limitations that should be highlighted:
 
+- Formal validation of outputs has not been fully complete on some functionality including:
+  - Synthetic generation of consignments via the standalone utility script 
+  `slippage_model_utils/generate_synthetic_consignments.py`
+  - The wrapper functionality to be able to run `R` code within this repository (developed for the
+  generating and contaminating consignments features above and contained within
+  `slippage_model_utils/r_script_wrapper.py`) has undergone multiple iterations of changes to
+  adjust for different platforms and environments.   Although safeguards and defaults have been put in place
+  to ensure functionality of PoPS border and updated PIS simulations, additional testing would be needed
+  to ensure the wrapper functionality is functioning as intended.
+- An extensive set of user tests and engagements for the GUI to understand where any additional
+crashes with install and use across multiple platforms occurs.
 
 © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
