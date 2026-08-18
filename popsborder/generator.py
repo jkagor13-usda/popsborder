@@ -1,11 +1,15 @@
-# Simulation of contaminated consignments and their inspections
+# Simulation of contaminated consignments
 # Copyright (C) 2018-2022 Vaclav Petras and others (see below)
 # © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
 """
-Modifications:
+==========================================================================================
+Johns Hopkins University Applied Physics Laboratory (JHU/APL) Extensions and Modifications
+==========================================================================================
 
-- 2/17/2026 –
+Contributors: Gary Lin, Joseph Agor (JHU/APL)
+Modifications
+
 New Classes Added:
 SyntheticConsignmentDataGenerator:
     * Generates synthetic consignment data for testing and simulation purposes
@@ -52,10 +56,8 @@ this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
 """
 
 """
-.. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
-.. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
-.. codeauthor:: Gary Lin (Johns Hopkins University Applied Physics Laboratory) 
-.. codeauthor:: Joseph Agor (Johns Hopkins University Applied Physics Laboratory) 
+.. codeauthor:: Gary Lin <Gary.Lin jhuapl edu>
+.. codeauthor:: Joseph Agor <Joseph.Agor jhuapl edu>
 """
 
 import random

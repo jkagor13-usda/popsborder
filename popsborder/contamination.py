@@ -3,8 +3,13 @@
 # © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
 """
+==========================================================================================
+Johns Hopkins University Applied Physics Laboratory (JHU/APL) Extensions and Modifications
+==========================================================================================
+
+Contributors: Gary Lin, Joseph Agor (JHU/APL)
+
 Modifications:
-- Updated 4/3/2026: Modified following functions (Gary Lin)
     - add_contaminant_uniform_random():
         * Added plant-level contamination support with pooled contamination methodology
 
@@ -20,12 +25,12 @@ Modifications:
         * Updated to include ability to contaminate using the beta-binomial approach
         * Embedded logic from previously existing create_contaminant_function() into this function
 
-- Updated 4/3/2026: Added the following support function for new data-driven contamination procedure (Joseph Agor)
-    - add_contaminant_beta_binomial(): Vectorized sampling functon for Beta-Binomial distribution
-    - get_range_key(): Function that finds the parameters based on what range the quantities fall into
-    - set_beta_binomial_params():  Function that sets the beta-binomial parameters needed based on the main config file.
-    - heuristic_adjust_nonzeros(): Heuristically adjust the number of nonzero entries in an allocation vector.
-    - synchronize_contamination_arrays_from_plants(): Synchronize sample-unit and plant arrays to match plant-level contamination truth.
+    - Added the following support function for new data-driven contamination procedure:
+        * add_contaminant_beta_binomial(): Vectorized sampling functon for Beta-Binomial distribution
+        * get_range_key(): Function that finds the parameters based on what range the quantities fall into
+        * set_beta_binomial_params():  Function that sets the beta-binomial parameters needed based on the main config file.
+        * heuristic_adjust_nonzeros(): Heuristically adjust the number of nonzero entries in an allocation vector.
+        * synchronize_contamination_arrays_from_plants(): Synchronize sample-unit and plant arrays to match plant-level contamination truth.
 """
 # This program is free software; you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software

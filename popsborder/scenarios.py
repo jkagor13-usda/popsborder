@@ -3,8 +3,13 @@
 # © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
 """
+==========================================================================================
+Johns Hopkins University Applied Physics Laboratory (JHU/APL) Extensions and Modifications
+==========================================================================================
+
+Contributors: Gary Lin, Joseph Agor (JHU/APL)
+
 Modifications:
-- 10/3/2025: Modeifications described below (Gary Lin)
     Following Functions Modified
     ----------------
     - run_scenarios():

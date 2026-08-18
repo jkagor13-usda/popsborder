@@ -3,11 +3,11 @@
 # © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
 """
-=====================================
-JHU/APL Extensions and Modifications:
-=====================================
+==========================================================================================
+Johns Hopkins University Applied Physics Laboratory (JHU/APL) Extensions and Modifications
+==========================================================================================
 
-Contributors: Gary Lin, Joseph Agor (Johns Hopkins University Applied Physics Laboratory)
+Contributors: Gary Lin, Joseph Agor (JHU/APL)
 
 Modified Functions:
 ------------------
