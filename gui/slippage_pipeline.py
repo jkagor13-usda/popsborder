@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+
+import sys, os
+# Add the project root (parent of gui) to sys.path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
 import copy
 import pickle
 from datetime import datetime
@@ -9,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from .runtime_warnings import suppress_optional_dependency_warnings
+from runtime_warnings import suppress_optional_dependency_warnings
 
 suppress_optional_dependency_warnings()
 

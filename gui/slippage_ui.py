@@ -7,14 +7,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from .runtime_warnings import suppress_optional_dependency_warnings
+from runtime_warnings import suppress_optional_dependency_warnings
 
 suppress_optional_dependency_warnings()
 
 import pandas as pd
 import streamlit as st
 
-from .slippage_pipeline import (
+from slippage_pipeline import (
     ExperimentPaths,
     SyntheticOptions,
     SlippagePaths,

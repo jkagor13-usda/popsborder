@@ -4,15 +4,21 @@ import streamlit as st
 
 from pathlib import Path
 
-from gui.env_check import build_update_commands, get_package_mismatches
-from gui.models import init_state
-from gui.navigation import render_sidebar_navigation
-from gui.page_styles import apply_shared_page_styles, render_page_intro
-from gui.runtime_warnings import suppress_optional_dependency_warnings
-from gui.slippage_ui import init_slippage_state
+from env_check import build_update_commands, get_package_mismatches
+from models import init_state
+from navigation import render_sidebar_navigation
+from page_styles import apply_shared_page_styles, render_page_intro
+from runtime_warnings import suppress_optional_dependency_warnings
+from slippage_ui import init_slippage_state
 
 suppress_optional_dependency_warnings()
 
+# Specify the directory
+APP_DIR = Path(__file__).parent
+TOP_LEVEL_DIR = APP_DIR.parent
+# Specify logos
+APHIS_LOGO = APP_DIR / "APHIS.svg"
+APL_LOGO = APP_DIR / "JHU_APL_logo.png"
 
 st.set_page_config(page_title="Home", layout="wide")
 init_state()
@@ -70,7 +76,7 @@ st.markdown(
 )
 
 st.divider()
-requirements_path = Path("requirements.txt")
+requirements_path = TOP_LEVEL_DIR / "requirements.txt"
 if requirements_path.exists():
     mismatches = get_package_mismatches(requirements_path)
     if mismatches:
@@ -131,9 +137,9 @@ st.warning(
 st.divider()
 logo_cols = st.columns([1, 1, 1])
 with logo_cols[0]:
-    st.image("gui/APHIS.svg", width=150)
+    st.image(str(APHIS_LOGO), width=150)
 with logo_cols[2]:
-    st.image("gui/JHU_APL_logo.png", width=300)
+    st.image(str(APL_LOGO), width=300)
 
 st.markdown(
     "<div style='text-align:center; color:#b00000; font-weight:bold; margin-top:0.5rem;'>NOT FOR PUBLIC DISCLOSURE</div>",
