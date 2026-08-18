@@ -1,4 +1,4 @@
-# PoPS Border Documentation
+# PoPS Border
 
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/ncsu-landscape-dynamics/popsborder/main?urlpath=lab/tree/examples/notebooks/basic_with_command_line.ipynb)
 [![CI](https://github.com/ncsu-landscape-dynamics/popsborder/workflows/CI/badge.svg)](https://github.com/ncsu-landscape-dynamics/popsborder/actions/workflows/ci.yml)
@@ -46,7 +46,7 @@ The prototype of the simulation was called _pathways-simulation_ because
 for some contaminants, such as pests, the main question is what
 are the pathways by which the contaminants are getting across the border.
 
-## Examples
+## Documentation
 
 An example of how the simulation interface works is in
 [this Jupyter notebook](examples/notebooks/basic_with_command_line.ipynb).
@@ -62,6 +62,68 @@ Documentation is included in the [docs](docs/) directory.
 [command line interface](docs/cli.md)
 and [Consignment configuration](docs/consignments.md)
 pages are good ones to start with.
+
+## Install
+
+Besides Python, you will need _pipenv_ which is usually installed using _pip_.
+The dependencies of this package will be installed into the virtual environment
+created by _pipenv_. Download this repository (e.g., as ZIP and unpack it).
+In the directory with the code with _pipenv_ installed, run:
+
+```sh
+pipenv install
+```
+
+Additionally, you may want to install Jupyter and visualization libraries
+to that environment. See the contributing section below for more options.
+
+## Contributing
+
+To contribute to this repository it is handy to have a several packages
+installed and then run certain tools before each commit or pull request,
+however you will have a chance to see and correct the errors also after
+you open a pull request.
+
+### Install everything using pipenv
+
+```sh
+pipenv install --dev
+```
+
+### Install development dependencies manually
+
+Install the following packages:
+
+```sh
+flake8 pylint black pytest pytest-datadir
+```
+
+Install these using _pip_ or _conda_ possibly into a (virtual)
+environment.
+
+### Run tests
+
+To run these from command line use:
+
+```sh
+flake8 .
+pylint popsborder
+black .
+pytest tests/
+```
+
+### Modifying notebooks
+
+We store computed notebooks as they serve as documentation and
+examples.
+After modification, notebooks should be recomputed, e.g., by
+_Restart kernel and run all cells_ to ensure that the notebook runs
+with the cells executed in order and that there are minimal changes
+to the notebook (e.g., executed cell numbers).
+
+The standard `git diff` is not particularly useful for `.ipynb` files,
+especially for computed ones, but the rendered file can be viewed in PR
+and _nbdiff_ in command line can show a human-readable difference.
 
 ## Authors
 
@@ -82,7 +144,3 @@ represent the views of USDA APHIS.
 Please note that this is a simulation and it needs to be calibrated
 to give any realistic or actionable results. Results presented here
 are examples for demonstration purposes only.
-
-
-Information on the graphic user interface (GUI) can be found in 
-Next: [GUI README](gui/README.md)
