@@ -21,7 +21,7 @@ import pandas as pd
 import seaborn as sns
 from scipy.stats import f_oneway, ttest_ind, ttest_rel
 
-from slippage_model_utils.paths import BoxPaths, DefaultPaths
+from slippage_model_utils.paths import DefaultPaths
 
 # ---------------------------------------------------------------------------
 # Configuration & helper utilities
@@ -36,9 +36,7 @@ Would not recommend to be changed by user:
  - REPO_ROOT:  This the path to this repository root directory and should remain as is.
 
 Recommend changing for first use but will generally be kept constant:
-- default_paths: These are pre-defined paths used by PoPS Border to differnt folders in this repo.
-- box_paths: These are pre-defined paths to an online folder system (e.g., Microsoft Box).
-             This can be changed to the online file sharing system that your organization uses (e.g., SharePoint).
+- default_paths: These are pre-defined paths used by PoPS Border to different folders in this repo.
 - POST_PROC_OUTPUT:  This is where the outputs of this script will be stored.  Recommend changing this at the first use
                      of this script but probably can be kept constant after that and should only be changed if wanting
                      to send outputs to a different location.
@@ -65,7 +63,6 @@ DEFAULT_COLS = [
 
 ### Initialize default paths
 default_paths = DefaultPaths()
-box_paths = BoxPaths()
 
 # Root of the repository (two levels up from this file)
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -73,7 +70,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # Choose the *directory* that holds the experiments you want to analyse.
 # In the example above we pick the first directory (you can change this
 # to whichever you need, or discover it programmatically).
-EXPERIMENT_ROOT = box_paths.model_testing_data_folder() / "Official_Results_3"
+EXPERIMENT_ROOT = Path("<INSERT DIRECTORY WITH EXPERIMENTAL RESULTS FOLDER HERE>")
 
 # Experiments that exist under that directory.
 # These must match the folder names exactly (case‑sensitive).

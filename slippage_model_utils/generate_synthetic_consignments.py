@@ -18,16 +18,14 @@ from popsborder.inspections import construct_risk_units
 # Import utility functions for contamination module
 from slippage_model_utils.r_script_wrapper import *
 from slippage_model_utils.engineered_feature_creator import  create_engineered_features
-from slippage_model_utils.paths import BoxPaths, DefaultPaths
+from slippage_model_utils.paths import DefaultPaths
 
 
 def main():
     ### Initialize default paths
     default_paths = DefaultPaths()
-    box_paths = BoxPaths()
 
     ### Set up data folder and file names
-    val_data_path = box_paths.validation_data()
     data_dir = default_paths.slippage_data_dir()
 
 
@@ -91,18 +89,16 @@ def main():
 
     # Load producer group mapping
     if args.producer_group_mapping_path is None:
-        # raise ValueError("No producer group mapping path provided. Please provide a valid path (as a string)"
-        #                  " using the CLI flag --producer-group-mapping-path <INSERT PATH>.")
-        producer_group_mapping = pd.read_csv(box_paths.disambiguated_producer_table_mapping())
+        raise ValueError("No producer group mapping path provided. Please provide a valid path (as a string)"
+                         " using the CLI flag --producer-group-mapping-path <INSERT PATH>.")
     else:
         producer_group_mapping = pd.read_csv(Path(args.producer_group_mapping_path))
 
     # Load training data
     if args.training_data_path is None:
-        # raise ValueError("No training data provided. Please provide a valid path (as a string)"
-        #                  " using the CLI flag --training-data-path <INSERT PATH>."
-        #                  " See consignments.md for more information.")
-        args.training_data_path = str(val_data_path / 'train.csv')
+        raise ValueError("No training data provided. Please provide a valid path (as a string)"
+                         " using the CLI flag --training-data-path <INSERT PATH>."
+                         " See consignments.md for more information.")
 
 
     synthetic_data_generator = SyntheticConsignmentDataGenerator(config=config,
