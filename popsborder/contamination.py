@@ -434,25 +434,29 @@ def synchronize_contamination_arrays_from_plants(consignment: Consignment) -> No
 ###########################################
 
 # This function is not used or working, consider updating or removing.
-def add_contaminant_to_random_box(config, consignment, contamination_rate=None, rng: Generator = None):
-    """Add contaminant to a consignment using a simple random-box model.
+# This function is not used or working, consider updating or removing.
+def add_contaminant_to_random_box(config,
+                                  consignment,
+                                  contamination_rate=None,
+                                  rng: Generator = None
+                                  ) -> None:
+    """Add contaminant to consignment
 
-    Assuming a list of boxes with the non-contaminated boxes set to False,
-    each item (box) in ``consignment.boxes`` is set to True if a contaminant
-    is present, False otherwise.
+    Assuming a list of boxes with the non-contaminated boxes set to False.
 
-    Args:
-        config: ``random_box`` configuration dictionary.
-        consignment: Consignment to contaminate.
-        contamination_rate: Contamination-rate configuration dictionary.
-        rng: Random number generator.
+    Each item (box) in boxes (list) is set to True if a contaminant is
+    there, False otherwise.
+
+    :param config: ``random_box`` config dictionary
+    :param consignment: Consignment to contaminate
+    :param contamination_rate: ``contamination_rate`` config dictionary
     """
     contaminant_probability = config["probability"]
     contaminant_ratio = config["ratio"]
-    if rng.random() >= contaminant_probability:
+    if random.random() >= contaminant_probability:
         return
     for box in consignment.boxes:
-        if rng.random() < contaminant_ratio:
+        if random.random() < contaminant_ratio:
             in_box = config.get("in_box_arrangement", "all")
             if in_box == "first":
                 # simply put one contaminant to first item in the box
@@ -460,7 +464,7 @@ def add_contaminant_to_random_box(config, consignment, contamination_rate=None, 
             elif in_box == "all":
                 box.items.fill(1)
             elif in_box == "one_random":
-                index = rng.choice(box.num_items - 1)
+                index = np.random.choice(box.num_items - 1)
                 box.items[index] = 1
             elif in_box == "random":
                 if not contamination_rate:
@@ -472,11 +476,10 @@ def add_contaminant_to_random_box(config, consignment, contamination_rate=None, 
                 )
                 if num_contaminated_items == 0:
                     continue
-                indexes = rng.choice(
+                indexes = np.random.choice(
                     box.num_items, num_contaminated_items, replace=False
                 )
                 np.put(box.items, indexes, 1)
-
 
 def get_contamination_rate(config, rng: Generator = None):
     """Return contamination rate based on contamination-rate configuration.
@@ -569,9 +572,14 @@ def add_contaminant_uniform_random(
         )
         if contaminated_boxes == 0.0:
             return
-        box_indexes = rng.choice(
-            consignment.num_boxes, math.ceil(contaminated_boxes), replace=False
-        )
+        if rng is None:
+            box_indexes = np.random.choice(
+                consignment.num_boxes, math.ceil(contaminated_boxes), replace=False
+            )
+        else:
+            box_indexes = rng.choice(
+                consignment.num_boxes, math.ceil(contaminated_boxes), replace=False
+            )
         # Contaminate full boxes except for last one
         for box_index in box_indexes[:-1]:
             consignment.boxes[box_index].items.fill(1)
@@ -600,9 +608,14 @@ def add_contaminant_uniform_random(
         )
         if contaminated_items == 0:
             return
-        item_indexes = rng.choice(
-            consignment.num_items, contaminated_items, replace=False
-        )
+        if rng is None:
+            item_indexes = np.random.choice(
+                consignment.num_items, contaminated_items, replace=False
+            )
+        else:
+            item_indexes = rng.choice(
+                consignment.num_items, contaminated_items, replace=False
+            )
         np.put(consignment.items, item_indexes, 1)
         assert np.count_nonzero(consignment.items) == contaminated_items
 
@@ -785,14 +798,8 @@ def choose_strata_for_clusters(num_units, cluster_width, num_clusters):
 
 
 
-def add_contaminant_clusters_to_boxes(config, consignment, rng: Generator = None):
-    """Add contaminant clusters to boxes in a consignment.
-
-    Args:
-        config: Contamination configuration with a ``clustered`` section.
-        consignment: Consignment whose boxes will be contaminated.
-        rng: Random number generator.
-    """
+def add_contaminant_clusters_to_boxes(config, consignment):
+    """Add contaminant clusters to boxes in a consignment"""
     contaminated_units_per_cluster = config["clustered"][
         "contaminated_units_per_cluster"
     ]
@@ -806,7 +813,7 @@ def add_contaminant_clusters_to_boxes(config, consignment, rng: Generator = None
         contaminated_boxes, contaminated_units_per_cluster
     )
     cluster_strata = choose_strata_for_clusters(
-        num_boxes, contaminated_units_per_cluster, len(cluster_sizes), rng=rng
+        num_boxes, contaminated_units_per_cluster, len(cluster_sizes)
     )
     # Contaminate full boxes in all clusters except the last one
     for index, cluster_size in enumerate(cluster_sizes[:-1]):
@@ -846,21 +853,15 @@ def add_contaminant_clusters_to_boxes(config, consignment, rng: Generator = None
     )
 
 
-def add_contaminant_clusters_to_items_with_subset_clustering(config, consignment, rng: Generator = None):
-    """Add a single contaminant cluster to items with subset-based clustering.
+def add_contaminant_clusters_to_items_with_subset_clustering(config, consignment):
+    """Add contaminant cluster to items in a consignment using a single parameter
 
-    Clustering equal to 0 means all items in the consignment can be contaminated
-    with equal probability (cluster spreads over the whole consignment).
-    Clustering equal to 1 means that all items in the cluster are contaminated,
-    and the cluster size is directly determined by the contamination rate.
-
-    If the cluster would spill past the end of the consignment, the overhang is
-    placed at the beginning of the consignment.
-
-    Args:
-        config: Contamination configuration dictionary.
-        consignment: Consignment whose items will be contaminated.
-        rng: Random number generator.
+    Clustering equal to 0 means all items in the consignment can be contaminated with
+    equal probability, i.e., the cluster spreads over the whole consignment. Clustering
+    equal to 1 means that all items in the cluster are contaminated. The size of the
+    cluster is then directly determined by the contamination rate.
+    If the cluster would spread over the end of the consignment, we put the extra part
+    of the cluster at the beginning of the consignment.
     """
     clustering = config["clustered"]["value"]
     num_of_contaminated_items = num_items_to_contaminate(
@@ -878,7 +879,7 @@ def add_contaminant_clusters_to_items_with_subset_clustering(config, consignment
     else:
         # Place the beginning of the cluster anywhere,
         # but put the overhang at the beginning.
-        start_index = rng.integers(0, consignment.num_items)
+        start_index = np.random.randint(0, consignment.num_items)
         if start_index + subset_size > consignment.num_items:
             start_index2 = 0
             end_index2 = subset_size - (consignment.num_items - start_index)
@@ -896,7 +897,7 @@ def add_contaminant_clusters_to_items_with_subset_clustering(config, consignment
             (potential_indexes, np.arange(start_index2, end_index2))
         )
     assert len(potential_indexes) == subset_size
-    indexes = rng.choice(
+    indexes = np.random.choice(
         potential_indexes,
         num_of_contaminated_items,
         replace=False,
@@ -905,15 +906,8 @@ def add_contaminant_clusters_to_items_with_subset_clustering(config, consignment
     assert np.count_nonzero(consignment.items) == num_of_contaminated_items
 
 
-def add_contaminant_clusters_to_items(config, consignment, rng: Generator = None):
-    """Add contaminant clusters to items in a consignment.
-
-    Args:
-        config: Contamination configuration dictionary with a ``clustered``
-            section describing cluster sizes and distribution.
-        consignment: Consignment whose items will be contaminated.
-        rng: Random number generator.
-    """
+def add_contaminant_clusters_to_items(config, consignment):
+    """Add contaminant clusters to items in a consignment"""
     contaminated_units_per_cluster = config["clustered"][
         "contaminated_units_per_cluster"
     ]
@@ -939,7 +933,7 @@ def add_contaminant_clusters_to_items(config, consignment, rng: Generator = None
         # cluster can't be wider/longer than the current list of items
         cluster_item_width = min(cluster_item_width, num_items)
         cluster_strata = choose_strata_for_clusters(
-            num_items, cluster_item_width, len(cluster_sizes), rng=rng
+            num_items, cluster_item_width, len(cluster_sizes)
         )
         for index, cluster_size in enumerate(cluster_sizes):
             cluster_start = cluster_item_width * cluster_strata[index]
@@ -950,7 +944,7 @@ def add_contaminant_clusters_to_items(config, consignment, rng: Generator = None
             assert (
                 cluster_width >= cluster_size
             ), "Not enough items available to contaminate in selected cluster stratum."
-            cluster = rng.choice(cluster_width, cluster_size, replace=False)
+            cluster = np.random.choice(cluster_width, cluster_size, replace=False)
             cluster += cluster_start
             cluster_indexes.extend(list(cluster))
     elif distribution == "continuous":
@@ -971,22 +965,13 @@ def add_contaminant_clusters_to_items(config, consignment, rng: Generator = None
     assert np.count_nonzero(consignment.items) == contaminated_items
 
 
-def add_contaminant_clusters(
-        config,
-        consignment,
-        rng: Generator = None,
-):
-    """Add contaminant clusters to a consignment.
+def add_contaminant_clusters(config, consignment, rng: Generator = None):
+    """Add contaminant clusters to consignment
 
-    Item (separately or in boxes) with contaminant in ``consignment`` evaluate
-    to True after running this function. This function does not touch items
-    not selected for contamination; they are expected to be zero beforehand.
-
-    Args:
-        config: Contamination configuration dictionary including
-            ``contamination_unit`` and ``clustered`` settings.
-        consignment: Consignment object to contaminate.
-        rng: Random number generator.
+    Item (separately or in boxes) with contaminant in *consignment* evaluate
+    to True after running this function.
+    This function does not touch the not items not selected for contamination.
+    However, they are expected to be zero.
     """
     contamination_unit = config["contamination_unit"]
     if contamination_unit in ["box", "boxes"]:
@@ -994,11 +979,11 @@ def add_contaminant_clusters(
             raise RuntimeError(
                 "clustering distribution 'single' is not supported for boxes"
             )
-        add_contaminant_clusters_to_boxes(config, consignment, rng=rng)
+        add_contaminant_clusters_to_boxes(config, consignment)
     elif contamination_unit in ["item", "items"]:
         if config["clustered"]["distribution"] == "single":
             add_contaminant_clusters_to_items_with_subset_clustering(
-                config, consignment, rng=rng
+                config, consignment
             )
         else:
             add_contaminant_clusters_to_items(config, consignment)

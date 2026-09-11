@@ -862,14 +862,21 @@ def select_units_to_inspect(
         else:
             raise RuntimeError(f"Unknown selection strategy: {selection_strategy}")
     else:
-        if selection_strategy == "random":
-            return select_random_indexes(unit, consignment, n_units_to_inspect)
+        if selection_strategy == "convenience":
+            indexes_to_inspect = list(range(n_units_to_inspect))
+        elif selection_strategy == "random":
+            indexes_to_inspect = select_random_indexes(
+                unit, consignment, n_units_to_inspect
+            )
         elif selection_strategy == "cluster":
-            return select_cluster_indexes(config, consignment, n_units_to_inspect)
-        elif selection_strategy == "convenience":
-            return _select_convenience_indexes(unit, consignment, n_units_to_inspect)
+            # Compute number of boxes needed to achieve sample size
+            # and select box indexes.
+            indexes_to_inspect = select_cluster_indexes(
+                config, consignment, n_units_to_inspect
+            )
         else:
             raise RuntimeError(f"Unknown selection strategy: {selection_strategy}")
+        return indexes_to_inspect
 
 
 def inspect_sample_unit(sample_unit, effectiveness):

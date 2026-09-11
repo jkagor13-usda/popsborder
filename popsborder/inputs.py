@@ -372,11 +372,12 @@ def load_configuration(
     Returns:
         Configuration dictionary (possibly nested).
     """
-    path = Path(filename)
+    if isinstance(filename, str):
+        filename = Path(filename)
     config = load_one_configuration(
-        path, sheet=sheet, key_column=key_column, value_column=value_column
+        filename, sheet=sheet, key_column=key_column, value_column=value_column
     )
-    resolve_included_files(config, base_file_name=path)
+    resolve_included_files(config, base_file_name=filename)
     return config
 
 
