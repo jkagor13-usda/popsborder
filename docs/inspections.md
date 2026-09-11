@@ -5,14 +5,34 @@ Optionally, inspection of some consignments can be skipped using a release progr
 
 ## Skipping inspections
 
-Inspections can be skipped using release programs specified under the key `release_programs`.
+Before an inspection occurs, a release programs, specified under the key `release_programs`,
+can be used to skip an inspection of a particular consignment.
 
-Two programs are supported: a naive variation of the Cut Flower Release Program
-and a full version of the _Cut Flower Release Program_.
+Several release programs including _Dynamic Skip Lot Program_
+and _Cut Flower Release Program_ are available, but only one program can be specified at a time.
 
-Only one program can be specified at a time.
+By default, first release program under `release_programs` is used. When name of a release program
+is provided as `release_program` under `inspection`, a release program with the matching name
+is used. The names are the same as the keys under `release_programs` (see below).
+For example, the Cut Flower Release Program (CFRP) would be explicitly enabled using:
 
-### Skip Lot Program
+```yaml
+inspection:
+  release_program: cfrp
+release_programs:
+  cfrp:
+    schedule:
+      file_name: schedule.csv
+```
+
+If an empty value (`None` in Python, `null` in JSON) is provided
+as `release_program`, no release program is activated. Additionally,
+any name which is not present in the `release_programs` will avoid
+release program activation. For scenarios, the configuration may use
+`none` as the name to avoid release program activation, while still using
+a text (string) value rather than special empty value.
+
+### Fixed Skip Lot Program
 
 List of compliance levels and their associated ratios of inspected consignments:
 
@@ -55,6 +75,117 @@ Default compliance level when a consignment does not have a compliance level def
     default_level: 1
 ```
 
+### Dynamic Skip Lot Program
+
+In the dynamic skip lot program, consignment dynamically fall to compliance
+levels based on inspection results. The proportion of inspected consignments for
+the same combination of consignment properties dynamically changes based on
+previous simulation steps. The program is identified by the key
+`dynamic_skip_lot`. An optional name can be added and will appear in the output.
+
+```yaml
+release_programs:
+  dynamic_skip_lot:
+    name: Dynamic Skip Lot
+```
+
+Inspection results are tracked for consignments grouped based on tracked
+consignment one or more properties specified as a list with `track`.
+
+```yaml
+track:
+  - origin
+  - commodity
+```
+
+Each group is assigned a level that determines the frequency of inspections.
+Each compliance level has an associated fraction of consignments to be
+inspected (`sampling_fraction`). The `name` key for a level is optional,
+`sampling_fraction` is required. If names are provided, they need to be unique.
+
+```yaml
+levels:
+  - name: Compliance Level 1
+    sampling_fraction: 1
+  - name: Compliance Level 2
+    sampling_fraction: 0.5
+  - name: Compliance Level 3
+    sampling_fraction: 0.25
+  - name: Compliance Level 4
+    sampling_fraction: 0.1
+```
+
+A random number is generated for each consignment to determine whether to
+inspect. The number is compared to the `sampling_fraction` of the current
+compliance level to determine whether or not to inspect the particular
+consignment. On average, a `sampling fraction` of consignments are marked for
+inspection.
+
+The order of the levels is important, as groups move through the levels from the
+first one in the list to the last one in the list. All groups start at the first
+level or a custom start level specified with `start_level`, which can refer to
+the level either by name or by a one-based index (the default start level is 1).
+
+```yaml
+start_level: Compliance Level 1
+```
+
+To advance to a higher level, a group must reach a certain number of consecutive
+successful inspections, called the clearance number.
+
+```yaml
+clearance_number: 10
+```
+
+The tracking for the clearance number is reset after a group moves up a level.
+If a consignment fails an inspection, the level for the group it belongs to is
+reset to the start level. The consignment group can then move up the levels in
+the standard manner. If the group is already at or below the start level,
+its current level is decreased by one level.
+
+If `monitoring_level` is set, the group moves to the monitoring level instead
+of start level.  Just like `start_level`, `monitoring_level` can be set either
+by name or by a one-based index. Start level and monitoring_level can be
+combined together in any way, for example:
+
+```yaml
+start_level: Compliance Level 2
+monitoring_level: Compliance Level 4
+```
+
+If the group's current level is already at or lower than the monitoring level,
+and a consignment fails the inspection, its current level is decreased by one
+level just like when `start_level` is used and `monitoring_level` is not set.
+
+As an alternative to monitoring, a failed inspection will result in decreasing
+the compliance level for the group by one or any other number of levels
+specified by `decrease_levels`, for example:
+
+```yaml
+decrease_levels: 2
+```
+
+The compliance level is never decreased bellow the first level defined in
+`levels`. `decrease_levels` can be specified as integer or boolean (`true` or
+`false`). If it is `true`, the decrease is done by one level.
+
+The groups can quickly move back to their original level before failing
+inspection if quick reinstating of the original level is enabled with
+`quick_reinstating`.
+
+```yaml
+quick_reinstating: true
+```
+
+While the `clearance_number` is used for reinstating by default, an
+additional lower clearance number for reinstating can be specified with
+`quick_reinstate_clearance_number`. If `quick_reinstate_clearance_number` is
+provided, quick reinstating is automatically enabled even if `quick_reinstating` is
+not provided.
+
+```yaml
+quick_reinstate_clearance_number: 5
+```
 
 ### Naive Cut Flower Release Program
 
@@ -94,6 +225,19 @@ release_programs:
       file_name: schedule.csv
 ```
 
+## Effectiveness
+
+Contaminated items can be either always be detected during the inspection,
+or only a certain percentage of them can be detected based on the
+effectiveness. The `effectiveness` is a value between 0 and 1.
+The following will cause 1 out of 10 contaminated items on average to pass
+undetected.
+
+```yaml
+inspection:
+  effectiveness: 0.9
+```
+
 ## Inspection unit
 
 The inspection unit can be determined by:
@@ -123,18 +267,6 @@ meaning all items within a box can be inspected. If `within_box_proportion < 1`,
 only the first `n = within_box_proportion * items_per_box` items in each box
 will be inspected.
 
-## Effectiveness
-
-Contaminated items can be either always be detected during the inspection,
-or only a certain percentage of them can be detected based on the
-effectiveness. The `effectiveness` is a value between 0 and 1.
-The following will cause 1 out of 10 contaminated items to pass undetected.
-
-```yaml
-inspection:
-  effectiveness: 0.9
-```
-
 ## Tolerance level
 
 The simulation provides a count of the number of missed consignments (slippage) with
@@ -158,7 +290,8 @@ inspection:
 
 ## Sample strategy
 
-The sample strategy can be determined by:
+The sample strategy defines the method used to compute the number of
+units to inspect. The sample strategy can be determined by:
 
 ```yaml
 inspection:
@@ -178,6 +311,7 @@ The settings for `proportion` are:
 
 ```yaml
 inspection:
+  sample_strategy: proportion
   proportion:
     value: 0.02
     min_boxes: 1
@@ -195,6 +329,7 @@ The settings for `hypergeometric` are:
 
 ```yaml
 inspection:
+  sample_strategy: hypergeometric
   hypergeometric:
     detection_level: 0.05
     confidence_level: 0.95
@@ -221,6 +356,7 @@ The settings for `fixed_n` are:
 
 ```yaml
 inspection:
+  sample_strategy: fixed_n
   fixed_n: 10
 ```
 
@@ -236,7 +372,9 @@ of boxes to inspect will be set to `num_boxes`.
 
 ## Selection strategy
 
-The unit selection strategy can be determined by:
+While the sample strategy determines _how many_ units to inspect, the
+selection strategy is used to determine _which_ units to select for
+inspection. The unit selection strategy can be determined by:
 
 ```yaml
 inspection:
@@ -251,7 +389,25 @@ selecting units to inspect using a uniform random distribution,
 for selecting boxes for partial inspection. The `cluster` selection
 strategy is valid only for the `item` inspection unit.
 
-### Cluster strategy
+### Random selection strategy
+
+The random selection strategy selects units to inspect using a uniform random
+distribution. Each unit in the consignment has an equal probability of being
+selected. This strategy requires more effort from inspectors but provides
+a higher quality, more representative sample of the consignment. Random
+selection is more robust when contaminants may be distributed non-uniformly
+throughout the consignment.
+
+### Convenience selection strategy
+
+The convenience selection strategy selects the first _n_ units to inspect.
+This approach requires less effort as inspectors only examine the most
+accessible items (e.g., items at the front of boxes or top of the consignment).
+However, convenience sampling may introduce bias if contaminants are not
+uniformly distributed, potentially resulting in higher slippage rates
+compared to random selection.
+
+### Cluster selection strategy
 
 The cluster selection strategy is used when `inspection_unit="item"` to
 divide the sample size into clusters that can be selected from boxes
@@ -287,7 +443,7 @@ inspection:
   unit: item
   within_box_proportion: 0.25
   sample_strategy: hypergeometric
-  selection_strategy: cluter
+  selection_strategy: cluster
   cluster:
     cluster_selection: random
 ```
@@ -405,18 +561,18 @@ configuration for that station.
 
 ## End strategy
 
-Each simulation runs two end‑strategy options determining when the inspection
-stops (*i.e., detection‑related counters contributing to output statistics 
-are no longer incremented after the first contaminated sample/unit is found; 
-the simulation still processes the remaining units to compute the ‘to completion’ 
-metrics*):
-* ``to detection`` – inspection stops immediately after the first contaminated
-  unit is detected (still records what would have happened under full inspection).
-* ``to completion`` – inspection continues until the full allocated sample is
-  inspected, regardless of detections.
+Each simulation automatically runs two options for determining when to
+end an inspection (end strategies). The two possible end strategies are
+`to detection` and `to completion`.
 
-The resulting counts of contaminated units for each end strategy are compared to
-quantify the proportion of contaminants reported when stopping at detection.
+For the `to detection` end strategy, the inspection ends as soon as a
+contaminant is detected. For the `to completion` strategy, the
+inspection continues until the full sample has been inspected,
+regardless of contaminant detection.
+
+The number of contaminated units detected for each end strategy is
+compared to quantify the proportion of contaminants reported when the
+inspection is ended at detection.
 
 ---
 

@@ -588,6 +588,7 @@ def load_config_xlsx(
     path = Path(filename)
     table = {}
 
+    # pylint: disable=import-outside-toplevel
     import openpyxl
     from openpyxl.utils import column_index_from_string
 
@@ -603,6 +604,8 @@ def load_config_xlsx(
     import warnings
 
     with warnings.catch_warnings():
+        # We want to use validation functions in the spreadsheet,
+        # but it does not matter whether they are supported by the reader here.
         warnings.filterwarnings(
             "ignore", message="Data Validation extension is not supported"
         )
@@ -616,6 +619,8 @@ def load_config_xlsx(
                     value = text_to_value(row[value_column_idx])
                     table[key] = value
         finally:
+            # Read-only mode requires an explicit close and
+            # the workbook object is not a context manager.
             if workbook:
                 workbook.close()
     return record_to_nested_dictionary(table)
@@ -649,6 +654,7 @@ def load_config_ods(
     table = {}
 
     # pylint: disable=import-outside-toplevel
+    import pandas
 
     sheet = sheet if sheet else 0
 
@@ -767,7 +773,9 @@ def load_scenario_table(filename: Union[str, Path]):
         try:
             workbook = openpyxl.load_workbook(path, read_only=True)
             sheet = workbook.active
+            # Get header.
             header = [cell.value for cell in sheet[1]]
+            # Read rows excluding the header.
             for old_row in sheet.iter_rows(min_row=2):
                 new_row = {}
                 for key, cell in zip(header, old_row):

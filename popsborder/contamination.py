@@ -46,7 +46,7 @@ Modifications:
 # this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
 
 
-"""Contaminant addition to consignments.
+"""Contaminant addition to consignments
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
 .. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
@@ -54,9 +54,9 @@ Modifications:
 .. codeauthor:: Joseph Agor <Joseph.Agor jhuapl edu>
 """
 
-
 import math
 import copy
+import random
 from collections.abc import Mapping
 from collections import defaultdict
 from datetime import datetime

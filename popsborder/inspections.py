@@ -383,90 +383,58 @@ def construct_risk_units(config: dict = None, data: pd.DataFrame = None):
 
 
 def inspect_first(consignment):
-    """Inspect only the first inspection unit in the consignment.
-
-    Args:
-        consignment: Consignment to inspect.
-
-    Returns:
-        Tuple ``(checked_ok, inspected_units)`` where:
-        * ``checked_ok`` is False if contamination is found in the first unit.
-        * ``inspected_units`` is the number of inspection units inspected (1).
-    """
-    if consignment.inspection_units[0]:
+    """Inspect only the first box in the consignment"""
+    if consignment.boxes[0]:
         return False, 1
     return True, 1
 
 
 def inspect_one_random(consignment):
-    """Inspect one randomly chosen inspection unit in the consignment.
-
-    Args:
-        consignment: Consignment to inspect.
-
-    Returns:
-        Tuple ``(checked_ok, inspected_units)`` where:
-        * ``checked_ok`` is False if contamination is found in the chosen unit.
-        * ``inspected_units`` is the number of inspection units inspected (1).
-    """
-    if random.choice(consignment.inspection_units):
+    """Inspect only one randomly picked box in the consignment"""
+    if random.choice(consignment.boxes):
         return False, 1
     return True, 1
 
 
 def inspect_all(consignment):
-    """Inspect all inspection units in the consignment.
+    """Inspect all boxes in the consignment"""
+    return not is_consignment_contaminated(consignment), consignment.num_boxes
 
-    Args:
-        consignment: Consignment to inspect.
 
-    Returns:
-        Tuple ``(checked_ok, inspected_units)`` where:
-        * ``checked_ok`` is False if any inspection unit is contaminated.
-        * ``inspected_units`` equals the number of inspection units.
+def inspect_first_n(num_boxes, consignment):
+    """Inspect only the first n boxes in the consignment
+
+    :param num_boxes: Number of boxes to inspect
+    :param consignment: Consignment to inspect
     """
-    return not is_consignment_contaminated(consignment), consignment.num_inspection_units
-
-
-def inspect_first_n(num_inspection_units, consignment):
-    """Inspect the first n inspection units in the consignment.
-
-    Args:
-        num_inspection_units: Number of inspection units to inspect.
-        consignment: Consignment to inspect.
-
-    Returns:
-        Tuple ``(checked_ok, inspected_units)`` where:
-        * ``checked_ok`` is False if contamination is found in the inspected units.
-        * ``inspected_units`` is the number of inspection units inspected.
-    """
-    num_inspection_units = min(len(consignment.inspection_units), num_inspection_units)
-    for i in range(num_inspection_units):
-        if consignment.inspection_units[i]:
+    num_boxes = min(len(consignment.boxes), num_boxes)
+    for i in range(num_boxes):
+        if consignment.boxes[i]:
             return False, i + 1
-    return True, num_inspection_units
+    return True, num_boxes
 
 
 def sample_proportion(config, consignment):
-    """Compute sample size based on proportion strategy.
+    """Set sample size to sample units from consignment using proportion strategy.
+    Return number of units to inspect.
 
-    The number of units to inspect is determined as a proportion of the
-    consignment population (sample or inspection units).
-
-    Args:
-        config: Configuration dictionary.
-        consignment: Consignment to be inspected.
-
-    Returns:
-        Number of units to inspect.
+    :param config: Configuration to be used595
+    :param consignment: Consignment to be inspected
     """
     unit = config["inspection"]["unit"]
     ratio = config["inspection"]["proportion"]["value"]
-    population = _get_unit_population(consignment, unit)
-    n_units_to_inspect = round(ratio * population)
-    if _is_inspection_unit_unit(unit):
-        n_units_to_inspect = max(_get_min_inspection_units(config), n_units_to_inspect)
-        n_units_to_inspect = min(consignment.num_inspection_units, n_units_to_inspect)
+    num_items = consignment.num_items
+    num_boxes = consignment.num_boxes
+    min_boxes = config["inspection"]["min_boxes"]
+
+    if unit in ["item", "items"]:
+        n_units_to_inspect = round(ratio * num_items)
+    elif unit in ["box", "boxes"]:
+        n_units_to_inspect = round(ratio * num_boxes)
+        n_units_to_inspect = max(min_boxes, n_units_to_inspect)
+        n_units_to_inspect = min(num_boxes, n_units_to_inspect)
+    else:
+        raise RuntimeError(f"Unknown sampling unit: {unit}")
     return n_units_to_inspect
 
 
@@ -548,260 +516,158 @@ def sample_all(config, consignment):
         Number of units to inspect (entire population).
     """
     unit = config["inspection"]["unit"]
-    return _get_unit_population(consignment, unit)
+    if unit in ["item", "items"]:
+        return consignment.num_items
+    elif unit in ["box", "boxes"]:
+        return consignment.num_boxes
+    else:
+        return _get_unit_population(consignment, unit)
 
 
 def sample_n(config, consignment):
-    """Sample a fixed number of units from a consignment.
+    """Set sample size to sample fixed number of units from consignment.
+    Check if fixed number is <= max units for inspection.
+    Return number of units to inspect.
 
-    This function applies minimum and maximum constraints and, for sample units,
-    considers within-inspection-unit proportions.
-
-    Args:
-        config: Configuration dictionary.
-        consignment: Consignment to be inspected.
-
-    Returns:
-        Number of units to inspect.
-
-    Raises:
-        RuntimeError: If the sampling unit type is unknown.
+    :param config: Configuration to be used
+    :param consignment: Consignment to be inspected
     """
     fixed_n = config["inspection"]["fixed_n"]
     unit = config["inspection"]["unit"]
-    within_inspection_unit_proportion = _get_within_inspection_unit_proportion(config)
-    sample_units_per_inspection_unit = consignment.sample_units_per_inspection_unit
-    num_sample_units = consignment.num_sample_units
-    num_inspection_units = consignment.num_inspection_units
-    min_inspection_units = _get_min_inspection_units(config)
+    within_box_proportion = config["inspection"]["within_box_proportion"]
+    items_per_box = consignment.items_per_box
+    num_items = consignment.num_items
+    num_boxes = consignment.num_boxes
+    min_boxes = config["inspection"]["min_boxes"]
 
-    if _is_sample_unit_unit(unit):
-        max_sample_units = compute_max_inspectable_sample_units(
-            num_sample_units, sample_units_per_inspection_unit, within_inspection_unit_proportion
+    if unit in ["item", "items"]:
+        max_items = compute_max_inspectable_items(
+            num_items, items_per_box, within_box_proportion
         )
-        # Check if max number of sample_units that can be inspected is less than fixed number.
-        n_units_to_inspect = min(max_sample_units, fixed_n)
-    elif _is_inspection_unit_unit(unit):
+        # Check if max number of items that can be inspected is less than fixed number.
+        n_units_to_inspect = min(max_items, fixed_n)
+    elif unit in ["box", "boxes"]:
         n_units_to_inspect = fixed_n
-        n_units_to_inspect = max(min_inspection_units, n_units_to_inspect)
-        n_units_to_inspect = min(num_inspection_units, n_units_to_inspect)
-    else:
-        raise RuntimeError(f"Unknown sampling unit: {unit}")
+        n_units_to_inspect = max(min_boxes, n_units_to_inspect)
+        n_units_to_inspect = min(num_boxes, n_units_to_inspect)
     return n_units_to_inspect
 
 
-def sample_rbs(
-        config,
-        consignment,
-        rng: Generator = None,
-):
-    """Compute sample sizes per unit using RBS compliance levels.
+def convert_items_to_boxes_fixed_proportion(config, consignment, n_items_to_inspect):
+    """Convert number of items to inspect to number of boxes to inspect based on
+    the number of items per box and the proportion of items to inspect per box
+    specified in the config. Adjust number of boxes to inspect to be at least
+    the minimum number of boxes to inspect specified in the config and at most the
+    total number of boxes in the consignment.
+    Return number of boxes to inspect.
 
-    This function uses a risk-based sampling methodology driven by compliance
-    levels, where detection and confidence levels are obtained from a
-    compliance lookup table and used in hypergeometric calculations.
-
-    Args:
-        config: Configuration dictionary.
-        consignment: Consignment to be inspected.
-        rng: Optional random number generator.
-
-    Returns:
-        Mapping from risk-unit or inspection-unit ID to units-to-inspect.
+    :param config: Configuration to be used
+    :param consignment: Consignment to be inspected
+    :param n_items_to_inspect: Number of items to inspect defined in sample functions.
     """
-    unit = config["inspection"]["unit"]
-    debug_print = config.get("debug", {}).get("print_compliance_levels", False)
+    items_per_box = consignment.items_per_box
+    within_box_proportion = config["inspection"]["within_box_proportion"]
+    min_boxes = config["inspection"]["min_boxes"]
+    num_boxes = consignment.num_boxes
+    inspect_per_box = int(math.ceil(within_box_proportion * items_per_box))
 
-    # Get filename from config
-    compliance_table_lookup_filename = config["inspection"]["compliance_table"]['file_name']
-
-    # Load compliance lookup
-    compliance_table_dict = load_compliance_lookup(filename=compliance_table_lookup_filename)
-
-    for key, val in list(compliance_table_dict.items()):
-        # Only process entries where the key is a tuple and value is a tuple of two strings
-        if isinstance(key, tuple) and isinstance(val, tuple) and len(val) == 2:
-            str1, str2 = val
-            compliance_table_dict[key] = (float(str1), float(str2))
-
-    detection_confidence_levels = get_detection_and_confidence(
-        consignment, compliance_table_dict, print_compliance_levels=False
-    )
-    n_units_to_inspect = {}
-    if unit in ["sample_unit", "sample_units", "item", "items"]:
-        risk_units = consignment.risk_units if consignment.risk_units else []
-        if risk_units:
-            risk_unit_by_id = {risk_unit.id: risk_unit for risk_unit in risk_units}
-            for risk_unit_id, levels in detection_confidence_levels.items():
-                detection_level, confidence_level = levels[0], levels[1]
-                risk_unit = risk_unit_by_id.get(risk_unit_id)
-                if risk_unit is None:
-                    continue
-                population_n = risk_unit.n_for_hypergeom
-                if population_n <= 0:
-                    continue
-
-                n_for_risk = compute_hypergeometric(
-                    detection_level, confidence_level, population_n
-                )
-                n_for_risk = max(0, min(n_for_risk, population_n))
-                n_units_to_inspect[risk_unit_id] = n_for_risk
-        else:
-            # Fallback for legacy consignments without risk_units.
-            for inspect_number in range(consignment.num_inspection_units):
-                detection_level, confidence_level = detection_confidence_levels[inspect_number]
-                population_n = consignment.inspection_units[inspect_number].num_sample_units
-                n_units_to_inspect[inspect_number] = compute_hypergeometric(
-                    detection_level, confidence_level, population_n
-                )
-    elif unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
-        num_sample_units = consignment.num_sample_units
-        for inspect_number in detection_confidence_levels.keys():
-            detection_level, confidence_level = detection_confidence_levels[inspect_number][0], \
-                detection_confidence_levels[inspect_number][1]
-            n_units_to_inspect[inspect_number] = compute_hypergeometric(
-                detection_level, confidence_level, num_sample_units
-            )
-    else:
-        raise RuntimeError(f"Unknown sampling unit: {unit}")
-    return n_units_to_inspect
+    n_boxes_to_inspect = math.ceil(n_items_to_inspect / inspect_per_box)
+    n_boxes_to_inspect = max(min_boxes, n_boxes_to_inspect)
+    n_boxes_to_inspect = min(num_boxes, n_boxes_to_inspect)
+    return n_boxes_to_inspect
 
 
-def convert_sample_units_to_inspection_units_fixed_proportion(config, consignment, n_sample_units_to_inspect):
-    """Convert sample-unit count to inspection-unit count using fixed proportion.
+def compute_n_clusters_to_inspect(config, consignment, n_items_to_inspect):
+    """Compute number of cluster units (boxes) that need to be opened to achieve item
+    sample size when using the cluster selection strategy. Use config within box
+    proportion if possible or compute minimum number of items to inspect per box
+    required to achieve item sample size.
+    Return number of boxes to inspect and number of items to inspect per box.
 
-    The number of inspection units to inspect is derived from the number of
-    sample units, the configured within-inspection-unit proportion, and the
-    minimum and maximum number of inspection units.
-
-    Args:
-        config: Configuration dictionary.
-        consignment: Consignment to be inspected.
-        n_sample_units_to_inspect: Number of sample units to inspect.
-
-    Returns:
-        Number of inspection units to inspect.
-    """
-    sample_units_per_inspection_unit = consignment.sample_units_per_inspection_unit
-    within_inspection_unit_proportion = _get_within_inspection_unit_proportion(config)
-    min_inspection_units = _get_min_inspection_units(config)
-    num_inspection_units = consignment.num_inspection_units
-    inspect_per_inspection_unit = int(math.ceil(within_inspection_unit_proportion * sample_units_per_inspection_unit))
-
-    n_inspection_units_to_inspect = math.ceil(n_sample_units_to_inspect / inspect_per_inspection_unit)
-    n_inspection_units_to_inspect = max(min_inspection_units, n_inspection_units_to_inspect)
-    n_inspection_units_to_inspect = min(num_inspection_units, n_inspection_units_to_inspect)
-    return n_inspection_units_to_inspect
-
-
-def compute_n_clusters_to_inspect(config, consignment, n_sample_units_to_inspect):
-    """Compute number of clusters (inspection units) to open for cluster sampling.
-
-    The function determines how many inspection units to inspect and how many
-    sample units per inspection unit must be inspected to achieve the desired
-    sample size under the cluster selection strategy.
-
-    Args:
-        config: Configuration dictionary.
-        consignment: Consignment to be inspected.
-        n_sample_units_to_inspect: Number of sample units to inspect.
-
-    Returns:
-        Tuple ``(n_inspection_units_to_inspect, inspect_per_inspection_unit)``.
-
-    Raises:
-        RuntimeError: If an unknown cluster selection method is specified.
+    :param config: Configuration to be used
+    :param consignment: Consignment to be inspected
+    :param n_items_to_inspect: Number of items to inspect defined by sample functions.
     """
     cluster_selection = config["inspection"]["cluster"]["cluster_selection"]
-    sample_units_per_inspection_unit = consignment.sample_units_per_inspection_unit
-    within_inspection_unit_proportion = _get_within_inspection_unit_proportion(config)
-    min_inspection_units = _get_min_inspection_units(config)
-    num_inspection_units = consignment.num_inspection_units
-    num_sample_units = consignment.num_sample_units
+    items_per_box = consignment.items_per_box
+    within_box_proportion = config["inspection"]["within_box_proportion"]
+    min_boxes = config["inspection"]["min_boxes"]
+    num_boxes = consignment.num_boxes
+    num_items = consignment.num_items
 
     if cluster_selection == "random":
         # Check if within box proportion is high enough to achieve sample size.
-        max_sample_units = compute_max_inspectable_sample_units(
-            num_sample_units, sample_units_per_inspection_unit, within_inspection_unit_proportion
+        max_items = compute_max_inspectable_items(
+            num_items, items_per_box, within_box_proportion
         )
-        if max_sample_units >= n_sample_units_to_inspect:
-            inspect_per_inspection_unit = math.ceil(
-                within_inspection_unit_proportion * sample_units_per_inspection_unit)
-            n_inspection_units_to_inspect = math.ceil(n_sample_units_to_inspect / inspect_per_inspection_unit)
+        if max_items >= n_items_to_inspect:
+            inspect_per_box = math.ceil(within_box_proportion * items_per_box)
+            n_boxes_to_inspect = math.ceil(n_items_to_inspect / inspect_per_box)
         else:
-            # If not, divide sample size across number of inspection_units to get number
-            # of sample_units to inspect per inspection_unit.
+            # If not, divide sample size across number of boxes to get number
+            # of items to inspect per box.
             print(
-                "Warning: Within inspection_unit proportion is too low to achieve sample size. "
-                "Automatically increasing within inspection_unit proportion to achieve sample size."
+                "Warning: Within box proportion is too low to achieve sample size. "
+                "Automatically increasing within box proportion to achieve sample size."
             )
-            inspect_per_inspection_unit = math.ceil(n_sample_units_to_inspect / num_inspection_units)
-            n_inspection_units_to_inspect = math.ceil(n_sample_units_to_inspect / inspect_per_inspection_unit)
+            inspect_per_box = math.ceil(n_items_to_inspect / num_boxes)
+            n_boxes_to_inspect = math.ceil(n_items_to_inspect / inspect_per_box)
 
-    elif cluster_selection == "interval":  # Every nth inspection_unit, where n = interval
+    elif cluster_selection == "interval":  # Every nth box, where n = interval
         interval = config["inspection"]["cluster"]["interval"]
-        # Maximum num inspection_units that can be inspected based on interval.
+        # Maximum num boxes that can be inspected based on interval.
         # Should be at least 1.
-        max_inspection_units = max(1, round(num_inspection_units / interval))
-        # Assumes full inspection_units, no remainder partial inspection_unit.
-        max_sample_units = max_inspection_units * (
-            math.ceil(within_inspection_unit_proportion * sample_units_per_inspection_unit))
-        # Check if within inspection_unit proportion is high enough and/or interval is
+        max_boxes = max(1, round(num_boxes / interval))
+        # Assumes full boxes, no remainder partial box.
+        max_items = max_boxes * (math.ceil(within_box_proportion * items_per_box))
+        # Check if within box proportion is high enough and/or interval is
         # low enough to achieve sample size
-        if max_sample_units >= n_sample_units_to_inspect:
-            inspect_per_inspection_unit = math.ceil(
-                within_inspection_unit_proportion * sample_units_per_inspection_unit)
-            n_inspection_units_to_inspect = math.ceil(n_sample_units_to_inspect / inspect_per_inspection_unit)
-        # If not, divide sample size across max inspection_units to get number of
-        # sample_units to inspect per inspection_unit.
+        if max_items >= n_items_to_inspect:
+            inspect_per_box = math.ceil(within_box_proportion * items_per_box)
+            n_boxes_to_inspect = math.ceil(n_items_to_inspect / inspect_per_box)
+        # If not, divide sample size across max boxes to get number of
+        # items to inspect per box.
         else:
             print(
-                "Warning: Within inspection_unit proportion is too low and/or interval is too "
-                "high to achieve sample size. Automatically increasing within inspection_unit "
+                "Warning: Within box proportion is too low and/or interval is too "
+                "high to achieve sample size. Automatically increasing within box "
                 "proportion to achieve sample size."
             )
-            inspect_per_inspection_unit = math.ceil(n_sample_units_to_inspect / max_inspection_units)
-            # If not enough inspection_units to achieve sample size, inspect all sample_units
-            # and increase n_inspection_units_to_inspect as needed.
-            inspect_per_inspection_unit = min(inspect_per_inspection_unit, sample_units_per_inspection_unit)
-            n_inspection_units_to_inspect = math.ceil(n_sample_units_to_inspect / inspect_per_inspection_unit)
+            inspect_per_box = math.ceil(n_items_to_inspect / max_boxes)
+            # If not enough boxes to achieve sample size, inspect all items
+            # and increase n_boxes_to_inspect as needed.
+            inspect_per_box = min(inspect_per_box, items_per_box)
+            n_boxes_to_inspect = math.ceil(n_items_to_inspect / inspect_per_box)
     else:
         raise RuntimeError(f"Unknown cluster selection method: {cluster_selection}")
 
-    # Allow user specified inspection_unit minimum override calculations
-    n_inspection_units_to_inspect = max(min_inspection_units, n_inspection_units_to_inspect)
-    assert num_inspection_units >= n_inspection_units_to_inspect
+    # Allow user specified box minimum override calculations
+    n_boxes_to_inspect = max(min_boxes, n_boxes_to_inspect)
+    assert num_boxes >= n_boxes_to_inspect
 
-    return n_inspection_units_to_inspect, inspect_per_inspection_unit
+    return n_boxes_to_inspect, inspect_per_box
 
 
-def compute_max_inspectable_sample_units(num_sample_units, sample_units_per_inspection_unit,
-                                         within_inspection_unit_proportion):
-    """Compute maximum number of sample units inspectable given proportion per inspection unit.
+def compute_max_inspectable_items(num_items, items_per_box, within_box_proportion):
+    """Compute maximum number of items that can be inspected in a consignment based
+    on within box proportion. If within box proportion is less than 1 (partial box
+    inspections), then maximum number of items that can be inspected will be
+    less than the total number of items in the consignment.
 
-    When the within-inspection-unit proportion is less than 1, the maximum
-    inspectable sample units is less than the total sample-unit count.
-
-    Args:
-        num_sample_units: Total number of sample units in the consignment.
-        sample_units_per_inspection_unit: Number of sample units per
-            inspection unit.
-        within_inspection_unit_proportion: Proportion of sample units to
-            inspect per inspection unit.
-
-    Returns:
-        Maximum number of sample units that can be inspected.
+    :param num_items: total number of items in consignment
+    :param items_per_box: number of items in each box
+    :param within_box_proportion: proportion of items to be inspected per box
     """
-    inspect_per_inspection_unit = math.ceil(within_inspection_unit_proportion * sample_units_per_inspection_unit)
-    num_full_inspection_units = math.floor(num_sample_units / sample_units_per_inspection_unit)
-    full_inspection_unit_inspectable_sample_units = num_full_inspection_units * inspect_per_inspection_unit
-    remainder_inspection_unit = num_sample_units % sample_units_per_inspection_unit
-    # Assume that num of sample_units to inspect is based on num of sample_units
-    # in full inspection_unit. Same inspect_per_inspection_unit will be applied to
-    # full and partial inspection_units.
-    remainder_inspection_unit_inspectable_sample_units = min(remainder_inspection_unit, inspect_per_inspection_unit)
-    max_sample_units = full_inspection_unit_inspectable_sample_units + remainder_inspection_unit_inspectable_sample_units
-    return max_sample_units
+    inspect_per_box = math.ceil(within_box_proportion * items_per_box)
+    num_full_boxes = math.floor(num_items / items_per_box)
+    full_box_inspectable_items = num_full_boxes * inspect_per_box
+    remainder_box = num_items % items_per_box
+    # Assume that num of items to inspect is based on num of items
+    # in full box. Same inspect_per_box will be applied to
+    # full and partial boxes.
+    remainder_box_inspectable_items = min(remainder_box, inspect_per_box)
+    max_items = full_box_inspectable_items + remainder_box_inspectable_items
+    return max_items
 
 
 def select_random_indexes(unit, consignment, n_units_to_inspect):
@@ -909,57 +775,46 @@ def select_random_indexes_rbs(
 
 
 def select_cluster_indexes(config, consignment, n_units_to_inspect):
-    """Select cluster-based indexes for inspection.
+    """Select units (indexes) from consignment based on sample size and
+    cluster selection strategy.
 
-    Depending on the cluster selection strategy, this function chooses
-    inspection units to open so that the desired sample size (in sample
-    units) can be achieved.
-
-    Args:
-        config: Configuration dictionary.
-        consignment: Consignment to be inspected.
-        n_units_to_inspect: Number of sample units to inspect.
-
-    Returns:
-        Sorted list of inspection-unit indexes.
-
-    Raises:
-        RuntimeError: If cluster selection is used with inspection-unit
-            sampling units or if the unit type is unknown.
+    :param config: Configuration to be used
+    :param consignment: Consignment to be inspected
+    :param n_units_to_inspect: Number of units to inspect defined in sample functions.
     """
     unit = config["inspection"]["unit"]
     cluster_selection = config["inspection"]["cluster"]["cluster_selection"]
 
-    if unit in ["sample_unit", "sample_units", "item", "items"]:
+    if unit in ["item", "items"]:
         if cluster_selection == "random":
-            n_inspection_units_to_inspect = (
+            n_boxes_to_inspect = (
                 compute_n_clusters_to_inspect(config, consignment, n_units_to_inspect)
             )[0]
-            # Choose inspection_unit indexes randomly
+            # Choose box indexes randomly
             indexes_to_inspect = random.sample(
-                list(range(consignment.num_inspection_units)), n_inspection_units_to_inspect
+                list(range(consignment.num_boxes)), n_boxes_to_inspect
             )
         elif cluster_selection == "interval":
             interval = config["inspection"]["cluster"]["interval"]
-            n_inspection_units_to_inspect = (
+            n_boxes_to_inspect = (
                 compute_n_clusters_to_inspect(config, consignment, n_units_to_inspect)
             )[0]
-            max_inspection_units = max(1, round(consignment.num_inspection_units / interval))
-            # Check to see if interval is small enough to achieve n_inspection_units_to_inspect
+            max_boxes = max(1, round(consignment.num_boxes / interval))
+            # Check to see if interval is small enough to achieve n_boxes_to_inspect
             # If not, decrease interval.
-            if n_inspection_units_to_inspect > max_inspection_units:
-                interval = round(consignment.num_inspection_units / n_inspection_units_to_inspect)
+            if n_boxes_to_inspect > max_boxes:
+                interval = round(consignment.num_boxes / n_boxes_to_inspect)
             # Create list of indexes incremented by interval size
             indexes_to_inspect = []
             index = 0
-            for _ in range(n_inspection_units_to_inspect):
+            for unused_i in range(n_boxes_to_inspect):
                 indexes_to_inspect.append(index)
                 index += interval
         else:
             raise RuntimeError(f"Unknown cluster selection method: {cluster_selection}")
-    elif _is_inspection_unit_unit(unit):
+    elif unit in ["box", "boxes"]:
         raise RuntimeError(
-            "Cannot use cluster selection strategy with inspection_unit sampling unit"
+            "Cannot use cluster selection strategy with box sampling unit"
         )
     else:
         raise RuntimeError(f"Unknown unit: {unit}")
@@ -1722,13 +1577,18 @@ def count_contaminated_sample_units(consignment):
 
 # Backward compatibility aliases
 def count_contaminated_boxes(consignment):
-    """Return number of boxes containing contaminants (backward compatibility)."""
-    return count_contaminated_inspection_units(consignment)
+    """Return number of boxes containing contaminants"""
+    count = 0
+    for box in consignment.boxes:
+        if box:
+            count += 1
+    return count
 
 
 def count_contaminated_items(consignment):
-    """Return number of contaminated items (backward compatibility)."""
-    return count_contaminated_sample_units(consignment)
+    """Return number of contaminated items"""
+    count = np.count_nonzero(consignment.items)
+    return count
 
 
 def _norm(s: str) -> str:

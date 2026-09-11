@@ -42,6 +42,9 @@ Modifications:
 .. codeauthor:: Joseph Agor <Joseph.Agor jhuapl edu>
 """
 
+import itertools
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
 from .inputs import update_config
 from .simulation import run_simulation
 from datetime import datetime
@@ -157,3 +160,128 @@ def run_scenarios(
             # The result is simulation totals.
             results.append((result, scenario_config))
     return results
+
+
+def run_scenarios_parallel(
+    config,
+    scenario_table,
+    seed,
+    num_runs_per_submission,
+    num_submission_per_scenario,
+    num_consignments,
+    max_workers,
+    limit=None,
+):
+    """Run scenarios in parallel using concurrent.futures.
+
+    :param config: Basic configuration for each simulation
+    :param scenario_table: Configurations specific for each scenario
+    :param seed: Random seed base. Each scenario will derive its own seeds
+    :param num_simulations: Number of simulations per scenario
+    :param num_consignments: Number of consignments in each simulation
+    :param max_workers: Number of workers for parallel execution
+    """
+    # Allowing for many local variables to keep this as one function.
+    # pylint: disable=too-many-locals
+    results = []
+    if max_workers:
+        print(f"using {max_workers} workers")
+        # Otherwise, it is up the concurrent.futures to figure out.
+    num_created = 0
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        future_to_scenario = {}
+        for record in scenario_table:
+            for computed_seed in range(
+                seed,
+                seed + (num_submission_per_scenario * num_runs_per_submission),
+                num_runs_per_submission,
+            ):
+                if limit and num_created >= limit:
+                    # Only the inner loop, but the outer loop doesn't do anything else,
+                    # so it ends quickly.
+                    break
+                scenario_config = update_config(config, record)
+                future_to_scenario[
+                    executor.submit(
+                        run_simulation,
+                        config=scenario_config,
+                        num_simulations=num_runs_per_submission,
+                        num_consignments=num_consignments,
+                        seed=computed_seed,
+                        detailed=False,
+                        individual=True,
+                    )
+                ] = scenario_config
+                num_created += 1
+
+        print(
+            f"doing {len(future_to_scenario)} submissions"
+            f" (with {num_runs_per_submission * len(future_to_scenario)}"
+            " simulations)..."
+        )
+
+        # Collect results
+        for future in as_completed(future_to_scenario):
+            scenario_config = future_to_scenario[future]
+            try:
+                unused_totals, individual_results = future.result()
+                for result in individual_results:
+                    results.append((result, scenario_config))
+            # We want to capture any exception from the subprocess.
+            # pylint: disable=broad-except
+            except Exception as error:
+                print(
+                    f"Scenario {individual_results[0]['name']} failed: "
+                    f"{type(error).__name__}: {error}"
+                )
+    return results
+
+
+def generate_scenarios(parameter_values, done=None):
+    """
+    Generate a list of scenario dictionaries with different parameter combinations.
+
+    :param parameter_values: dict
+        Dictionary of parameter names mapping to lists of values.
+        Example:
+        {
+            "inspection/effectiveness": [0.5, 0.7, 0.9],
+            "contamination/contamination_rate/value": [0.01, 0.05, 0.1],
+            "contamination/clustered/value": [0.1, 0.3, 0.5],
+        }
+    :param done: pd.DataFrame or None
+        Previously completed scenarios (with matching parameter columns).
+
+    Returns a tuple (scenarios, found) where scenarios is a list of dictionaries
+    where each dict represents a scenario. Found is a number of scenarios skipped
+    because they were already in *done*.
+    """
+    scenarios = []
+    found = 0
+
+    keys = list(parameter_values.keys())
+    values = list(parameter_values.values())
+
+    # Combinations already done as a set of tuples
+    done_combos = set()
+    if done is not None and not done.empty:
+        done_combos = set(tuple(row[k] for k in keys) for _, row in done.iterrows())
+
+    # Cartesian product over all parameter lists
+    for combo in itertools.product(*values):
+        # Skip if already done (exact match across all params)
+        if tuple(combo) in done_combos:
+            found += 1
+            continue
+
+        scenario = dict(zip(keys, combo))
+
+        # Create a scenario name
+        scenario_name = "_".join(
+            f"{parameter}={value}" for parameter, value in scenario.items()
+        )
+        scenario["name"] = scenario_name
+
+        scenarios.append(scenario)
+
+    return scenarios, found

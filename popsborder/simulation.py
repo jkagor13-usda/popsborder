@@ -1,5 +1,5 @@
 # Simulation of contaminated consignments and their inspections
-# Copyright (C) 2018-2021 Vaclav Petras and others (see below)
+# Copyright (C) 2018-2025 Vaclav Petras and others (see below)
 # © 2026 The Johns Hopkins University Applied Physics Laboratory LLC
 
 """
@@ -268,20 +268,20 @@ def simulation(
         avg_boxes_opened_completion=total_boxes_opened_completion / num_consignments,
         avg_boxes_opened_detection=total_boxes_opened_detection / num_consignments,
         pct_boxes_opened_completion=(
-                (total_boxes_opened_completion / total_num_boxes) * 100
+            (total_boxes_opened_completion / total_num_boxes) * 100
         ),
         pct_boxes_opened_detection=(
-                (total_boxes_opened_detection / total_num_boxes) * 100
+            (total_boxes_opened_detection / total_num_boxes) * 100
         ),
         avg_items_inspected_completion=total_items_inspected_completion
-                                       / num_consignments,
+        / num_consignments,
         avg_items_inspected_detection=total_items_inspected_detection
-                                      / num_consignments,
+        / num_consignments,
         pct_items_inspected_completion=(
-                (total_items_inspected_completion / total_num_items) * 100
+            (total_items_inspected_completion / total_num_items) * 100
         ),
         pct_items_inspected_detection=(
-                (total_items_inspected_detection / total_num_items) * 100
+            (total_items_inspected_detection / total_num_items) * 100
         ),
         pct_contaminant_unreported_if_detection=pct_contaminant_unreported_if_detection,
         true_contamination_rate=true_contamination_rate / num_consignments,

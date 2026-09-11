@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 # Simulation of contaminated consignments and their inspections
 # Copyright (C) 2018-2022 Vaclav Petras and others (see below)
 

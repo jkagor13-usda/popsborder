@@ -10,11 +10,11 @@ contamination:
 ```
 
 The possible values for `contamination_unit` include `items` and `boxes`. If
-`contamination_unit` = items, the contamination rate (described below) is applied to
+`contamination_unit = items`, the contamination rate (described below) is applied to
 the total number of items in the consignment and individual items are contaminated
 using the specified contaminant arrangement method (described below).
 
-Alternatively, if `contamination_unit` = boxes, the contamination rate is
+Alternatively, if `contamination_unit = boxes`, the contamination rate is
 applied to the total number of boxes in the consignment. The number of boxes to
 contaminate is computed as a decimal (float). Full boxes are contaminated (all
 items within box), except for the last box which uses the remainder of the
@@ -65,7 +65,6 @@ distribution, two shape parameter values are required to define the desired beta
 distribution of contamination rates. An contamination rate mean and standard
 deviation can be used to determine the beta distribution shape parameters if
 desired using this calculator: <https://www.desmos.com/calculator/kx83qio7yl>.
-
 
 If `distribution` = `fixed_value`, a constant contamination rate is used for every
 consignment (rather than a random value based on a beta distribution). When using a
@@ -263,7 +262,7 @@ contamination:
   random_box:
     probability: 0.2
     ratio: 0.5
-    in_box_arrangement: all
+    in_box_arrangement: random
 ```
 
 ## Consignment-specific contamination
@@ -312,7 +311,8 @@ contamination:
 
 Although any combination is accepted as valid input, specifying overlapping rules may result in
 unexpected behavior. For example, in case you specify only `commodity` in one rule and `port`
-in another rule, it is hard to tell which rule is applied to which consignment. This is an issue
+in another rule, it is hard to tell which rule is applied to which consignment. While this is not
+an issue when simply selecting which consignments should be contaminated, it becomes an issue
 when it is used in combination with different contamination settings for different consignments
 (see below).
 
@@ -334,9 +334,9 @@ Similarly, `end_date` specifies last day when the consignments are contaminated 
 ### Setting consignment-specific parameters
 
 When all selected consignments should use the same contamination configuration,
-the `contamination` on the top-level is used, i.e., the contamination configuration is done
-exactly as if it would apply to all consignment and it is rules under `consignments` which limit
-to which consignment the contamination is applied.
+the `contamination` on the top-level is used to specify that, i.e., the contamination configuration is done
+exactly as if it would apply to all consignments and it uses rules under `consignments` to limit
+to which consignments the contamination is applied.
 
 ```yaml
 contamination:
@@ -375,7 +375,7 @@ then the top-level `contamination` is used to get default values which can be th
 overwritten by values from the nested `contamination`.
 
 In the following example, both consignments with both Tulipa and Rose will be contaminated and
-will use values from the top-level `contamination` and at the same time, these values will be
+will use values from the top-level `contamination`, and at the same time, these values will be
 overwritten by the nested `contamination`. As a result, contamination configuration for Tulipa
 will have `arrangement: random_box` and `contamination_unit: item`, while contamination
 for Rose will have `arrangement: random` and `contamination_unit: box`.
@@ -418,6 +418,9 @@ contamination:
   contamination_unit: item
   arrangement: random
 ```
+
+Sedum will use the top-level `contamination` values, Tulipa will not use it,
+and Rose will use it, but overwrite some of the values with its own values.
 
 ---
 

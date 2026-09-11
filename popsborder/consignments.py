@@ -99,14 +99,13 @@ Modifications:
 # this program; if not, see https://www.gnu.org/licenses/gpl-2.0.html
 
 
-"""Consignment generation.
+"""Consignment generation
 
 .. codeauthor:: Vaclav Petras <wenzeslaus gmail com>
 .. codeauthor:: Kellyn P. Montgomery <kellynmontgomery gmail com>
 .. codeauthor:: Gary Lin <Gary.Lin jhuapl edu>
 .. codeauthor:: Joseph Agor <Joseph.Agor jhuapl edu>
 """
-
 
 import collections
 import csv
@@ -464,12 +463,11 @@ class Box:
         return bool(np.any(self.items > 0))
 
 
-
 class Consignment(collections.UserDict):
-    """A consignment with all its properties and contents.
+    """A consignment with all its properties and what it contains.
 
-    Access to its properties is available through attribute syntax (new style)
-    or using dictionary-like item access (old style).
+    Access its properties (attributes) is through attribute syntax (new style) or
+    using a dictionary-like item access (old style).
     """
 
     # Inheriting from this library class is its intended use, so disable ancestors msg.
@@ -573,7 +571,6 @@ class Consignment(collections.UserDict):
             sample_unit_to_inspection_unit=sample_unit_to_inspection_unit,
             plant_unit_to_inspection_unit=plant_unit_to_inspection_unit,
         )
-
         self.flower = flower
         self.num_items = num_items
         self.items = items
@@ -692,7 +689,7 @@ class Consignment(collections.UserDict):
 
     @property
     def commodity(self):
-        """Return commodity name (alias for flower)."""
+        """Convenient (or transitional) alias for flower"""
         return self.flower
 
     def count_contaminated(self):
@@ -1321,16 +1318,15 @@ def get_consignment_generator(config):
     """
     config = config["consignment"]
     generation_method = config["generation_method"]
-
     if (generation_method == "input_file") and (
-            config["input_file"]["file_type"] == "F280"
+        config["input_file"]["file_type"] == "F280"
     ):
         consignment_generator = F280ConsignmentGenerator(
             items_per_box=config["items_per_box"],
             filename=config["input_file"]["file_name"],
         )
     elif (generation_method == "input_file") and (
-            config["input_file"]["file_type"] == "AQIM"
+        config["input_file"]["file_type"] == "AQIM"
     ):
         consignment_generator = AQIMConsignmentGenerator(
             items_per_box=config["items_per_box"],

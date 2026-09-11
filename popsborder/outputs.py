@@ -131,6 +131,7 @@ import numpy as np
 import pandas as pd
 
 from .consignments import Consignment
+from .inspections import count_contaminated_boxes
 
 
 def pretty_content(array, config=None):
@@ -204,8 +205,8 @@ def pretty_header(consignment, line=None, config=None):
     header = (
         f"{horizontal}{horizontal} Consignment"
         f" {horizontal}{horizontal}"
-        f" Inspection Units: {consignment.num_inspection_units} {horizontal}{horizontal}"
-        f" Sample Units: {consignment.num_sample_units} "
+        f" Boxes: {consignment.num_boxes} {horizontal}{horizontal}"
+        f" Items: {consignment.num_items} "
     )
     if size > len(header):
         size = size - len(header)
@@ -215,42 +216,18 @@ def pretty_header(consignment, line=None, config=None):
     return f"{header}{rule}"
 
 
-def pretty_consignment_sample_units(consignment, config=None):
-    """Pretty-print a consignment focusing on individual sample units.
-
-    Args:
-        consignment: Consignment object with ``sample_units``.
-        config: Optional formatting configuration forwarded to
-            :func:`pretty_header` and :func:`pretty_content`.
-
-    Returns:
-        Multiline string with header and visual representation of sample_units.
-    """
+def pretty_consignment_items(consignment, config=None):
+    """Pretty-print consignment focusing on individual items"""
     config = config if config else {}
     header = pretty_header(consignment, config=config)
-    body = pretty_content(consignment["sample_units"], config=config)
+    body = pretty_content(consignment["items"], config=config)
     return f"{header}\n{body}"
 
 
-def pretty_consignment_inspection_units(consignment, config=None):
-    """Pretty-print a consignment showing sample units grouped by inspection unit.
-
-    Each inspection unit is rendered as a group of sample-unit symbols,
-    separated by a configurable separator (e.g., ``" | "``).
-
-    Args:
-        consignment: Consignment object with ``inspection_units`` and
-            ``included_units`` in each inspection unit.
-        config: Optional formatting configuration, using keys:
-            * ``"inspection_unit_line"``: separator or alias (``"|"`` or
-              ``"pipe"``).
-            * ``"spaces"``: if True, add spaces around separator.
-
-    Returns:
-        Multiline string with header and group-wise visual representation.
-    """
+def pretty_consignment_boxes(consignment, config=None):
+    """Pretty-print consignment showing individual items in boxes"""
     config = config if config else {}
-    line = config.get("inspection_unit_line", "|")
+    line = config.get("box_line", "|")
     spaces = config.get("spaces", True)
     if line == "pipe":
         line = "|"
@@ -260,54 +237,32 @@ def pretty_consignment_inspection_units(consignment, config=None):
         separator = line
     header = pretty_header(consignment, config=config)
     body = separator.join(
-        [pretty_content(inspection_unit.included_units, config=config) for inspection_unit in consignment["inspection_units"]]
+        [pretty_content(box.items, config=config) for box in consignment["boxes"]]
     )
     return f"{header}\n{body}"
 
 
-def pretty_consignment_inspection_units_only(consignment, config=None):
-    """Pretty-print a consignment as inspection units only.
-
-    Inspection units are represented as a single row of symbols, using a
-    configurable horizontal line style in the header.
-
-    Args:
-        consignment: Consignment object with ``inspection_units``.
-        config: Optional formatting configuration forwarded to
-            :func:`pretty_header` and :func:`pretty_content`.
-
-    Returns:
-        Multiline string with header and visual representation of inspection_units.
-    """
+def pretty_consignment_boxes_only(consignment, config=None):
+    """Pretty-print consignment showing individual boxes"""
     config = config if config else {}
     line = config.get("horizontal_line", "light")
     header = pretty_header(consignment, line=line, config=config)
-    body = pretty_content(consignment["inspection_units"], config=config)
+    body = pretty_content(consignment["boxes"], config=config)
     return f"{header}\n{body}"
 
 
 def pretty_consignment(consignment, style, config=None):
-    """Pretty-print a consignment in a given style.
+    """Pretty-print consignment in a given style
 
-    Args:
-        consignment: Consignment to pretty-print.
-        style: One of ``"inspection_units"``, ``"inspection_units_only"``,
-            or ``"sample_units"``.
-        config: Optional formatting configuration forwarded to other helpers.
-
-    Returns:
-        Multiline string representation of the consignment.
-
-    Raises:
-        ValueError: If an unknown style is provided.
+    :param style: Style of pretty-printing (boxes, boxes_only, items)
     """
     config = config if config else {}
-    if style == "inspection_units":
-        return pretty_consignment_inspection_units(consignment, config=config)
-    elif style == "inspection_units_only":
-        return pretty_consignment_inspection_units_only(consignment, config=config)
-    elif style == "sample_units":
-        return pretty_consignment_sample_units(consignment, config=config)
+    if style == "boxes":
+        return pretty_consignment_boxes(consignment, config=config)
+    elif style == "boxes_only":
+        return pretty_consignment_boxes_only(consignment, config=config)
+    elif style == "items":
+        return pretty_consignment_items(consignment, config=config)
     else:
         raise ValueError(
             f"Unknown style value for pretty printing of consignments: {style}"
@@ -315,7 +270,7 @@ def pretty_consignment(consignment, style, config=None):
 
 
 class PrintReporter(object):
-    """Reporter that prints messages for each consignment."""
+    """Reporter class which prints a message for each consignment"""
 
     # Reporter objects carry functions, but many not use any attributes.
     # pylint: disable=no-self-use,missing-function-docstring
@@ -327,13 +282,13 @@ class PrintReporter(object):
 
     def false_negative(self, consignment):
         print(
-            f"Inspection failed, missed {count_contaminated_inspection_units(consignment)} "
-            "inspection_units with contaminants [FN]"
+            f"Inspection failed, missed {count_contaminated_boxes(consignment)} "
+            "boxes with contaminants [FN]"
         )
 
 
 class MuteReporter(object):
-    """Reporter that remains silent (no output)."""
+    """Reporter class which is completely silent"""
 
     # pylint: disable=no-self-use,missing-function-docstring
     def true_negative(self):
@@ -347,16 +302,14 @@ class MuteReporter(object):
 
 
 class Form280(object):
-    """Create F280 records from simulated data."""
+    """Creates F280 records from the simulated data"""
 
     def __init__(self, file, disposition_codes, separator=","):
-        """Prepare the F280 output file for writing.
+        """Prepares file for writing
 
-        Args:
-            file: Name of the file to write to or ``"-"`` (or ``"stdout"``/
-                ``"print"``) for printing to stdout.
-            disposition_codes: Mapping of disposition code labels to strings.
-            separator: Field separator for the output CSV file.
+        :param file: Name of the file to write to or ``-`` (dash) for printing
+        :param disposition_codes: Conversion table for output disposition codes
+        :param separator: Value (field) separator for the output CSV file
         """
         self.print_to_stdout = False
         self.file = None
@@ -381,18 +334,12 @@ class Form280(object):
             self.writer.writerow(columns)
 
     def disposition(self, ok, must_inspect, applied_program):
-        """Return disposition code for given parameters.
+        """Get disposition code for the given parameters
 
-        Provides defaults if the disposition code table does not contain a
-        specific value.
+        Provides defaults if the disposition code table does not contain
+        a specific value.
 
-        Args:
-            ok: True if the consignment tested negative (no pest present).
-            must_inspect: True if the consignment was selected for inspection.
-            applied_program: Identifier of the program applied or None.
-
-        Returns:
-            A disposition string based on program, inspection selection, and result.
+        See :meth:`fill` for details about the parameters.
         """
         codes = self.codes
         if applied_program in ["naive_cfrp"]:
@@ -413,14 +360,13 @@ class Form280(object):
         return disposition
 
     def fill(self, date, consignment, ok, must_inspect, applied_program):
-        """Fill one entry in the F280 form.
+        """Fill one entry in the F280 form
 
-        Args:
-            date: Consignment or inspection date (datetime).
-            consignment: Consignment that was tested.
-            ok: True if the consignment was tested negative.
-            must_inspect: True if the consignment was selected for inspection.
-            applied_program: Identifier of the program applied or None.
+        :param date: Consignment or inspection date
+        :param consignment: Consignment which was tested
+        :param ok: True if the consignment was tested negative (no pest present)
+        :param must_inspect: True if the consignment was selected for inspection
+        :param applied_program: Identifier of the program applied or None
         """
         disposition_code = self.disposition(ok, must_inspect, applied_program)
         if self.file:
@@ -441,15 +387,10 @@ class Form280(object):
 
 
 class SuccessRates(object):
-    """Record and accumulate success rates across consignments."""
+    """Record and accumulate success rates"""
 
     def __init__(self, reporter):
-        """Initialize counters and set the reporter.
-
-        Args:
-            reporter: Object with ``true_negative``, ``true_positive``,
-                and ``false_negative`` methods for reporting.
-        """
+        """Initialize values to zero and set the reporter object"""
         self.ok = 0
         self.true_positive = 0
         self.true_negative = 0
@@ -457,16 +398,11 @@ class SuccessRates(object):
         self.reporter = reporter
 
     def record_success_rate(self, checked_ok, actually_ok, consignment):
-        """Record testing result for one consignment.
+        """Record testing result for one consignment
 
-        Args:
-            checked_ok: True if no contaminant was found during inspection.
-            actually_ok: True if the consignment actually contained no contamination.
-            consignment: The consignment being evaluated.
-
-        Raises:
-            RuntimeError: If the inspection result is contaminated but the
-                consignment is actually clean (logic error).
+        :param checked_ok: True if no contaminant was found in consignment
+        :param actually_ok: True if the consignment actually does not have contamination
+        :param consignment: The shipment itself (for reporting purposes)
         """
         if checked_ok and actually_ok:
             self.true_negative += 1
@@ -486,18 +422,7 @@ class SuccessRates(object):
 
 
 def config_to_simplified_simulation_params(config):
-    """Convert configuration into a simplified set of selected parameters.
-
-    The returned SimpleNamespace includes key inspection and contamination
-    parameters (e.g., unit, strategy, cluster settings) used for printing
-    simulation summaries.
-
-    Args:
-        config: Full configuration dictionary.
-
-    Returns:
-        SimpleNamespace with simplified simulation parameters.
-    """
+    """Convert configuration into a simplified set of selected parameters"""
     sim_params = types.SimpleNamespace(
         tolerance_level="",
         contamination_unit="",
@@ -710,8 +635,11 @@ def print_totals_as_text(num_consignments, config, totals):
     )
 
 def get_item_from_nested_dict(dictionary, keys):
-    """Get a value from a nested dictionary using a sequence of keys."""
-    return reduce(operator.getitem, keys, dictionary)
+    """Get value from a nested dictionary by a nested keys-value pair"""
+    try:
+        return reduce(operator.getitem, keys, dictionary)
+    except KeyError as error:
+        raise KeyError(f"For {'/'.join(keys)}: {error}") from error
 
 
 def _flatten_nested_dict_generator(dictionary, parent_key):
@@ -725,15 +653,7 @@ def _flatten_nested_dict_generator(dictionary, parent_key):
 
 
 def flatten_nested_dict(dictionary, parent_key=None):
-    """Flatten a nested dictionary using key/subkey/subsubkey style keys.
-
-    Args:
-        dictionary: Nested dictionary.
-        parent_key: Optional parent key used in recursion.
-
-    Returns:
-        Flat dictionary mapping slash-separated paths to scalar values.
-    """
+    """Make a nested dictionary flat with key/subkey/subsubkey keys"""
     return dict(_flatten_nested_dict_generator(dictionary, parent_key))
 
 
