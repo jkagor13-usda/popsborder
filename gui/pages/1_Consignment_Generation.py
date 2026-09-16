@@ -162,6 +162,17 @@ def _save_rbs_to_tmp(
                 return False, "No RBS seed available for synthetic generation. Upload/select an RBS file first."
 
             options: SyntheticOptions = state.get("synthetic_options", SyntheticOptions())
+
+            if producer_grouping_path is not None:
+                grouping_df = pd.read_csv(producer_grouping_path)
+
+                st.write("Producer grouping path:", str(producer_grouping_path))
+                st.write("Producer grouping columns:", grouping_df.columns.tolist())
+                st.write(
+                    "Grouping file has PRODUCER_NAME:",
+                    "PRODUCER_NAME" in grouping_df.columns,
+                )
+
             synth_df = generate_synthetic_data(
                 seed_path,
                 dest_rbs,
@@ -197,6 +208,8 @@ def _save_rbs_to_tmp(
         return False, "No RBS source file found."
 
     except Exception as exc:  # pylint: disable=broad-except
+        import traceback
+        traceback.print_exc()
         return False, f"Unable to save consignment files: {exc}"
 
 

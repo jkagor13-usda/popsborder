@@ -25,29 +25,22 @@ from typing import List, Dict, Set
 #####################################################
 
 GENERATOR_TARGET_COLUMNS = [
-            'INSPECTION_NUMBER',
-            'COMMODITY_COMMON_NAME',
-            'COUNTRY_OF_ORIGIN_NAME',
-            'PRODUCER_NAME',
-            'PROPAGATIVE_MATERIAL_TYPE',
-            'QUANTITY',
-            'BROKER_NAME',
-            'INSPECTION_LOCATION_NAME',
-            'PATHWAY',
-            'SHIPPER_NAME',
-            'TAXONOMY_ORDER',
-            'TAXONOMY_FAMILY',
-            'TAXONOMY_GENUS',
-            'TAXONOMY_SPECIES',
-            'action',
-            'RISK_UNIT',
-            'TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT',
-            'SAMPLING_UNITS_FOR_INSPECTION_UNIT',
-            'REQUIRED_NUMBER_OF_BOXES',
-            'IMPORTER_NAME',
-            'GENUS_NAME',
-            'COMMODITY_DISPLAY_NAME',
-        ]
+    "INSPECTION_ID",
+    "COUNTRY_OF_ORIGIN_NAME",
+    "IMPORTER_NAME",
+    "PRODUCER_NAME",
+    "PROPAGATIVE_MATERIAL_TYPE",
+    "QUANTITY",
+    "BROKER_NAME",
+    "INSPECTION_LOCATION_NAME",
+    "PATHWAY",
+    "INSPECTION_NUMBER",
+    "action",
+    "RISK_UNIT",
+    "TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT",
+    "SAMPLING_UNITS_FOR_INSPECTION_UNIT",
+    "REQUIRED_NUMBER_OF_BOXES",
+]
 
 
 
