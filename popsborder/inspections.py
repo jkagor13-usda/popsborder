@@ -553,6 +553,84 @@ def sample_n(config, consignment):
     return n_units_to_inspect
 
 
+def sample_rbs(
+        config,
+        consignment,
+        rng: Generator = None,
+):
+    """Compute sample sizes per unit using RBS compliance levels.
+
+    This function uses a risk-based sampling methodology driven by compliance
+    levels, where detection and confidence levels are obtained from a
+    compliance lookup table and used in hypergeometric calculations.
+
+    Args:
+        config: Configuration dictionary.
+        consignment: Consignment to be inspected.
+        rng: Optional random number generator.
+
+    Returns:
+        Mapping from risk-unit or inspection-unit ID to units-to-inspect.
+    """
+    unit = config["inspection"]["unit"]
+    debug_print = config.get("debug", {}).get("print_compliance_levels", False)
+
+    # Get filename from config
+    compliance_table_lookup_filename = config["inspection"]["compliance_table"]['file_name']
+
+    # Load compliance lookup
+    compliance_table_dict = load_compliance_lookup(filename=compliance_table_lookup_filename)
+
+    for key, val in list(compliance_table_dict.items()):
+        # Only process entries where the key is a tuple and value is a tuple of two strings
+        if isinstance(key, tuple) and isinstance(val, tuple) and len(val) == 2:
+            str1, str2 = val
+            compliance_table_dict[key] = (float(str1), float(str2))
+
+    detection_confidence_levels = get_detection_and_confidence(
+        consignment, compliance_table_dict, print_compliance_levels=False
+    )
+    n_units_to_inspect = {}
+    if unit in ["sample_unit", "sample_units", "item", "items"]:
+        risk_units = consignment.risk_units if consignment.risk_units else []
+        if risk_units:
+            risk_unit_by_id = {risk_unit.id: risk_unit for risk_unit in risk_units}
+            for risk_unit_id, levels in detection_confidence_levels.items():
+                detection_level, confidence_level = levels[0], levels[1]
+                risk_unit = risk_unit_by_id.get(risk_unit_id)
+                if risk_unit is None:
+                    continue
+                population_n = risk_unit.n_for_hypergeom
+                if population_n <= 0:
+                    continue
+
+                n_for_risk = compute_hypergeometric(
+                    detection_level, confidence_level, population_n
+                )
+                n_for_risk = max(0, min(n_for_risk, population_n))
+                n_units_to_inspect[risk_unit_id] = n_for_risk
+        else:
+            # Fallback for legacy consignments without risk_units.
+            for inspect_number in range(consignment.num_inspection_units):
+                detection_level, confidence_level = detection_confidence_levels[inspect_number]
+                population_n = consignment.inspection_units[inspect_number].num_sample_units
+                n_units_to_inspect[inspect_number] = compute_hypergeometric(
+                    detection_level, confidence_level, population_n
+                )
+    elif unit in ["inspection_unit", "inspection_units", "box", "boxes"]:
+        num_sample_units = consignment.num_sample_units
+        for inspect_number in detection_confidence_levels.keys():
+            detection_level, confidence_level = detection_confidence_levels[inspect_number][0], \
+                detection_confidence_levels[inspect_number][1]
+            n_units_to_inspect[inspect_number] = compute_hypergeometric(
+                detection_level, confidence_level, num_sample_units
+            )
+    else:
+        raise RuntimeError(f"Unknown sampling unit: {unit}")
+    return n_units_to_inspect
+
+
+
 def convert_items_to_boxes_fixed_proportion(config, consignment, n_items_to_inspect):
     """Convert number of items to inspect to number of boxes to inspect based on
     the number of items per box and the proportion of items to inspect per box
