@@ -31,7 +31,7 @@ default_paths = DefaultPaths()
 TMP_CONFIG_PATH = default_paths.tmp_dir() / "config.yml"
 TMP_PIS_PATH = default_paths.tmp_dir() / "contamination" / "fit_pis_data.csv"
 TMP_RBS_PATH = default_paths.tmp_dir() / "consignments" / "consignment_uploaded_rbs_data.csv"
-CONFIG_FILENAME = "config.yml"
+CONFIG_FILENAME = "config_rbs.yml"
 SCENARIO_FILENAME = "scenario_table.csv"
 
 STATE_KEY = "slippage_ui_state"
