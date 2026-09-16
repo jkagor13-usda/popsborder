@@ -1,0 +1,525 @@
+Unnamed: 0,INSPECTION_ID,IMPORTER_NAME,PRODUCER_NAME,PROPAGATIVE_MATERIAL_TYPE,QUANTITY,BROKER_NAME,INSPECTION_LOCATION_NAME,PATHWAY,INSPECTION_NUMBER,RISK_UNIT,TOTAL_SAMPLING_UNITS_FOR_RISK_UNIT,SAMPLING_UNITS_FOR_INSPECTION_UNIT,REQUIRED_NUMBER_OF_BOXES
+442,1,FAKE IMPORTER 29,Unknown,Unrooted Cutting,3900,FAKE BROKER 19,PIS 1,Pathway 1,INS_1000,1_1,15,15,9
+337,2,FAKE IMPORTER 30,Fidel Castro's Shell Company,Unrooted Cutting,3200,FAKE BROKER 38,PIS 1,Pathway 1,INS_103,2_1,233,1,8
+388,3,FAKE IMPORTER 34,Unknown,Unrooted Cutting,80000,FAKE BROKER 10,PIS 2,Pathway 1,INS_107,3_1,203,4,18
+10,4,FAKE IMPORTER 22,Unknown,Unrooted Cutting,67700,FAKE BROKER 35,PIS 3,Pathway 1,INS_127,4_1,16,6,7
+462,5,FAKE IMPORTER 44,Unknown,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),10020,FAKE BROKER 34,PIS 3,Pathway 1,INS_140,5_1,19,2,2
+463,5,FAKE IMPORTER 11,Unknown,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),4400,FAKE BROKER 39,PIS 3,Pathway 1,INS_140,5_1,19,2,2
+464,5,FAKE IMPORTER 9,Unknown,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),33000,FAKE BROKER 43,PIS 3,Pathway 1,INS_140,5_1,19,2,2
+33,6,FAKE IMPORTER 17,Unknown,Unrooted Cutting,200,FAKE BROKER 30,PIS 1,Pathway 1,INS_150,6_1,92,1,8
+40,7,FAKE IMPORTER 19,Unknown,Unrooted Plant,3000,FAKE BROKER 3,PIS 1,Pathway 1,INS_164,7_1,401,10,18
+41,7,FAKE IMPORTER 17,Unknown,Unrooted Plant,3000,FAKE BROKER 32,PIS 1,Pathway 1,INS_164,7_1,401,10,18
+42,7,FAKE IMPORTER 9,Unknown,Unrooted Plant,17789,FAKE BROKER 19,PIS 1,Pathway 1,INS_164,7_1,401,2,18
+211,8,FAKE IMPORTER 28,Unknown,Rooted Plant (including grafted),8,FAKE BROKER 37,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+212,8,FAKE IMPORTER 20,Unknown,Rooted Plant (including grafted),1,FAKE BROKER 24,PIS 1,Pathway 1,INS_174,8_1,57,4,16
+213,8,FAKE IMPORTER 18,Unknown,Rooted Plant (including grafted),5,FAKE BROKER 23,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+214,8,FAKE IMPORTER 40,Unknown,Rooted Plant (including grafted),82,FAKE BROKER 10,PIS 1,Pathway 1,INS_174,8_1,57,3,16
+215,8,FAKE IMPORTER 49,Unknown,Rooted Plant (including grafted),1,FAKE BROKER 23,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+216,8,FAKE IMPORTER 29,Unknown,Rooted Plant (including grafted),1,FAKE BROKER 38,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+217,8,FAKE IMPORTER 25,Unknown,Rooted Plant (including grafted),2,FAKE BROKER 38,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+218,8,FAKE IMPORTER 20,Unknown,Rooted Plant (including grafted),7,FAKE BROKER 15,PIS 1,Pathway 1,INS_174,8_1,57,4,16
+219,8,FAKE IMPORTER 42,Unknown,Rooted Plant (including grafted),1,FAKE BROKER 32,PIS 1,Pathway 1,INS_174,8_1,57,6,16
+220,8,FAKE IMPORTER 37,Unknown,Rooted Plant (including grafted),136,FAKE BROKER 41,PIS 1,Pathway 1,INS_174,8_1,57,9,16
+221,8,FAKE IMPORTER 36,Unknown,Rooted Plant (including grafted),1,FAKE BROKER 19,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+222,8,FAKE IMPORTER 36,Unknown,Rooted Plant (including grafted),3156,FAKE BROKER 33,PIS 1,Pathway 1,INS_174,8_1,57,9,16
+223,8,FAKE IMPORTER 39,Unknown,Rooted Plant (including grafted),72,FAKE BROKER 40,PIS 1,Pathway 1,INS_174,8_1,57,21,16
+224,8,FAKE IMPORTER 43,Unknown,Rooted Plant (including grafted),15,FAKE BROKER 30,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+225,8,FAKE IMPORTER 14,Unknown,Rooted Plant (including grafted),1,FAKE BROKER 43,PIS 1,Pathway 1,INS_174,8_1,57,21,16
+226,8,FAKE IMPORTER 46,Unknown,Rooted Plant (including grafted),10,FAKE BROKER 28,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+227,8,FAKE IMPORTER 17,Unknown,Rooted Plant (including grafted),50,FAKE BROKER 51,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+228,8,FAKE IMPORTER 29,Unknown,Rooted Plant (including grafted),28,FAKE BROKER 39,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+229,8,FAKE IMPORTER 44,Unknown,Rooted Plant (including grafted),2,FAKE BROKER 12,PIS 1,Pathway 1,INS_174,8_1,57,3,16
+230,8,FAKE IMPORTER 40,Unknown,Rooted Plant (including grafted),40,FAKE BROKER 30,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+231,8,FAKE IMPORTER 36,Unknown,Rooted Plant (including grafted),4,FAKE BROKER 44,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+232,8,FAKE IMPORTER 50,Unknown,Rooted Plant (including grafted),2,FAKE BROKER 36,PIS 1,Pathway 1,INS_174,8_1,57,6,16
+233,8,FAKE IMPORTER 40,Unknown,Rooted Plant (including grafted),12,FAKE BROKER 46,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+234,8,FAKE IMPORTER 45,Unknown,Rooted Plant (including grafted),1,FAKE BROKER 1,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+235,8,FAKE IMPORTER 10,Unknown,Rooted Plant (including grafted),3,FAKE BROKER 9,PIS 1,Pathway 1,INS_174,8_1,57,21,16
+236,8,FAKE IMPORTER 15,Unknown,Rooted Plant (including grafted),22,FAKE BROKER 21,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+237,8,FAKE IMPORTER 42,Unknown,Rooted Plant (including grafted),1,FAKE BROKER 32,PIS 1,Pathway 1,INS_174,8_1,57,6,16
+238,8,FAKE IMPORTER 13,Unknown,Rooted Plant (including grafted),2,FAKE BROKER 40,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+239,8,FAKE IMPORTER 33,Unknown,Rooted Plant (including grafted),3,FAKE BROKER 10,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+240,8,FAKE IMPORTER 23,Unknown,Rooted Plant (including grafted),25,FAKE BROKER 44,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+241,8,FAKE IMPORTER 1,Unknown,Rooted Plant (including grafted),50,FAKE BROKER 22,PIS 1,Pathway 1,INS_174,8_1,57,21,16
+242,8,FAKE IMPORTER 18,Unknown,Rooted Plant (including grafted),1,FAKE BROKER 51,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+243,8,FAKE IMPORTER 21,Unknown,Rooted Plant (including grafted),13,FAKE BROKER 25,PIS 1,Pathway 1,INS_174,8_1,57,6,16
+244,8,FAKE IMPORTER 10,Unknown,Rooted Plant (including grafted),1,FAKE BROKER 21,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+245,8,FAKE IMPORTER 32,Unknown,Rooted Plant (including grafted),1,FAKE BROKER 19,PIS 1,Pathway 1,INS_174,8_1,57,6,16
+246,8,FAKE IMPORTER 31,Unknown,Rooted Plant (including grafted),1,FAKE BROKER 36,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+247,8,FAKE IMPORTER 30,Unknown,Rooted Plant (including grafted),5,FAKE BROKER 32,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+248,8,FAKE IMPORTER 10,Unknown,Rooted Plant (including grafted),4,FAKE BROKER 12,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+249,8,FAKE IMPORTER 38,Unknown,Rooted Plant (including grafted),2,FAKE BROKER 34,PIS 1,Pathway 1,INS_174,8_1,57,3,16
+250,8,FAKE IMPORTER 50,Unknown,Rooted Plant (including grafted),1,FAKE BROKER 7,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+251,8,FAKE IMPORTER 26,Unknown,Rooted Plant (including grafted),7,FAKE BROKER 26,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+252,8,FAKE IMPORTER 16,Unknown,Rooted Plant (including grafted),20,FAKE BROKER 4,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+253,8,FAKE IMPORTER 7,Unknown,Rooted Plant (including grafted),55,FAKE BROKER 39,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+254,8,FAKE IMPORTER 22,Unknown,Rooted Plant (including grafted),3,FAKE BROKER 13,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+255,8,FAKE IMPORTER 18,Unknown,Rooted Plant (including grafted),46,FAKE BROKER 2,PIS 1,Pathway 1,INS_174,8_1,57,1,16
+208,9,FAKE IMPORTER 25,Unknown,Unrooted Cutting,174350,FAKE BROKER 26,PIS 1,Pathway 1,INS_175,9_1,34,16,11
+52,10,FAKE IMPORTER 7,Unknown,Rooted Plant (including grafted),600,FAKE BROKER 13,PIS 2,Pathway 1,INS_18,10_1,2,2,2
+53,10,FAKE IMPORTER 43,Unknown,Rooted Plant (including grafted),1040,FAKE BROKER 6,PIS 2,Pathway 1,INS_18,10_1,2,2,2
+54,10,FAKE IMPORTER 38,Unknown,Rooted Plant (including grafted),600,FAKE BROKER 19,PIS 2,Pathway 1,INS_18,10_1,2,2,2
+55,10,FAKE IMPORTER 3,Unknown,Rooted Plant (including grafted),600,FAKE BROKER 4,PIS 2,Pathway 1,INS_18,10_1,2,2,2
+367,11,FAKE IMPORTER 14,Unknown,Unrooted Cutting,90472,FAKE BROKER 47,PIS 1,Pathway 1,INS_19,11_1,64,63,8
+332,12,FAKE IMPORTER 11,Unknown,Rooted Plant (including grafted),5,FAKE BROKER 46,PIS 1,Pathway 1,INS_19,12_1,23,1,7
+391,13,FAKE IMPORTER 31,UMBRELLA CORP HOLDINGS MEXICO,Unrooted Cutting,7400,FAKE BROKER 49,PIS 1,Pathway 1,INS_199,13_1,261,1,8
+392,13,FAKE IMPORTER 49,UMBRELLA CORP HOLDINGS MEXICO,Unrooted Cutting,1200,FAKE BROKER 21,PIS 1,Pathway 1,INS_199,13_1,261,2,8
+393,13,FAKE IMPORTER 22,UMBRELLA CORP HOLDINGS MEXICO,Unrooted Cutting,200,FAKE BROKER 32,PIS 1,Pathway 1,INS_199,13_1,261,2,8
+394,13,FAKE IMPORTER 48,UMBRELLA CORP HOLDINGS MEXICO,Unrooted Cutting,500,FAKE BROKER 28,PIS 1,Pathway 1,INS_199,13_1,261,3,8
+395,13,FAKE IMPORTER 42,UMBRELLA CORP HOLDINGS MEXICO,Unrooted Cutting,6200,FAKE BROKER 21,PIS 1,Pathway 1,INS_199,13_1,261,15,8
+267,14,FAKE IMPORTER 15,Unknown,Unrooted Cutting,1600,FAKE BROKER 46,PIS 3,Pathway 1,INS_2,14_1,5,3,4
+268,14,FAKE IMPORTER 40,Unknown,Unrooted Cutting,1600,FAKE BROKER 16,PIS 3,Pathway 1,INS_2,14_1,5,1,4
+269,14,FAKE IMPORTER 32,Unknown,Unrooted Cutting,8000,FAKE BROKER 28,PIS 3,Pathway 1,INS_2,14_1,5,3,4
+270,14,FAKE IMPORTER 11,Unknown,Unrooted Cutting,3000,FAKE BROKER 32,PIS 3,Pathway 1,INS_2,14_1,5,1,4
+271,14,FAKE IMPORTER 13,Unknown,Unrooted Cutting,3000,FAKE BROKER 17,PIS 3,Pathway 1,INS_2,14_1,5,1,4
+272,14,FAKE IMPORTER 7,Unknown,Unrooted Cutting,8000,FAKE BROKER 25,PIS 3,Pathway 1,INS_2,14_1,5,3,4
+273,14,FAKE IMPORTER 24,Unknown,Unrooted Cutting,8000,FAKE BROKER 51,PIS 3,Pathway 1,INS_2,14_1,5,3,4
+274,14,FAKE IMPORTER 23,Unknown,Unrooted Cutting,1600,FAKE BROKER 10,PIS 3,Pathway 1,INS_2,14_1,5,3,4
+275,14,FAKE IMPORTER 26,Unknown,Unrooted Cutting,1600,FAKE BROKER 23,PIS 3,Pathway 1,INS_2,14_1,5,1,4
+276,14,FAKE IMPORTER 25,Unknown,Unrooted Cutting,8000,FAKE BROKER 2,PIS 3,Pathway 1,INS_2,14_1,5,1,4
+277,14,FAKE IMPORTER 49,Unknown,Unrooted Cutting,8000,FAKE BROKER 15,PIS 3,Pathway 1,INS_2,14_1,5,1,4
+278,14,FAKE IMPORTER 12,Unknown,Unrooted Cutting,8000,FAKE BROKER 49,PIS 3,Pathway 1,INS_2,14_1,5,1,4
+279,14,FAKE IMPORTER 36,Unknown,Unrooted Cutting,3000,FAKE BROKER 8,PIS 3,Pathway 1,INS_2,14_1,5,1,4
+280,14,FAKE IMPORTER 50,Unknown,Unrooted Cutting,1600,FAKE BROKER 1,PIS 3,Pathway 1,INS_2,14_1,5,1,4
+281,14,FAKE IMPORTER 28,Unknown,Unrooted Cutting,3000,FAKE BROKER 10,PIS 3,Pathway 1,INS_2,14_1,5,1,4
+282,14,FAKE IMPORTER 30,Unknown,Unrooted Cutting,8000,FAKE BROKER 19,PIS 3,Pathway 1,INS_2,14_1,5,1,4
+283,14,FAKE IMPORTER 50,Unknown,Unrooted Cutting,8000,FAKE BROKER 38,PIS 3,Pathway 1,INS_2,14_1,5,3,4
+284,14,FAKE IMPORTER 9,Unknown,Unrooted Cutting,8000,FAKE BROKER 38,PIS 3,Pathway 1,INS_2,14_1,5,3,4
+285,14,FAKE IMPORTER 46,Unknown,Unrooted Cutting,3000,FAKE BROKER 35,PIS 3,Pathway 1,INS_2,14_1,5,3,4
+286,14,FAKE IMPORTER 33,Unknown,Unrooted Cutting,1600,FAKE BROKER 9,PIS 3,Pathway 1,INS_2,14_1,5,3,4
+287,14,FAKE IMPORTER 49,Unknown,Unrooted Cutting,3000,FAKE BROKER 9,PIS 3,Pathway 1,INS_2,14_1,5,1,4
+288,14,FAKE IMPORTER 15,Unknown,Unrooted Cutting,1600,FAKE BROKER 4,PIS 3,Pathway 1,INS_2,14_1,5,1,4
+289,14,FAKE IMPORTER 38,Unknown,Unrooted Cutting,3000,FAKE BROKER 10,PIS 3,Pathway 1,INS_2,14_1,5,3,4
+290,14,FAKE IMPORTER 15,Unknown,Unrooted Cutting,1600,FAKE BROKER 8,PIS 3,Pathway 1,INS_2,14_1,5,3,4
+291,14,FAKE IMPORTER 32,Unknown,Unrooted Cutting,8000,FAKE BROKER 31,PIS 3,Pathway 1,INS_2,14_1,5,1,4
+292,14,FAKE IMPORTER 7,Unknown,Unrooted Cutting,8000,FAKE BROKER 24,PIS 3,Pathway 1,INS_2,14_1,5,1,4
+293,14,FAKE IMPORTER 41,Unknown,Unrooted Cutting,8000,FAKE BROKER 46,PIS 3,Pathway 1,INS_2,14_1,5,1,4
+294,14,FAKE IMPORTER 35,Unknown,Unrooted Cutting,8000,FAKE BROKER 15,PIS 3,Pathway 1,INS_2,14_1,5,1,4
+122,15,FAKE IMPORTER 16,Unknown,Unrooted Cutting,3000,FAKE BROKER 28,PIS 3,Pathway 1,INS_203,15_1,47,1,8
+123,15,FAKE IMPORTER 37,Unknown,Unrooted Cutting,200,FAKE BROKER 24,PIS 3,Pathway 1,INS_203,15_1,47,23,8
+124,15,FAKE IMPORTER 30,Unknown,Unrooted Cutting,11200,FAKE BROKER 1,PIS 3,Pathway 1,INS_203,15_1,47,2,8
+125,15,FAKE IMPORTER 20,Unknown,Unrooted Cutting,400,FAKE BROKER 41,PIS 3,Pathway 1,INS_203,15_1,47,2,8
+126,15,FAKE IMPORTER 51,Unknown,Unrooted Cutting,200,FAKE BROKER 49,PIS 3,Pathway 1,INS_203,15_1,47,6,8
+127,15,FAKE IMPORTER 11,Unknown,Unrooted Cutting,400,FAKE BROKER 13,PIS 3,Pathway 1,INS_203,15_1,47,2,8
+128,15,FAKE IMPORTER 10,Unknown,Unrooted Cutting,100,FAKE BROKER 34,PIS 3,Pathway 1,INS_203,15_1,47,1,8
+129,15,FAKE IMPORTER 50,Unknown,Unrooted Cutting,100,FAKE BROKER 14,PIS 3,Pathway 1,INS_203,15_1,47,1,8
+130,15,FAKE IMPORTER 35,Unknown,Unrooted Cutting,300,FAKE BROKER 49,PIS 3,Pathway 1,INS_203,15_1,47,1,8
+131,15,FAKE IMPORTER 1,Unknown,Unrooted Cutting,200,FAKE BROKER 37,PIS 3,Pathway 1,INS_203,15_1,47,1,8
+132,15,FAKE IMPORTER 19,Unknown,Unrooted Cutting,2000,FAKE BROKER 37,PIS 3,Pathway 1,INS_203,15_1,47,1,8
+133,15,FAKE IMPORTER 49,Unknown,Unrooted Cutting,3400,FAKE BROKER 29,PIS 3,Pathway 1,INS_203,15_1,47,1,8
+134,15,FAKE IMPORTER 28,Unknown,Unrooted Cutting,100,FAKE BROKER 15,PIS 3,Pathway 1,INS_203,15_1,47,6,8
+135,15,FAKE IMPORTER 43,Unknown,Unrooted Cutting,1000,FAKE BROKER 36,PIS 3,Pathway 1,INS_203,15_1,47,23,8
+136,15,FAKE IMPORTER 42,Unknown,Unrooted Cutting,400,FAKE BROKER 26,PIS 3,Pathway 1,INS_203,15_1,47,23,8
+8,16,FAKE IMPORTER 2,Unknown,Unrooted Cutting,76500,FAKE BROKER 46,PIS 2,Pathway 1,INS_210,16_1,51,51,12
+457,17,FAKE IMPORTER 14,Unknown,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),21090,FAKE BROKER 18,PIS 1,Pathway 1,INS_218,17_1,28,2,2
+44,18,FAKE IMPORTER 41,CRANE KICK CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),865,FAKE BROKER 7,PIS 2,Pathway 1,INS_223,18_1,72,1,16
+45,18,FAKE IMPORTER 34,CRANE KICK CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),60,FAKE BROKER 4,PIS 2,Pathway 1,INS_223,18_1,72,1,16
+46,18,FAKE IMPORTER 51,CRANE KICK CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),450,FAKE BROKER 45,PIS 2,Pathway 1,INS_223,18_1,72,1,16
+47,18,FAKE IMPORTER 10,CRANE KICK CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),50,FAKE BROKER 5,PIS 2,Pathway 1,INS_223,18_1,72,1,16
+445,19,FAKE IMPORTER 20,Unknown,Unrooted Cutting,3400,FAKE BROKER 19,PIS 1,Pathway 1,INS_225,19_1,513,1,8
+82,20,FAKE IMPORTER 14,FAKE PRODUCER XYZ,Rooted Plant (including grafted),8,FAKE BROKER 1,PIS 1,Pathway 1,INS_24,20_1,17,1,9
+300,21,FAKE IMPORTER 1,Bonos U2,Rooted Plant (including grafted),10,FAKE BROKER 4,PIS 4,Pathway 1,INS_249,21_1,1,1,1
+301,21,FAKE IMPORTER 31,Bonos U2,Rooted Plant (including grafted),6,FAKE BROKER 27,PIS 4,Pathway 1,INS_249,21_1,1,1,1
+302,21,FAKE IMPORTER 24,Bonos U2,Rooted Plant (including grafted),10,FAKE BROKER 37,PIS 4,Pathway 1,INS_249,21_1,1,1,1
+180,22,FAKE IMPORTER 12,We Are Farmers CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),240,FAKE BROKER 22,PIS 2,Pathway 1,INS_25,22_1,43,4,15
+181,22,FAKE IMPORTER 47,We Are Farmers CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),200,FAKE BROKER 29,PIS 2,Pathway 1,INS_25,22_1,43,1,15
+182,22,FAKE IMPORTER 27,We Are Farmers CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),240,FAKE BROKER 21,PIS 2,Pathway 1,INS_25,22_1,43,1,15
+183,22,FAKE IMPORTER 9,We Are Farmers CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),20,FAKE BROKER 36,PIS 2,Pathway 1,INS_25,22_1,43,1,15
+184,22,FAKE IMPORTER 12,We Are Farmers CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),160,FAKE BROKER 36,PIS 2,Pathway 1,INS_25,22_1,43,1,15
+185,22,FAKE IMPORTER 27,We Are Farmers CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),300,FAKE BROKER 36,PIS 2,Pathway 1,INS_25,22_1,43,1,15
+186,22,FAKE IMPORTER 2,We Are Farmers CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),200,FAKE BROKER 15,PIS 2,Pathway 1,INS_25,22_1,43,2,15
+187,22,FAKE IMPORTER 17,We Are Farmers CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),380,FAKE BROKER 14,PIS 2,Pathway 1,INS_25,22_1,43,1,15
+188,22,FAKE IMPORTER 32,We Are Farmers CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),240,FAKE BROKER 50,PIS 2,Pathway 1,INS_25,22_1,43,1,15
+189,22,FAKE IMPORTER 4,We Are Farmers CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),200,FAKE BROKER 45,PIS 2,Pathway 1,INS_25,22_1,43,4,15
+190,22,FAKE IMPORTER 1,We Are Farmers CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),200,FAKE BROKER 2,PIS 2,Pathway 1,INS_25,22_1,43,1,15
+191,22,FAKE IMPORTER 21,We Are Farmers CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),400,FAKE BROKER 45,PIS 2,Pathway 1,INS_25,22_1,43,4,15
+192,22,FAKE IMPORTER 1,We Are Farmers CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),20,FAKE BROKER 23,PIS 2,Pathway 1,INS_25,22_1,43,3,15
+193,22,FAKE IMPORTER 11,We Are Farmers CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),20,FAKE BROKER 49,PIS 2,Pathway 1,INS_25,22_1,43,1,15
+194,22,FAKE IMPORTER 44,We Are Farmers CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),300,FAKE BROKER 13,PIS 2,Pathway 1,INS_25,22_1,43,1,15
+195,22,FAKE IMPORTER 4,We Are Farmers CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),120,FAKE BROKER 26,PIS 2,Pathway 1,INS_25,22_1,43,2,15
+141,23,FAKE IMPORTER 37,Unknown,Unrooted Cutting,12400,FAKE BROKER 51,PIS 5,Pathway 1,INS_254,23_1,10,10,6
+142,23,FAKE IMPORTER 34,Unknown,Unrooted Cutting,12400,FAKE BROKER 27,PIS 5,Pathway 1,INS_254,23_1,10,10,6
+143,23,FAKE IMPORTER 39,Unknown,Unrooted Cutting,12400,FAKE BROKER 32,PIS 5,Pathway 1,INS_254,23_1,10,10,6
+144,23,FAKE IMPORTER 49,Unknown,Unrooted Cutting,12400,FAKE BROKER 51,PIS 5,Pathway 1,INS_254,23_1,10,10,6
+145,23,FAKE IMPORTER 21,Unknown,Unrooted Cutting,12400,FAKE BROKER 9,PIS 5,Pathway 1,INS_254,23_1,10,10,6
+146,23,FAKE IMPORTER 36,Unknown,Unrooted Cutting,12400,FAKE BROKER 22,PIS 5,Pathway 1,INS_254,23_1,10,10,6
+147,23,FAKE IMPORTER 29,Unknown,Unrooted Cutting,12400,FAKE BROKER 7,PIS 5,Pathway 1,INS_254,23_1,10,10,6
+148,23,FAKE IMPORTER 9,Unknown,Unrooted Cutting,12400,FAKE BROKER 35,PIS 5,Pathway 1,INS_254,23_1,10,10,6
+149,23,FAKE IMPORTER 17,Unknown,Unrooted Cutting,12400,FAKE BROKER 1,PIS 5,Pathway 1,INS_254,23_1,10,10,6
+150,23,FAKE IMPORTER 12,Unknown,Unrooted Cutting,12400,FAKE BROKER 4,PIS 5,Pathway 1,INS_254,23_1,10,10,6
+151,23,FAKE IMPORTER 51,Unknown,Unrooted Cutting,12400,FAKE BROKER 4,PIS 5,Pathway 1,INS_254,23_1,10,10,6
+303,24,FAKE IMPORTER 24,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 48,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+304,24,FAKE IMPORTER 8,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 49,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+305,24,FAKE IMPORTER 23,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 33,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+306,24,FAKE IMPORTER 38,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 46,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+307,24,FAKE IMPORTER 22,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 6,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+308,24,FAKE IMPORTER 17,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 49,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+309,24,FAKE IMPORTER 18,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 33,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+310,24,FAKE IMPORTER 34,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 41,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+311,24,FAKE IMPORTER 19,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 33,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+312,24,FAKE IMPORTER 20,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 51,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+313,24,FAKE IMPORTER 43,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 19,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+314,24,FAKE IMPORTER 26,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 41,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+315,24,FAKE IMPORTER 51,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 41,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+316,24,FAKE IMPORTER 41,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 46,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+317,24,FAKE IMPORTER 11,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 43,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+318,24,FAKE IMPORTER 18,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 20,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+319,24,FAKE IMPORTER 50,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 35,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+320,24,FAKE IMPORTER 28,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 37,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+321,24,FAKE IMPORTER 11,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 40,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+322,24,FAKE IMPORTER 4,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 9,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+323,24,FAKE IMPORTER 16,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 37,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+324,24,FAKE IMPORTER 42,Bob Costa Ranch LLC,Unrooted Cutting,79740,FAKE BROKER 2,PIS 1,Pathway 1,INS_27,24_1,50,50,8
+48,25,FAKE IMPORTER 13,Unknown,Unrooted Cutting,1300,FAKE BROKER 21,PIS 1,Pathway 1,INS_271,25_1,57,29,8
+49,25,FAKE IMPORTER 40,Unknown,Unrooted Cutting,18600,FAKE BROKER 37,PIS 1,Pathway 1,INS_271,25_1,57,1,8
+38,26,FAKE IMPORTER 39,Unknown,Unrooted Cutting,600,FAKE BROKER 15,PIS 1,Pathway 1,INS_28,26_1,1,1,1
+58,27,FAKE IMPORTER 30,MONGOLIAN BEEF SA,Rooted Plant (including grafted),4000,FAKE BROKER 42,PIS 1,Pathway 1,INS_287,27_1,120,72,17
+363,28,FAKE IMPORTER 38,Unknown,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),644,FAKE BROKER 25,PIS 2,Pathway 1,INS_287,28_1,8,1,2
+364,28,FAKE IMPORTER 49,Unknown,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),350,FAKE BROKER 17,PIS 2,Pathway 1,INS_287,28_1,8,1,2
+381,29,FAKE IMPORTER 15,IN VITRO VITALITY 2-45,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),2688,FAKE BROKER 5,PIS 1,Pathway 1,INS_297,29_1,84,1,2
+335,30,FAKE IMPORTER 46,El Generico,Rooted Plant (including grafted),6,FAKE BROKER 1,PIS 1,Pathway 1,INS_299,30_1,78,2,8
+336,30,FAKE IMPORTER 34,El Generico,Rooted Plant (including grafted),3,FAKE BROKER 10,PIS 1,Pathway 1,INS_299,30_1,78,2,8
+365,31,FAKE IMPORTER 2,Contraband Smuggling Shipping Company,Rooted Plant (including grafted),1200,FAKE BROKER 4,PIS 6,Pathway 2,INS_30,31_1,22,1,10
+366,31,FAKE IMPORTER 46,Contraband Smuggling Shipping Company,Rooted Plant (including grafted),2100,FAKE BROKER 44,PIS 6,Pathway 2,INS_30,31_1,22,4,10
+514,32,FAKE IMPORTER 7,Unknown,Unrooted Cutting,2400,FAKE BROKER 26,PIS 5,Pathway 1,INS_31,32_1,1,1,1
+515,32,FAKE IMPORTER 34,Unknown,Unrooted Cutting,2400,FAKE BROKER 1,PIS 5,Pathway 1,INS_31,32_1,1,1,1
+516,32,FAKE IMPORTER 22,Unknown,Unrooted Cutting,2400,FAKE BROKER 16,PIS 5,Pathway 1,INS_31,32_1,1,1,1
+517,32,FAKE IMPORTER 22,Unknown,Unrooted Cutting,100,FAKE BROKER 29,PIS 5,Pathway 1,INS_31,32_1,1,1,1
+14,33,FAKE IMPORTER 25,VIVIANS INTERNATIONAL MAN,Unrooted Cutting,37500,FAKE BROKER 22,PIS 7,Pathway 3,INS_313,33_1,369,25,8
+15,33,FAKE IMPORTER 38,VIVIANS INTERNATIONAL MAN,Unrooted Cutting,2500,FAKE BROKER 9,PIS 7,Pathway 3,INS_313,33_1,369,10,8
+16,33,FAKE IMPORTER 42,VIVIANS INTERNATIONAL MAN,Unrooted Cutting,37500,FAKE BROKER 45,PIS 7,Pathway 3,INS_313,33_1,369,2,8
+370,34,FAKE IMPORTER 45,Greg,Rooted Plant (including grafted),216,FAKE BROKER 39,PIS 1,Pathway 1,INS_314,34_1,1,1,1
+447,35,FAKE IMPORTER 16,Flower Power Sixty,Unrooted Cutting,200,FAKE BROKER 48,PIS 1,Pathway 1,INS_315,35_1,3,3,3
+197,36,FAKE IMPORTER 3,Unknown,Unrooted Cutting,4200,FAKE BROKER 28,PIS 1,Pathway 1,INS_316,36_1,240,1,13
+487,37,FAKE IMPORTER 7,Unknown,Rooted Plant (including grafted),2785,FAKE BROKER 15,PIS 1,Pathway 1,INS_319,37_1,51,46,12
+488,37,FAKE IMPORTER 22,Unknown,Rooted Plant (including grafted),2785,FAKE BROKER 40,PIS 1,Pathway 1,INS_319,37_1,51,5,12
+489,37,FAKE IMPORTER 47,Unknown,Rooted Plant (including grafted),2785,FAKE BROKER 51,PIS 1,Pathway 1,INS_319,37_1,51,46,12
+490,37,FAKE IMPORTER 46,Unknown,Rooted Plant (including grafted),325,FAKE BROKER 2,PIS 1,Pathway 1,INS_319,37_1,51,5,12
+491,37,FAKE IMPORTER 3,Unknown,Rooted Plant (including grafted),2785,FAKE BROKER 49,PIS 1,Pathway 1,INS_319,37_1,51,46,12
+443,38,FAKE IMPORTER 35,TAMBOURINE PLANTS,Unrooted Plant,300,FAKE BROKER 31,PIS 1,Pathway 1,INS_33,38_1,2,2,2
+444,38,FAKE IMPORTER 19,TAMBOURINE PLANTS,Unrooted Plant,300,FAKE BROKER 16,PIS 1,Pathway 1,INS_33,38_1,2,2,2
+256,39,FAKE IMPORTER 35,Unknown,Rooted Plant (including grafted),520,FAKE BROKER 8,PIS 2,Pathway 1,INS_334,39_1,37,1,14
+460,40,FAKE IMPORTER 31,Unknown,Unrooted Cutting,1000,FAKE BROKER 7,PIS 1,Pathway 1,INS_351,40_1,4,1,4
+263,41,FAKE IMPORTER 32,Inverted Services,"Bulb, Corm, Rhizome, Tuberous Stem",11005,FAKE BROKER 29,PIS 1,Pathway 2,INS_357,41_1,18,15,11
+437,42,FAKE IMPORTER 16,Portillos Hot Dogs,Rooted Plant (including grafted),1,FAKE BROKER 26,PIS 1,Pathway 1,INS_37,42_1,11,1,6
+209,43,FAKE IMPORTER 49,Joes Bar and Grill,Unrooted Cutting,17700,FAKE BROKER 49,PIS 1,Pathway 1,INS_372,43_1,22,9,7
+210,43,FAKE IMPORTER 3,Joes Bar and Grill,Unrooted Cutting,2800,FAKE BROKER 22,PIS 1,Pathway 1,INS_372,43_1,22,11,7
+325,44,FAKE IMPORTER 43,Unknown,Unrooted Cutting,12600,FAKE BROKER 10,PIS 1,Pathway 1,INS_373,44_1,68,1,8
+326,44,FAKE IMPORTER 24,Unknown,Unrooted Cutting,300,FAKE BROKER 9,PIS 1,Pathway 1,INS_373,44_1,68,3,8
+327,44,FAKE IMPORTER 23,Unknown,Unrooted Cutting,700,FAKE BROKER 11,PIS 1,Pathway 1,INS_373,44_1,68,2,8
+328,44,FAKE IMPORTER 1,Unknown,Unrooted Cutting,400,FAKE BROKER 31,PIS 1,Pathway 1,INS_373,44_1,68,1,8
+329,44,FAKE IMPORTER 37,Unknown,Unrooted Cutting,100,FAKE BROKER 22,PIS 1,Pathway 1,INS_373,44_1,68,1,8
+330,44,FAKE IMPORTER 27,Unknown,Unrooted Cutting,100,FAKE BROKER 3,PIS 1,Pathway 1,INS_373,44_1,68,3,8
+331,44,FAKE IMPORTER 44,Unknown,Unrooted Cutting,100,FAKE BROKER 26,PIS 1,Pathway 1,INS_373,44_1,68,1,8
+439,45,FAKE IMPORTER 2,Unknown,Unrooted Cutting,600,FAKE BROKER 28,PIS 1,Pathway 1,INS_375,45_1,93,1,8
+262,46,FAKE IMPORTER 40,Unknown,Unrooted Cutting,6000,FAKE BROKER 5,PIS 1,Pathway 1,INS_387,46_1,107,1,13
+375,47,FAKE IMPORTER 29,Unknown,Rooted Plant (including grafted),55,FAKE BROKER 51,PIS 1,Pathway 1,INS_387,47_1,67,1,8
+2,48,FAKE IMPORTER 5,Sunnyside UP CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),5000,FAKE BROKER 49,PIS 1,Pathway 1,INS_40,48_1,13,2,2
+3,48,FAKE IMPORTER 51,Sunnyside UP CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),15500,FAKE BROKER 8,PIS 1,Pathway 1,INS_40,48_1,13,4,2
+4,48,FAKE IMPORTER 2,Sunnyside UP CO LTD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),15500,FAKE BROKER 31,PIS 1,Pathway 1,INS_40,48_1,13,2,2
+465,49,FAKE IMPORTER 48,PT Cruiser ,Rooted Plant (including grafted),39255,FAKE BROKER 17,PIS 2,Pathway 1,INS_410,49_1,56,56,22
+466,49,FAKE IMPORTER 11,PT Cruiser ,Rooted Plant (including grafted),39255,FAKE BROKER 33,PIS 2,Pathway 1,INS_410,49_1,56,56,22
+59,50,FAKE IMPORTER 13,Unknown,Unrooted Cutting,9000,FAKE BROKER 46,PIS 3,Pathway 1,INS_423,50_1,127,1,8
+60,50,FAKE IMPORTER 50,Unknown,Unrooted Cutting,1400,FAKE BROKER 39,PIS 3,Pathway 1,INS_423,50_1,127,1,8
+61,50,FAKE IMPORTER 18,Unknown,Unrooted Cutting,5900,FAKE BROKER 30,PIS 3,Pathway 1,INS_423,50_1,127,4,8
+62,50,FAKE IMPORTER 39,Unknown,Unrooted Cutting,5900,FAKE BROKER 50,PIS 3,Pathway 1,INS_423,50_1,127,13,8
+63,50,FAKE IMPORTER 37,Unknown,Unrooted Cutting,65200,FAKE BROKER 51,PIS 3,Pathway 1,INS_423,50_1,127,13,8
+64,50,FAKE IMPORTER 11,Unknown,Unrooted Cutting,42500,FAKE BROKER 33,PIS 3,Pathway 1,INS_423,50_1,127,1,8
+65,50,FAKE IMPORTER 42,Unknown,Unrooted Cutting,3500,FAKE BROKER 40,PIS 3,Pathway 1,INS_423,50_1,127,18,8
+66,50,FAKE IMPORTER 18,Unknown,Unrooted Cutting,51700,FAKE BROKER 46,PIS 3,Pathway 1,INS_423,50_1,127,4,8
+67,50,FAKE IMPORTER 10,Unknown,Unrooted Cutting,4400,FAKE BROKER 50,PIS 3,Pathway 1,INS_423,50_1,127,13,8
+68,50,FAKE IMPORTER 9,Unknown,Unrooted Cutting,9000,FAKE BROKER 13,PIS 3,Pathway 1,INS_423,50_1,127,29,8
+69,50,FAKE IMPORTER 38,Unknown,Unrooted Cutting,1000,FAKE BROKER 17,PIS 3,Pathway 1,INS_423,50_1,127,8,8
+70,50,FAKE IMPORTER 19,Unknown,Unrooted Cutting,3400,FAKE BROKER 51,PIS 3,Pathway 1,INS_423,50_1,127,10,8
+71,50,FAKE IMPORTER 21,Unknown,Unrooted Cutting,200,FAKE BROKER 5,PIS 3,Pathway 1,INS_423,50_1,127,18,8
+72,50,FAKE IMPORTER 33,Unknown,Unrooted Cutting,20400,FAKE BROKER 2,PIS 3,Pathway 1,INS_423,50_1,127,1,8
+73,50,FAKE IMPORTER 39,Unknown,Unrooted Cutting,9000,FAKE BROKER 9,PIS 3,Pathway 1,INS_423,50_1,127,13,8
+74,50,FAKE IMPORTER 42,Unknown,Unrooted Cutting,2500,FAKE BROKER 46,PIS 3,Pathway 1,INS_423,50_1,127,13,8
+75,50,FAKE IMPORTER 8,Unknown,Unrooted Cutting,2500,FAKE BROKER 43,PIS 3,Pathway 1,INS_423,50_1,127,18,8
+76,50,FAKE IMPORTER 22,Unknown,Unrooted Cutting,9000,FAKE BROKER 8,PIS 3,Pathway 1,INS_423,50_1,127,10,8
+77,50,FAKE IMPORTER 42,Unknown,Unrooted Cutting,2500,FAKE BROKER 20,PIS 3,Pathway 1,INS_423,50_1,127,1,8
+78,50,FAKE IMPORTER 10,Unknown,Unrooted Cutting,100,FAKE BROKER 10,PIS 3,Pathway 1,INS_423,50_1,127,2,8
+79,50,FAKE IMPORTER 4,Unknown,Unrooted Cutting,21200,FAKE BROKER 19,PIS 3,Pathway 1,INS_423,50_1,127,2,8
+80,50,FAKE IMPORTER 14,Unknown,Unrooted Cutting,146600,FAKE BROKER 16,PIS 3,Pathway 1,INS_423,50_1,127,13,8
+81,50,FAKE IMPORTER 42,Unknown,Unrooted Cutting,1000,FAKE BROKER 4,PIS 3,Pathway 1,INS_423,50_1,127,2,8
+87,51,FAKE IMPORTER 29,The Life Aquatic CO,Rooted Plant (including grafted),3400,FAKE BROKER 47,PIS 2,Pathway 1,INS_43,51_1,43,2,15
+88,51,FAKE IMPORTER 17,The Life Aquatic CO,Rooted Plant (including grafted),3400,FAKE BROKER 34,PIS 2,Pathway 1,INS_43,51_1,43,1,15
+89,51,FAKE IMPORTER 13,The Life Aquatic CO,Rooted Plant (including grafted),1000,FAKE BROKER 32,PIS 2,Pathway 1,INS_43,51_1,43,1,15
+90,51,FAKE IMPORTER 31,The Life Aquatic CO,Rooted Plant (including grafted),2500,FAKE BROKER 1,PIS 2,Pathway 1,INS_43,51_1,43,1,15
+91,51,FAKE IMPORTER 40,The Life Aquatic CO,Rooted Plant (including grafted),700,FAKE BROKER 42,PIS 2,Pathway 1,INS_43,51_1,43,1,15
+92,51,FAKE IMPORTER 19,The Life Aquatic CO,Rooted Plant (including grafted),1500,FAKE BROKER 35,PIS 2,Pathway 1,INS_43,51_1,43,3,15
+93,51,FAKE IMPORTER 48,The Life Aquatic CO,Rooted Plant (including grafted),2500,FAKE BROKER 33,PIS 2,Pathway 1,INS_43,51_1,43,4,15
+94,51,FAKE IMPORTER 42,The Life Aquatic CO,Rooted Plant (including grafted),3400,FAKE BROKER 20,PIS 2,Pathway 1,INS_43,51_1,43,1,15
+95,51,FAKE IMPORTER 41,The Life Aquatic CO,Rooted Plant (including grafted),1000,FAKE BROKER 30,PIS 2,Pathway 1,INS_43,51_1,43,2,15
+96,51,FAKE IMPORTER 7,The Life Aquatic CO,Rooted Plant (including grafted),600,FAKE BROKER 26,PIS 2,Pathway 1,INS_43,51_1,43,1,15
+97,51,FAKE IMPORTER 47,The Life Aquatic CO,Rooted Plant (including grafted),300,FAKE BROKER 43,PIS 2,Pathway 1,INS_43,51_1,43,4,15
+98,51,FAKE IMPORTER 43,The Life Aquatic CO,Rooted Plant (including grafted),3600,FAKE BROKER 28,PIS 2,Pathway 1,INS_43,51_1,43,2,15
+99,51,FAKE IMPORTER 31,The Life Aquatic CO,Rooted Plant (including grafted),3600,FAKE BROKER 30,PIS 2,Pathway 1,INS_43,51_1,43,3,15
+100,51,FAKE IMPORTER 44,The Life Aquatic CO,Rooted Plant (including grafted),1000,FAKE BROKER 32,PIS 2,Pathway 1,INS_43,51_1,43,1,15
+411,52,FAKE IMPORTER 3,Unknown,Unrooted Cutting,2600,FAKE BROKER 30,PIS 1,Pathway 1,INS_43,52_1,138,3,8
+412,52,FAKE IMPORTER 51,Unknown,Unrooted Cutting,400,FAKE BROKER 12,PIS 1,Pathway 1,INS_43,52_1,138,18,8
+413,52,FAKE IMPORTER 10,Unknown,Unrooted Cutting,1900,FAKE BROKER 41,PIS 1,Pathway 1,INS_43,52_1,138,3,8
+414,52,FAKE IMPORTER 22,Unknown,Unrooted Cutting,3050,FAKE BROKER 24,PIS 1,Pathway 1,INS_43,52_1,138,18,8
+415,52,FAKE IMPORTER 40,Unknown,Unrooted Cutting,3050,FAKE BROKER 31,PIS 1,Pathway 1,INS_43,52_1,138,6,8
+416,52,FAKE IMPORTER 8,Unknown,Unrooted Cutting,10950,FAKE BROKER 1,PIS 1,Pathway 1,INS_43,52_1,138,13,8
+417,52,FAKE IMPORTER 5,Unknown,Unrooted Cutting,3400,FAKE BROKER 3,PIS 1,Pathway 1,INS_43,52_1,138,13,8
+418,52,FAKE IMPORTER 11,Unknown,Unrooted Cutting,800,FAKE BROKER 33,PIS 1,Pathway 1,INS_43,52_1,138,1,8
+390,53,FAKE IMPORTER 28,Unknown,Unrooted Cutting,700,FAKE BROKER 40,PIS 1,Pathway 1,INS_437,53_1,34,2,7
+438,54,FAKE IMPORTER 23,Unknown,Unrooted Cutting,9000,FAKE BROKER 18,PIS 1,Pathway 1,INS_448,54_1,29,1,11
+469,55,FAKE IMPORTER 9,Unknown,Unrooted Cutting,1000,FAKE BROKER 49,PIS 1,Pathway 1,INS_458,55_1,1,1,1
+470,55,FAKE IMPORTER 16,Unknown,Unrooted Cutting,1000,FAKE BROKER 7,PIS 1,Pathway 1,INS_458,55_1,1,1,1
+471,55,FAKE IMPORTER 18,Unknown,Unrooted Cutting,1000,FAKE BROKER 40,PIS 1,Pathway 1,INS_458,55_1,1,1,1
+472,55,FAKE IMPORTER 17,Unknown,Unrooted Cutting,1000,FAKE BROKER 23,PIS 1,Pathway 1,INS_458,55_1,1,1,1
+473,55,FAKE IMPORTER 48,Unknown,Unrooted Cutting,1000,FAKE BROKER 44,PIS 1,Pathway 1,INS_458,55_1,1,1,1
+474,55,FAKE IMPORTER 33,Unknown,Unrooted Cutting,1000,FAKE BROKER 38,PIS 1,Pathway 1,INS_458,55_1,1,1,1
+475,55,FAKE IMPORTER 38,Unknown,Unrooted Cutting,1000,FAKE BROKER 1,PIS 1,Pathway 1,INS_458,55_1,1,1,1
+476,55,FAKE IMPORTER 42,Unknown,Unrooted Cutting,1000,FAKE BROKER 5,PIS 1,Pathway 1,INS_458,55_1,1,1,1
+477,55,FAKE IMPORTER 14,Unknown,Unrooted Cutting,1000,FAKE BROKER 40,PIS 1,Pathway 1,INS_458,55_1,1,1,1
+478,55,FAKE IMPORTER 8,Unknown,Unrooted Cutting,1000,FAKE BROKER 26,PIS 1,Pathway 1,INS_458,55_1,1,1,1
+479,55,FAKE IMPORTER 27,Unknown,Unrooted Cutting,1000,FAKE BROKER 7,PIS 1,Pathway 1,INS_458,55_1,1,1,1
+206,56,FAKE IMPORTER 6,Unknown,Unrooted Cutting,91350,FAKE BROKER 36,PIS 1,Pathway 1,INS_461,56_1,59,59,8
+207,56,FAKE IMPORTER 19,Unknown,Unrooted Cutting,91350,FAKE BROKER 23,PIS 1,Pathway 1,INS_461,56_1,59,59,8
+461,57,FAKE IMPORTER 6,Unknown,Unrooted Cutting,100,FAKE BROKER 5,PIS 1,Pathway 1,INS_481,57_1,85,5,8
+481,58,FAKE IMPORTER 24,FRIES ELECTRONICS,Unrooted Cutting,74700,FAKE BROKER 22,PIS 1,Pathway 1,INS_496,58_1,147,3,8
+482,58,FAKE IMPORTER 8,FRIES ELECTRONICS,Unrooted Cutting,6200,FAKE BROKER 14,PIS 1,Pathway 1,INS_496,58_1,147,2,8
+483,58,FAKE IMPORTER 14,FRIES ELECTRONICS,Unrooted Cutting,15700,FAKE BROKER 21,PIS 1,Pathway 1,INS_496,58_1,147,1,8
+264,59,FAKE IMPORTER 1,Unknown,Unrooted Cutting,1200,FAKE BROKER 28,PIS 3,Pathway 1,INS_503,59_1,182,3,8
+265,59,FAKE IMPORTER 11,Unknown,Unrooted Cutting,6600,FAKE BROKER 25,PIS 3,Pathway 1,INS_503,59_1,182,3,8
+266,59,FAKE IMPORTER 20,Unknown,Unrooted Cutting,9000,FAKE BROKER 26,PIS 3,Pathway 1,INS_503,59_1,182,2,8
+137,60,FAKE IMPORTER 16,Unknown,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),230,FAKE BROKER 11,PIS 2,Pathway 1,INS_506,60_1,74,1,16
+121,61,FAKE IMPORTER 39,Unknown,Rooted Plant (including grafted),7500,FAKE BROKER 15,PIS 1,Pathway 1,INS_51,61_1,15,7,9
+396,62,FAKE IMPORTER 22,Billy Holiday TLD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),80,FAKE BROKER 4,PIS 2,Pathway 1,INS_511,62_1,44,8,15
+397,62,FAKE IMPORTER 17,LIFE AQUATIC CO.LTD.,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),12672,FAKE BROKER 36,PIS 2,Pathway 1,INS_511,62_1,44,2,15
+398,62,FAKE IMPORTER 11,LIFE AQUATIC CO.LTD.,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),80,FAKE BROKER 38,PIS 2,Pathway 1,INS_511,62_1,44,11,15
+399,62,FAKE IMPORTER 27,LIFE AQUATIC CO.LTD.,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),80,FAKE BROKER 12,PIS 2,Pathway 1,INS_511,62_1,44,2,15
+400,62,FAKE IMPORTER 10,LIFE AQUATIC CO.LTD.,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),80,FAKE BROKER 18,PIS 2,Pathway 1,INS_511,62_1,44,11,15
+401,62,FAKE IMPORTER 31,Billy Holiday TLD,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),80,FAKE BROKER 34,PIS 2,Pathway 1,INS_511,62_1,44,2,15
+402,62,FAKE IMPORTER 42,LIFE AQUATIC CO.LTD.,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),17981,FAKE BROKER 30,PIS 2,Pathway 1,INS_511,62_1,44,8,15
+403,62,FAKE IMPORTER 40,LIFE AQUATIC CO.LTD.,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),4200,FAKE BROKER 32,PIS 2,Pathway 1,INS_511,62_1,44,3,15
+404,62,FAKE IMPORTER 36,LIFE AQUATIC CO.LTD.,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),80,FAKE BROKER 51,PIS 2,Pathway 1,INS_511,62_1,44,2,15
+405,62,FAKE IMPORTER 5,LIFE AQUATIC CO.LTD.,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),80,FAKE BROKER 8,PIS 2,Pathway 1,INS_511,62_1,44,8,15
+406,62,FAKE IMPORTER 16,LIFE AQUATIC CO.LTD.,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),80,FAKE BROKER 22,PIS 2,Pathway 1,INS_511,62_1,44,11,15
+407,62,FAKE IMPORTER 31,LIFE AQUATIC CO.LTD.,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),80,FAKE BROKER 41,PIS 2,Pathway 1,INS_511,62_1,44,11,15
+408,62,FAKE IMPORTER 24,LIFE AQUATIC CO.LTD.,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),400,FAKE BROKER 7,PIS 2,Pathway 1,INS_511,62_1,44,3,15
+409,62,FAKE IMPORTER 45,LIFE AQUATIC CO.LTD.,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),80,FAKE BROKER 22,PIS 2,Pathway 1,INS_511,62_1,44,8,15
+34,63,FAKE IMPORTER 26,Unknown,Rooted Plant (including grafted),600,FAKE BROKER 50,PIS 1,Pathway 1,INS_512,63_1,54,1,12
+13,64,FAKE IMPORTER 6,PT Cruiser ,Rooted Plant (including grafted),4100,FAKE BROKER 48,PIS 2,Pathway 1,INS_539,64_1,4,2,4
+176,65,FAKE IMPORTER 30,El Generico,Rooted Plant (including grafted),1,FAKE BROKER 21,PIS 1,Pathway 1,INS_548,65_1,33,1,14
+177,65,FAKE IMPORTER 32,El Generico,Rooted Plant (including grafted),1,FAKE BROKER 21,PIS 1,Pathway 1,INS_548,65_1,33,1,14
+178,65,FAKE IMPORTER 10,El Generico,Rooted Plant (including grafted),18,FAKE BROKER 35,PIS 1,Pathway 1,INS_548,65_1,33,1,14
+179,65,FAKE IMPORTER 12,El Generico,Rooted Plant (including grafted),10,FAKE BROKER 43,PIS 1,Pathway 1,INS_548,65_1,33,1,14
+50,66,FAKE IMPORTER 15,Unknown,Unrooted Cutting,23700,FAKE BROKER 38,PIS 1,Pathway 1,INS_553,66_1,100,1,8
+57,67,FAKE IMPORTER 7,Plant Inventions Ecuadora,Unrooted Cutting,1000,FAKE BROKER 31,PIS 1,Pathway 1,INS_563,67_1,30,1,11
+39,68,FAKE IMPORTER 31,Unknown,Unrooted Cutting,700,FAKE BROKER 6,PIS 1,Pathway 1,INS_585,68_1,17,2,9
+83,69,FAKE IMPORTER 49,LLAMA CAFE SA,Unrooted Cutting,1200,FAKE BROKER 48,PIS 1,Pathway 1,INS_60,69_1,11,7,9
+84,69,FAKE IMPORTER 23,LLAMA CAFE SA,Unrooted Cutting,1200,FAKE BROKER 30,PIS 1,Pathway 1,INS_60,69_1,11,1,9
+85,69,FAKE IMPORTER 21,LLAMA CAFE SA,Unrooted Cutting,1200,FAKE BROKER 38,PIS 1,Pathway 1,INS_60,69_1,11,1,9
+86,69,FAKE IMPORTER 5,LLAMA CAFE SA,Unrooted Cutting,20300,FAKE BROKER 9,PIS 1,Pathway 1,INS_60,69_1,11,1,9
+340,70,FAKE IMPORTER 3,Unknown,Unrooted Cutting,200,FAKE BROKER 39,PIS 3,Pathway 1,INS_628,70_1,21,2,7
+341,70,FAKE IMPORTER 35,Unknown,Unrooted Cutting,400,FAKE BROKER 35,PIS 3,Pathway 1,INS_628,70_1,21,1,7
+342,70,FAKE IMPORTER 7,Unknown,Unrooted Cutting,200,FAKE BROKER 33,PIS 3,Pathway 1,INS_628,70_1,21,1,7
+343,70,FAKE IMPORTER 40,Unknown,Unrooted Cutting,200,FAKE BROKER 32,PIS 3,Pathway 1,INS_628,70_1,21,1,7
+344,70,FAKE IMPORTER 3,Unknown,Unrooted Cutting,200,FAKE BROKER 35,PIS 3,Pathway 1,INS_628,70_1,21,1,7
+345,70,FAKE IMPORTER 48,Unknown,Unrooted Cutting,3200,FAKE BROKER 8,PIS 3,Pathway 1,INS_628,70_1,21,1,7
+346,70,FAKE IMPORTER 20,Unknown,Unrooted Cutting,200,FAKE BROKER 35,PIS 3,Pathway 1,INS_628,70_1,21,1,7
+347,70,FAKE IMPORTER 19,Unknown,Unrooted Cutting,500,FAKE BROKER 12,PIS 3,Pathway 1,INS_628,70_1,21,1,7
+348,70,FAKE IMPORTER 49,Unknown,Unrooted Cutting,400,FAKE BROKER 47,PIS 3,Pathway 1,INS_628,70_1,21,2,7
+349,70,FAKE IMPORTER 28,Unknown,Unrooted Cutting,1600,FAKE BROKER 18,PIS 3,Pathway 1,INS_628,70_1,21,1,7
+350,70,FAKE IMPORTER 25,Unknown,Unrooted Cutting,200,FAKE BROKER 4,PIS 3,Pathway 1,INS_628,70_1,21,1,7
+351,70,FAKE IMPORTER 19,Unknown,Unrooted Cutting,800,FAKE BROKER 32,PIS 3,Pathway 1,INS_628,70_1,21,2,7
+352,70,FAKE IMPORTER 4,Unknown,Unrooted Cutting,400,FAKE BROKER 47,PIS 3,Pathway 1,INS_628,70_1,21,2,7
+353,70,FAKE IMPORTER 33,Unknown,Unrooted Cutting,200,FAKE BROKER 26,PIS 3,Pathway 1,INS_628,70_1,21,1,7
+354,70,FAKE IMPORTER 18,Unknown,Unrooted Cutting,200,FAKE BROKER 14,PIS 3,Pathway 1,INS_628,70_1,21,1,7
+355,70,FAKE IMPORTER 46,Unknown,Unrooted Cutting,200,FAKE BROKER 38,PIS 3,Pathway 1,INS_628,70_1,21,2,7
+356,70,FAKE IMPORTER 22,Unknown,Unrooted Cutting,200,FAKE BROKER 14,PIS 3,Pathway 1,INS_628,70_1,21,1,7
+357,70,FAKE IMPORTER 32,Unknown,Unrooted Cutting,2000,FAKE BROKER 31,PIS 3,Pathway 1,INS_628,70_1,21,2,7
+358,70,FAKE IMPORTER 24,Unknown,Unrooted Cutting,200,FAKE BROKER 12,PIS 3,Pathway 1,INS_628,70_1,21,1,7
+359,70,FAKE IMPORTER 5,Unknown,Unrooted Cutting,200,FAKE BROKER 5,PIS 3,Pathway 1,INS_628,70_1,21,1,7
+360,70,FAKE IMPORTER 18,Unknown,Unrooted Cutting,400,FAKE BROKER 19,PIS 3,Pathway 1,INS_628,70_1,21,2,7
+361,70,FAKE IMPORTER 37,Unknown,Unrooted Cutting,1600,FAKE BROKER 38,PIS 3,Pathway 1,INS_628,70_1,21,2,7
+362,70,FAKE IMPORTER 43,Unknown,Unrooted Cutting,400,FAKE BROKER 20,PIS 3,Pathway 1,INS_628,70_1,21,1,7
+199,71,FAKE IMPORTER 1,Unknown,Unrooted Cutting,15000,FAKE BROKER 14,PIS 1,Pathway 1,INS_630,71_1,15,5,9
+467,72,FAKE IMPORTER 15,Unknown,Unrooted Cutting,12400,FAKE BROKER 39,PIS 1,Pathway 1,INS_654,72_1,4,4,4
+468,72,FAKE IMPORTER 6,Unknown,Unrooted Cutting,12400,FAKE BROKER 30,PIS 1,Pathway 1,INS_654,72_1,4,4,4
+410,73,FAKE IMPORTER 33,Unknown,Rooted Plant (including grafted),3024,FAKE BROKER 25,PIS 3,Pathway 1,INS_655,73_2,4,1,4
+296,74,FAKE IMPORTER 47,Drummer Man Inc,Unrooted Cutting,48200,FAKE BROKER 9,PIS 4,Pathway 1,INS_66,74_1,84,3,8
+297,74,FAKE IMPORTER 29,Drummer Man Inc,Unrooted Cutting,7000,FAKE BROKER 9,PIS 4,Pathway 1,INS_66,74_1,84,24,8
+298,74,FAKE IMPORTER 4,Drummer Man Inc,Unrooted Cutting,22000,FAKE BROKER 30,PIS 4,Pathway 1,INS_66,74_1,84,2,8
+299,74,FAKE IMPORTER 11,Drummer Man Inc,Unrooted Cutting,2000,FAKE BROKER 17,PIS 4,Pathway 1,INS_66,74_1,84,11,8
+201,75,FAKE IMPORTER 43,MISO SOUP TIME,Unrooted Cutting,210,FAKE BROKER 2,PIS 1,Pathway 1,INS_67,75_1,2,2,2
+202,75,FAKE IMPORTER 18,MISO SOUP TIME,Unrooted Cutting,210,FAKE BROKER 18,PIS 1,Pathway 1,INS_67,75_1,2,2,2
+203,75,FAKE IMPORTER 44,MISO SOUP TIME,Unrooted Cutting,210,FAKE BROKER 46,PIS 1,Pathway 1,INS_67,75_1,2,2,2
+204,75,FAKE IMPORTER 47,MISO SOUP TIME,Unrooted Cutting,210,FAKE BROKER 32,PIS 1,Pathway 1,INS_67,75_1,2,2,2
+205,75,FAKE IMPORTER 1,MISO SOUP TIME,Unrooted Cutting,210,FAKE BROKER 21,PIS 1,Pathway 1,INS_67,75_1,2,2,2
+101,76,FAKE IMPORTER 17,Unknown,Unrooted Cutting,600,FAKE BROKER 34,PIS 1,Pathway 1,INS_679,76_1,27,1,7
+102,76,FAKE IMPORTER 7,Unknown,Unrooted Cutting,20200,FAKE BROKER 50,PIS 1,Pathway 1,INS_679,76_1,27,18,7
+103,76,FAKE IMPORTER 46,Unknown,Unrooted Cutting,200,FAKE BROKER 23,PIS 1,Pathway 1,INS_679,76_1,27,1,7
+104,76,FAKE IMPORTER 31,Unknown,Unrooted Cutting,500,FAKE BROKER 27,PIS 1,Pathway 1,INS_679,76_1,27,1,7
+105,76,FAKE IMPORTER 47,Unknown,Unrooted Cutting,2800,FAKE BROKER 42,PIS 1,Pathway 1,INS_679,76_1,27,1,7
+106,76,FAKE IMPORTER 34,Unknown,Unrooted Cutting,200,FAKE BROKER 13,PIS 1,Pathway 1,INS_679,76_1,27,1,7
+107,76,FAKE IMPORTER 5,Unknown,Unrooted Cutting,500,FAKE BROKER 3,PIS 1,Pathway 1,INS_679,76_1,27,5,7
+108,76,FAKE IMPORTER 10,Unknown,Unrooted Cutting,2800,FAKE BROKER 45,PIS 1,Pathway 1,INS_679,76_1,27,1,7
+109,76,FAKE IMPORTER 19,Unknown,Unrooted Cutting,68600,FAKE BROKER 4,PIS 1,Pathway 1,INS_679,76_1,27,2,7
+110,76,FAKE IMPORTER 34,Unknown,Unrooted Cutting,200,FAKE BROKER 33,PIS 1,Pathway 1,INS_679,76_1,27,2,7
+111,76,FAKE IMPORTER 27,Unknown,Unrooted Cutting,1800,FAKE BROKER 17,PIS 1,Pathway 1,INS_679,76_1,27,1,7
+112,76,FAKE IMPORTER 41,Unknown,Unrooted Cutting,200,FAKE BROKER 26,PIS 1,Pathway 1,INS_679,76_1,27,1,7
+113,76,FAKE IMPORTER 2,Unknown,Unrooted Cutting,200,FAKE BROKER 40,PIS 1,Pathway 1,INS_679,76_1,27,2,7
+114,76,FAKE IMPORTER 18,Unknown,Unrooted Cutting,500,FAKE BROKER 6,PIS 1,Pathway 1,INS_679,76_1,27,5,7
+115,76,FAKE IMPORTER 20,Unknown,Unrooted Cutting,200,FAKE BROKER 3,PIS 1,Pathway 1,INS_679,76_1,27,1,7
+116,76,FAKE IMPORTER 30,Unknown,Unrooted Cutting,500,FAKE BROKER 41,PIS 1,Pathway 1,INS_679,76_1,27,18,7
+117,76,FAKE IMPORTER 14,Unknown,Unrooted Cutting,100,FAKE BROKER 28,PIS 1,Pathway 1,INS_679,76_1,27,18,7
+118,76,FAKE IMPORTER 11,Unknown,Unrooted Cutting,6100,FAKE BROKER 28,PIS 1,Pathway 1,INS_679,76_1,27,1,7
+119,76,FAKE IMPORTER 36,Unknown,Unrooted Cutting,100,FAKE BROKER 33,PIS 1,Pathway 1,INS_679,76_1,27,2,7
+120,76,FAKE IMPORTER 12,Unknown,Unrooted Cutting,1800,FAKE BROKER 37,PIS 1,Pathway 1,INS_679,76_1,27,1,7
+35,77,FAKE IMPORTER 21,Greenhouse Exposition (Argo The Movie) S.A.,Unrooted Cutting,10000,FAKE BROKER 51,PIS 1,Pathway 1,INS_68,77_1,71,10,16
+36,77,FAKE IMPORTER 51,Greenhouse Exposition (Argo The Movie) S.A.,Unrooted Cutting,3000,FAKE BROKER 7,PIS 1,Pathway 1,INS_68,77_1,71,10,16
+37,77,FAKE IMPORTER 8,Greenhouse Exposition (Argo The Movie) S.A.,Unrooted Cutting,10000,FAKE BROKER 24,PIS 1,Pathway 1,INS_68,77_1,71,10,16
+440,78,FAKE IMPORTER 51,Mr White,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),150,FAKE BROKER 43,PIS 1,Pathway 1,INS_682,78_1,1,1,1
+441,78,FAKE IMPORTER 39,Mr White,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),150,FAKE BROKER 40,PIS 1,Pathway 1,INS_682,78_1,1,1,1
+513,79,FAKE IMPORTER 5,INDY 500,Rooted Plant (including grafted),909,FAKE BROKER 8,PIS 1,Pathway 2,INS_682,79_1,18,3,11
+458,80,FAKE IMPORTER 1,Bob Costa Ranch LLC,Unrooted Plant,1541,FAKE BROKER 27,PIS 1,Pathway 1,INS_691,80_1,160,1,17
+459,80,FAKE IMPORTER 12,Bob Costa Ranch LLC,Unrooted Plant,1311,FAKE BROKER 26,PIS 1,Pathway 1,INS_691,80_1,160,1,17
+372,81,FAKE IMPORTER 39,Unknown,Rooted Plant (including grafted),13620,FAKE BROKER 31,PIS 1,Pathway 2,INS_707,81_2,7,7,6
+373,81,FAKE IMPORTER 11,Unknown,Rooted Plant (including grafted),13620,FAKE BROKER 51,PIS 1,Pathway 2,INS_707,81_2,7,7,6
+374,81,FAKE IMPORTER 20,Unknown,Rooted Plant (including grafted),13620,FAKE BROKER 28,PIS 1,Pathway 2,INS_707,81_2,7,7,6
+258,82,FAKE IMPORTER 40,Unknown,Unrooted Cutting,2100,FAKE BROKER 10,PIS 1,Pathway 1,INS_708,82_1,243,1,8
+259,82,FAKE IMPORTER 31,Unknown,Unrooted Cutting,1600,FAKE BROKER 13,PIS 1,Pathway 1,INS_708,82_1,243,2,8
+260,82,FAKE IMPORTER 51,Unknown,Unrooted Cutting,150,FAKE BROKER 24,PIS 1,Pathway 1,INS_708,82_1,243,8,8
+261,82,FAKE IMPORTER 2,Unknown,Unrooted Cutting,2500,FAKE BROKER 11,PIS 1,Pathway 1,INS_708,82_1,243,13,8
+389,83,FAKE IMPORTER 26,Unknown,"Root cutting, crown, or clump, Tuberous Root",2500,FAKE BROKER 1,PIS 3,Pathway 1,INS_709,83_1,72,3,12
+9,84,FAKE IMPORTER 34,Plant Inventions Ecuadora,Unrooted Cutting,1000,FAKE BROKER 19,PIS 1,Pathway 1,INS_71,84_1,18,1,9
+339,85,FAKE IMPORTER 16,Jimmy Buffet Margaritaville,Rooted Plant (including grafted),15,FAKE BROKER 11,PIS 1,Pathway 1,INS_72,85_1,1,1,1
+200,86,FAKE IMPORTER 7,Unknown,Rooted Plant (including grafted),11,FAKE BROKER 13,PIS 1,Pathway 1,INS_726,86_1,35,4,14
+448,87,FAKE IMPORTER 3,Unknown,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),288,FAKE BROKER 13,PIS 2,Pathway 1,INS_729,87_1,51,1,15
+449,87,FAKE IMPORTER 38,Unknown,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),1800,FAKE BROKER 13,PIS 2,Pathway 1,INS_729,87_1,51,3,15
+450,87,FAKE IMPORTER 10,Unknown,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),360,FAKE BROKER 5,PIS 2,Pathway 1,INS_729,87_1,51,1,15
+451,87,FAKE IMPORTER 15,Unknown,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),360,FAKE BROKER 27,PIS 2,Pathway 1,INS_729,87_1,51,1,15
+452,87,FAKE IMPORTER 42,Unknown,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),1800,FAKE BROKER 9,PIS 2,Pathway 1,INS_729,87_1,51,2,15
+453,87,FAKE IMPORTER 44,Unknown,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),3216,FAKE BROKER 25,PIS 2,Pathway 1,INS_729,87_1,51,2,15
+454,87,FAKE IMPORTER 45,Unknown,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),1440,FAKE BROKER 4,PIS 2,Pathway 1,INS_729,87_1,51,1,15
+455,87,FAKE IMPORTER 50,Unknown,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),1072,FAKE BROKER 49,PIS 2,Pathway 1,INS_729,87_1,51,1,15
+333,88,FAKE IMPORTER 40,Four Seasons Landscaping ,Rooted Plant (including grafted),7,FAKE BROKER 21,PIS 1,Pathway 1,INS_732,88_1,1,1,1
+334,88,FAKE IMPORTER 10,Four Seasons Landscaping ,Rooted Plant (including grafted),7,FAKE BROKER 10,PIS 1,Pathway 1,INS_732,88_1,1,1,1
+11,89,FAKE IMPORTER 22,Unknown,Rooted Plant (including grafted),9042,FAKE BROKER 10,PIS 2,Pathway 2,INS_739,89_1,347,13,13
+0,90,FAKE IMPORTER 5,LIFE AQUATIC,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),600,FAKE BROKER 26,PIS 2,Pathway 1,INS_739,90_1,99,2,17
+1,90,FAKE IMPORTER 8,LIFE AQUATIC,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),7000,FAKE BROKER 3,PIS 2,Pathway 1,INS_739,90_1,99,3,17
+12,91,FAKE IMPORTER 40,OCCIDENTAL TERRANIUM (S) PTE LTD,Rooted Plant (including grafted),30,FAKE BROKER 18,PIS 2,Pathway 1,INS_742,91_1,49,1,15
+338,92,FAKE IMPORTER 20,Unknown,Unrooted Cutting,1100,FAKE BROKER 3,PIS 1,Pathway 1,INS_743,92_1,39,1,8
+518,93,FAKE IMPORTER 29,Unknown,Unrooted Cutting,300,FAKE BROKER 2,PIS 5,Pathway 1,INS_745,93_1,64,1,12
+519,93,FAKE IMPORTER 30,Unknown,Unrooted Cutting,1500,FAKE BROKER 27,PIS 5,Pathway 1,INS_745,93_1,64,2,12
+520,93,FAKE IMPORTER 9,Unknown,Unrooted Cutting,300,FAKE BROKER 50,PIS 5,Pathway 1,INS_745,93_1,64,6,12
+521,93,FAKE IMPORTER 22,Unknown,Unrooted Cutting,2300,FAKE BROKER 19,PIS 5,Pathway 1,INS_745,93_1,64,12,12
+522,93,FAKE IMPORTER 16,Unknown,Unrooted Cutting,900,FAKE BROKER 5,PIS 5,Pathway 1,INS_745,93_1,64,6,12
+523,93,FAKE IMPORTER 33,Unknown,Unrooted Cutting,2100,FAKE BROKER 18,PIS 5,Pathway 1,INS_745,93_1,64,2,12
+152,94,FAKE IMPORTER 34,Unknown,Unrooted Cutting,400,FAKE BROKER 21,PIS 1,Pathway 1,INS_75,94_1,94,1,8
+387,95,FAKE IMPORTER 49,Unknown,Rooted Plant (including grafted),11,FAKE BROKER 10,PIS 1,Pathway 1,INS_75,95_1,16,1,11
+382,96,FAKE IMPORTER 4,Unknown,Unrooted Cutting,43445,FAKE BROKER 46,PIS 1,Pathway 2,INS_762,96_3,35,35,11
+383,96,FAKE IMPORTER 44,Unknown,Unrooted Cutting,43445,FAKE BROKER 8,PIS 1,Pathway 2,INS_762,96_3,35,35,11
+384,96,FAKE IMPORTER 10,Unknown,Unrooted Cutting,43445,FAKE BROKER 18,PIS 1,Pathway 2,INS_762,96_3,35,35,11
+385,96,FAKE IMPORTER 32,Unknown,Unrooted Cutting,43445,FAKE BROKER 8,PIS 1,Pathway 2,INS_762,96_3,35,35,11
+386,96,FAKE IMPORTER 13,Unknown,Unrooted Cutting,43445,FAKE BROKER 7,PIS 1,Pathway 2,INS_762,96_3,35,35,11
+138,97,FAKE IMPORTER 10,Wagyhu Beef Co,Unrooted Cutting,200,FAKE BROKER 10,PIS 3,Pathway 1,INS_768,97_1,17,16,7
+139,97,FAKE IMPORTER 50,Wagyhu Beef Co,Unrooted Cutting,300,FAKE BROKER 1,PIS 3,Pathway 1,INS_768,97_1,17,16,7
+140,97,FAKE IMPORTER 46,Wagyhu Beef Co,Unrooted Cutting,100,FAKE BROKER 2,PIS 3,Pathway 1,INS_768,97_1,17,1,7
+43,98,FAKE IMPORTER 44,Unknown,Unrooted Cutting,8000,FAKE BROKER 48,PIS 3,Pathway 1,INS_78,98_1,5,3,4
+376,99,FAKE IMPORTER 50,Jimmy Chiu S.A.S,Unrooted Cutting,400,FAKE BROKER 34,PIS 1,Pathway 1,INS_787,99_1,212,1,8
+377,99,FAKE IMPORTER 6,Jimmy Chiu S.A.S,Unrooted Cutting,700,FAKE BROKER 41,PIS 1,Pathway 1,INS_787,99_1,212,1,8
+378,99,FAKE IMPORTER 26,Jimmy Chiu S.A.S,Unrooted Cutting,800,FAKE BROKER 7,PIS 1,Pathway 1,INS_787,99_1,212,1,8
+379,99,FAKE IMPORTER 24,Jimmy Chiu S.A.S,Unrooted Cutting,15200,FAKE BROKER 27,PIS 1,Pathway 1,INS_787,99_1,212,3,8
+380,99,FAKE IMPORTER 43,Jimmy Chiu S.A.S,Unrooted Cutting,4700,FAKE BROKER 17,PIS 1,Pathway 1,INS_787,99_1,212,5,8
+196,100,FAKE IMPORTER 5,Unknown,Unrooted Cutting,220200,FAKE BROKER 41,PIS 1,Pathway 1,INS_796,100_1,150,150,8
+153,101,FAKE IMPORTER 22,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),12,FAKE BROKER 50,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+154,101,FAKE IMPORTER 41,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),5,FAKE BROKER 21,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+155,101,FAKE IMPORTER 25,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),3,FAKE BROKER 19,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+156,101,FAKE IMPORTER 2,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),5,FAKE BROKER 23,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+157,101,FAKE IMPORTER 11,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),34,FAKE BROKER 33,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+158,101,FAKE IMPORTER 4,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),21,FAKE BROKER 49,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+159,101,FAKE IMPORTER 24,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),21,FAKE BROKER 29,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+160,101,FAKE IMPORTER 8,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),12,FAKE BROKER 45,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+161,101,FAKE IMPORTER 13,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),1,FAKE BROKER 4,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+162,101,FAKE IMPORTER 29,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),12,FAKE BROKER 41,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+163,101,FAKE IMPORTER 50,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),12,FAKE BROKER 45,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+164,101,FAKE IMPORTER 12,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),3,FAKE BROKER 11,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+165,101,FAKE IMPORTER 10,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),12,FAKE BROKER 39,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+166,101,FAKE IMPORTER 15,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),21,FAKE BROKER 3,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+167,101,FAKE IMPORTER 5,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),3,FAKE BROKER 29,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+168,101,FAKE IMPORTER 24,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),34,FAKE BROKER 21,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+169,101,FAKE IMPORTER 4,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),1,FAKE BROKER 35,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+170,101,FAKE IMPORTER 43,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),1,FAKE BROKER 20,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+171,101,FAKE IMPORTER 41,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),21,FAKE BROKER 12,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+172,101,FAKE IMPORTER 21,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),2,FAKE BROKER 8,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+173,101,FAKE IMPORTER 47,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),1,FAKE BROKER 29,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+174,101,FAKE IMPORTER 34,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),2,FAKE BROKER 33,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+175,101,FAKE IMPORTER 41,VIETNAM BEST SOUP CO LTD,Rooted Plant (including grafted),12,FAKE BROKER 18,PIS 1,Pathway 1,INS_81,101_1,1,1,1
+446,102,FAKE IMPORTER 28,El Generico,Rooted Plant (including grafted),2,FAKE BROKER 2,PIS 1,Pathway 1,INS_828,102_1,30,1,7
+5,103,FAKE IMPORTER 23,CECILIA,Unrooted Cutting,50,FAKE BROKER 45,PIS 1,Pathway 1,INS_835,103_1,118,4,8
+6,103,FAKE IMPORTER 15,CECILIA,Unrooted Cutting,400,FAKE BROKER 16,PIS 1,Pathway 1,INS_835,103_1,118,1,8
+7,103,FAKE IMPORTER 38,CECILIA,Unrooted Cutting,50,FAKE BROKER 12,PIS 1,Pathway 1,INS_835,103_1,118,1,8
+480,104,FAKE IMPORTER 17,Bobby Box 301-305,Rooted Plant (including grafted),1000,FAKE BROKER 34,PIS 1,Pathway 1,INS_84,104_1,231,14,13
+25,105,FAKE IMPORTER 47,The Life Aquatic CO,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),25,FAKE BROKER 35,PIS 2,Pathway 1,INS_865,105_1,33,1,14
+26,105,FAKE IMPORTER 33,The Life Aquatic CO,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),15,FAKE BROKER 19,PIS 2,Pathway 1,INS_865,105_1,33,1,14
+27,105,FAKE IMPORTER 34,The Life Aquatic CO,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),15,FAKE BROKER 40,PIS 2,Pathway 1,INS_865,105_1,33,1,14
+28,105,FAKE IMPORTER 43,The Life Aquatic CO,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),100,FAKE BROKER 5,PIS 2,Pathway 1,INS_865,105_1,33,1,14
+29,105,FAKE IMPORTER 46,The Life Aquatic CO,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),25,FAKE BROKER 9,PIS 2,Pathway 1,INS_865,105_1,33,1,14
+30,105,FAKE IMPORTER 35,The Life Aquatic CO,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),25,FAKE BROKER 35,PIS 2,Pathway 1,INS_865,105_1,33,1,14
+31,105,FAKE IMPORTER 20,The Life Aquatic CO,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),25,FAKE BROKER 32,PIS 2,Pathway 1,INS_865,105_1,33,1,14
+32,105,FAKE IMPORTER 40,The Life Aquatic CO,Meristem or Callus Tissue Culture (micropropagated/in vitro culture),15,FAKE BROKER 41,PIS 2,Pathway 1,INS_865,105_1,33,1,14
+493,106,FAKE IMPORTER 35,Unknown,Unrooted Cutting,278600,FAKE BROKER 32,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+494,106,FAKE IMPORTER 33,Unknown,Unrooted Cutting,278600,FAKE BROKER 31,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+495,106,FAKE IMPORTER 10,Unknown,Unrooted Cutting,278600,FAKE BROKER 39,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+496,106,FAKE IMPORTER 43,Unknown,Unrooted Cutting,278600,FAKE BROKER 21,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+497,106,FAKE IMPORTER 22,Unknown,Unrooted Cutting,278600,FAKE BROKER 32,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+498,106,FAKE IMPORTER 7,Unknown,Unrooted Cutting,278600,FAKE BROKER 32,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+499,106,FAKE IMPORTER 7,Unknown,Unrooted Cutting,278600,FAKE BROKER 38,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+500,106,FAKE IMPORTER 1,Unknown,Unrooted Cutting,278600,FAKE BROKER 42,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+501,106,FAKE IMPORTER 24,Unknown,Unrooted Cutting,278600,FAKE BROKER 6,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+502,106,FAKE IMPORTER 9,Unknown,Unrooted Cutting,278600,FAKE BROKER 33,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+503,106,FAKE IMPORTER 16,Unknown,Unrooted Cutting,278600,FAKE BROKER 35,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+504,106,FAKE IMPORTER 31,Unknown,Unrooted Cutting,278600,FAKE BROKER 41,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+505,106,FAKE IMPORTER 11,Unknown,Unrooted Cutting,278600,FAKE BROKER 51,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+506,106,FAKE IMPORTER 4,Unknown,Unrooted Cutting,278600,FAKE BROKER 2,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+507,106,FAKE IMPORTER 48,Unknown,Unrooted Cutting,278600,FAKE BROKER 1,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+508,106,FAKE IMPORTER 35,Unknown,Unrooted Cutting,278600,FAKE BROKER 16,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+509,106,FAKE IMPORTER 15,Unknown,Unrooted Cutting,278600,FAKE BROKER 31,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+510,106,FAKE IMPORTER 30,Unknown,Unrooted Cutting,278600,FAKE BROKER 26,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+511,106,FAKE IMPORTER 34,Unknown,Unrooted Cutting,278600,FAKE BROKER 26,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+512,106,FAKE IMPORTER 39,Unknown,Unrooted Cutting,278600,FAKE BROKER 2,PIS 4,Pathway 1,INS_876,106_1,100,100,8
+484,107,FAKE IMPORTER 40,Unknown,Rooted Plant (including grafted),45,FAKE BROKER 49,PIS 2,Pathway 1,INS_885,107_1,40,29,11
+485,107,FAKE IMPORTER 5,Unknown,Rooted Plant (including grafted),191,FAKE BROKER 7,PIS 2,Pathway 1,INS_885,107_1,40,29,11
+486,107,FAKE IMPORTER 10,Unknown,Rooted Plant (including grafted),649,FAKE BROKER 1,PIS 2,Pathway 1,INS_885,107_1,40,29,11
+295,108,FAKE IMPORTER 6,Unknown,Unrooted Cutting,8000,FAKE BROKER 46,PIS 1,Pathway 1,INS_901,108_2,34,22,7
+419,109,FAKE IMPORTER 49,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,11400,FAKE BROKER 35,PIS 1,Pathway 1,INS_931,109_1,49,3,8
+420,109,FAKE IMPORTER 35,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,11400,FAKE BROKER 40,PIS 1,Pathway 1,INS_931,109_1,49,1,8
+421,109,FAKE IMPORTER 18,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,3900,FAKE BROKER 16,PIS 1,Pathway 1,INS_931,109_1,49,3,8
+422,109,FAKE IMPORTER 27,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,800,FAKE BROKER 43,PIS 1,Pathway 1,INS_931,109_1,49,9,8
+423,109,FAKE IMPORTER 29,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,3900,FAKE BROKER 21,PIS 1,Pathway 1,INS_931,109_1,49,1,8
+424,109,FAKE IMPORTER 40,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,3900,FAKE BROKER 15,PIS 1,Pathway 1,INS_931,109_1,49,1,8
+425,109,FAKE IMPORTER 21,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,24400,FAKE BROKER 21,PIS 1,Pathway 1,INS_931,109_1,49,8,8
+426,109,FAKE IMPORTER 30,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,9800,FAKE BROKER 6,PIS 1,Pathway 1,INS_931,109_1,49,3,8
+427,109,FAKE IMPORTER 5,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,3900,FAKE BROKER 40,PIS 1,Pathway 1,INS_931,109_1,49,9,8
+428,109,FAKE IMPORTER 16,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,3900,FAKE BROKER 46,PIS 1,Pathway 1,INS_931,109_1,49,9,8
+429,109,FAKE IMPORTER 25,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,11400,FAKE BROKER 35,PIS 1,Pathway 1,INS_931,109_1,49,9,8
+430,109,FAKE IMPORTER 28,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,9500,FAKE BROKER 35,PIS 1,Pathway 1,INS_931,109_1,49,8,8
+431,109,FAKE IMPORTER 15,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,9800,FAKE BROKER 29,PIS 1,Pathway 1,INS_931,109_1,49,1,8
+432,109,FAKE IMPORTER 31,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,800,FAKE BROKER 14,PIS 1,Pathway 1,INS_931,109_1,49,8,8
+433,109,FAKE IMPORTER 27,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,24400,FAKE BROKER 16,PIS 1,Pathway 1,INS_931,109_1,49,3,8
+434,109,FAKE IMPORTER 45,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,800,FAKE BROKER 11,PIS 1,Pathway 1,INS_931,109_1,49,1,8
+435,109,FAKE IMPORTER 46,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,11400,FAKE BROKER 28,PIS 1,Pathway 1,INS_931,109_1,49,8,8
+436,109,FAKE IMPORTER 12,LANDFALL BEAUTY CONGO LTD,Unrooted Cutting,3900,FAKE BROKER 17,PIS 1,Pathway 1,INS_931,109_1,49,9,8
+257,110,FAKE IMPORTER 14,Unknown,Rooted Plant (including grafted),216,FAKE BROKER 44,PIS 8,Pathway 1,INS_939,110_1,26,2,10
+51,111,FAKE IMPORTER 33,Unknown,Rooted Plant (including grafted),350,FAKE BROKER 18,PIS 2,Pathway 1,INS_940,111_1,219,61,13
+492,112,FAKE IMPORTER 49,Unknown,Unrooted Cutting,24900,FAKE BROKER 48,PIS 1,Pathway 1,INS_961,112_1,22,2,10
+456,113,FAKE IMPORTER 29,Unknown,Unrooted Cutting,5000,FAKE BROKER 2,PIS 2,Pathway 1,INS_965,113_1,10,5,6
+17,114,FAKE IMPORTER 29,BONOS U2 PVT LTD,Rooted Plant (including grafted),73,FAKE BROKER 10,PIS 4,Pathway 1,INS_97,114_1,1,1,1
+18,114,FAKE IMPORTER 43,BONOS U2 PVT LTD,Rooted Plant (including grafted),73,FAKE BROKER 33,PIS 4,Pathway 1,INS_97,114_1,1,1,1
+19,114,FAKE IMPORTER 17,BONOS U2 PVT LTD,Rooted Plant (including grafted),73,FAKE BROKER 16,PIS 4,Pathway 1,INS_97,114_1,1,1,1
+20,114,FAKE IMPORTER 4,BONOS U2 PVT LTD,Rooted Plant (including grafted),73,FAKE BROKER 18,PIS 4,Pathway 1,INS_97,114_1,1,1,1
+21,114,FAKE IMPORTER 39,BONOS U2 PVT LTD,Rooted Plant (including grafted),73,FAKE BROKER 47,PIS 4,Pathway 1,INS_97,114_1,1,1,1
+22,114,FAKE IMPORTER 35,BONOS U2 PVT LTD,Rooted Plant (including grafted),73,FAKE BROKER 15,PIS 4,Pathway 1,INS_97,114_1,1,1,1
+23,114,FAKE IMPORTER 15,BONOS U2 PVT LTD,Rooted Plant (including grafted),73,FAKE BROKER 50,PIS 4,Pathway 1,INS_97,114_1,1,1,1
+24,114,FAKE IMPORTER 47,BONOS U2 PVT LTD,Rooted Plant (including grafted),73,FAKE BROKER 1,PIS 4,Pathway 1,INS_97,114_1,1,1,1
+56,115,FAKE IMPORTER 7,VIVIANS INTERNATIONAL MAN,Unrooted Cutting,1600,FAKE BROKER 35,PIS 1,Pathway 1,INS_975,115_1,82,1,8
+371,116,FAKE IMPORTER 37,Rasta Pasta Malaysia,Rooted Plant (including grafted),1,FAKE BROKER 14,PIS 1,Pathway 1,INS_981,116_1,5,1,5
+368,117,FAKE IMPORTER 47,Charlie's Plant Palace,Rooted Plant (including grafted),55,FAKE BROKER 49,PIS 4,Pathway 1,INS_982,117_1,30,1,11
+369,117,FAKE IMPORTER 48,Charlie's Plant Palace,Rooted Plant (including grafted),10,FAKE BROKER 23,PIS 4,Pathway 1,INS_982,117_1,30,1,11
+198,118,FAKE IMPORTER 39,Plant Inventions Ecuadora,Unrooted Cutting,4650,FAKE BROKER 13,PIS 1,Pathway 1,INS_988,118_1,10,1,7
